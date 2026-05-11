@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tauri-import",
+  "productName": "App Name",
   "version": "0.1.0",
   "identifier": "com.navin.tauri-import",
   "build": {
@@ -12,9 +12,14 @@
   "app": {
     "windows": [
       {
-        "title": "tauri-import",
-        "width": 800,
-        "height": 600
+        "title": "App Name",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 18, "y": 26 }
       }
     ],
     "security": {

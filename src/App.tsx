@@ -1,290 +1,166 @@
 // App.tsx
 //
-// Root component. Owns all shared state and is the only place
-// that calls invoke() directly. Child components receive data
-// and callbacks as props — they never call invoke() themselves.
+// Root component. Owns all shared state. Renders the shell:
+// Titlebar on top, then a floating panel containing Sidebar + MainPanel.
 //
-// State flow:
-//   1. On mount → list_profiles → populate profile dropdown
-//   2. User selects profile → load_profile → populate steps + instructions
-//   3. User attaches files per step → stored in attachedFiles
-//   4. User advances through steps → currentStepIndex increments
-//   5. On sql_transform step → run_profile → store output path
+// Phase 1: mock data only. invoke() is wired up in later steps.
 
-import { useEffect, useState, useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import type {
-  AppState,
-  ProfileSummary,
-  LoadedProfile,
-  FileAttachment,
-  StepStatus,
-} from "./types";
-import { ProfilePicker } from "./components/ProfilePicker";
-import { StepPanel } from "./components/StepPanel";
-import { InstructionsPanel } from "./components/InstructionsPanel";
+import { useState } from "react";
+import type { LoadedProfile, ProfileSummary } from "./types";
+import { Titlebar } from "./components/Titlebar";
+import { Sidebar } from "./components/Sidebar";
+import { MainPanel } from "./components/MainPanel";
 
-// ── Initial state ─────────────────────────────────────────────────────────────
+export type FileStatus = "none" | "pending" | "valid" | "invalid";
+export type GenerateStatus = "idle" | "running" | "done";
 
-const initialState: AppState = {
-  profiles: [],
-  selectedProfile: null,
-  loadedProfile: null,
-  currentStepIndex: 0,
-  stepStatuses: {},
-  attachedFiles: {},
-  outputPaths: {},
+// ── Mock data (phase 1) ───────────────────────────────────────────────────────
+// Mirrors the real shape from types.ts so wiring later is a straight swap.
+
+const MOCK_PROFILES: ProfileSummary[] = [
+  { id: "test1", name: "Simple Import", version: "1.0.0", zip_path: "" },
+];
+
+const MOCK_PROFILE: LoadedProfile = {
+  structure: {
+    id: "test1",
+    name: "Simple Import",
+    version: "1.0.0",
+    min_app_version: "0.1.0",
+    inputs: [
+      {
+        label: "Classification",
+        type: "csv",
+        required: true,
+        validation: [],
+      },
+    ],
+    outputs: [{ label: "Update_Records", type: "csv" }],
+    steps: [
+      {
+        label: "AddSourceFiles",
+        type: "file_input",
+        input: [{ label: "Classification", validate: true }],
+      },
+      {
+        label: "CreateImportFile",
+        type: "sql_transform",
+        input: ["Classification"],
+        sql: "primary_transform.sql",
+        output: ["Update_Records"],
+      },
+      { label: "Import", type: "manual_instruction" },
+    ],
+  },
+  instructions: {
+    _header:
+      "# Simple Import\n\nUpdate records in database with new info from vendor.",
+    AddSourceFiles:
+      "## Select Source Files\n\nUpload the un-edited data file (typically `file_from_vendor.csv`) that the vendor provided.",
+    CreateImportFile: "## Generate Import File",
+    Import:
+      "## Import into database\n\nImport into the database using the `SimpleImport` profile.\n\n![Import tool](assets/import_profile.png)\n\nIf there are exceptions, contact vendor.",
+  },
+  sql_files: {},
+  temp_dir: "",
 };
 
-// ── App ───────────────────────────────────────────────────────────────────────
-
 export default function App() {
-  const [state, setState] = useState<AppState>(initialState);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  // ── State ───────────────────────────────────────────────────────────────────
+  const [profiles] = useState<ProfileSummary[]>(MOCK_PROFILES);
+  const [selectedProfile, setSelectedProfile] = useState<string | null>("test1");
+  const [loadedProfile] = useState<LoadedProfile | null>(MOCK_PROFILE);
 
-  // ── Load profile list on mount ──────────────────────────────────────────────
-  // Asks Rust to scan the profiles/ folder and return summaries.
-  // profilesDir is resolved relative to the app binary in production.
-  // During development we use an absolute path via the env variable
-  // that Tauri sets, or fall back to a hardcoded dev path.
+  const [filePath, setFilePath] = useState<string | null>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [fileStatus, setFileStatus] = useState<FileStatus>("none");
 
-  useEffect(() => {
-    invoke<ProfileSummary[]>("list_profiles")
-    .then((profiles) => {
-      setState((s) => ({ ...s, profiles }));
-    })
-    .catch((e) => setError(`Failed to load profiles: ${e}`));
-  }, []);
+  const [generateStatus, setGenerateStatus] = useState<GenerateStatus>("idle");
+  const [generateProgress, setGenerateProgress] = useState<number>(0);
 
-  // ── Select a profile ────────────────────────────────────────────────────────
-  // Called when user picks from the dropdown.
-  // Fully loads the profile bundle and resets workflow state.
-
-  const handleProfileSelect = useCallback(async (profile: ProfileSummary) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const loaded = await invoke<LoadedProfile>("load_profile", {
-        zipPath: profile.zip_path,
-      });
-
-      // Build initial step statuses — first step active, rest pending
-      const stepStatuses: Record<string, StepStatus> = {};
-      loaded.structure.steps.forEach((step, i) => {
-        stepStatuses[step.label] = i === 0 ? "active" : "pending";
-      });
-
-      setState({
-        ...initialState,
-        profiles: state.profiles,
-        selectedProfile: profile,
-        loadedProfile: loaded,
-        currentStepIndex: 0,
-        stepStatuses,
-        attachedFiles: {},
-        outputPaths: {},
-      });
-    } catch (e) {
-      setError(`Failed to load profile: ${e}`);
-    } finally {
-      setLoading(false);
+  // ── Derived step completion ────────────────────────────────────────────────
+  const stepsDone: Record<string, boolean> = {};
+  if (loadedProfile) {
+    for (const step of loadedProfile.structure.steps) {
+      if (step.type === "file_input") stepsDone[step.label] = fileStatus === "valid";
+      else if (step.type === "sql_transform") stepsDone[step.label] = generateStatus === "done";
+      else stepsDone[step.label] = false;
     }
-  }, [state.profiles]);
+  }
 
-  // ── Attach a file to an input ───────────────────────────────────────────────
-  // Called by StepPanel when the user selects a file for a given input label.
-  // Stores the file path and marks it unvalidated — validation happens separately.
+  // ── Mock handlers (replaced with invoke() in later phase) ──────────────────
+  const handleFileSelect = (path: string, name: string) => {
+    setFilePath(path);
+    setFileName(name);
+    setFileStatus("pending");
+  };
 
-  const handleFileAttach = useCallback((inputLabel: string, filePath: string) => {
-    const attachment: FileAttachment = {
-      inputLabel,
-      filePath,
-      validated: false,
-      validationErrors: [],
+  const handleValidate = () => {
+    // mock: pretend the file is valid
+    setFileStatus("valid");
+  };
+
+  const handleGenerate = () => {
+    setGenerateStatus("running");
+    setGenerateProgress(0);
+    // mock progress
+    let p = 0;
+    const tick = () => {
+      p += 20;
+      setGenerateProgress(p);
+      if (p >= 100) {
+        setGenerateStatus("done");
+        return;
+      }
+      setTimeout(tick, 120);
     };
-    setState((s) => ({
-      ...s,
-      attachedFiles: { ...s.attachedFiles, [inputLabel]: attachment },
-    }));
-  }, []);
+    setTimeout(tick, 120);
+  };
 
-  // ── Advance to next step ────────────────────────────────────────────────────
-  // Marks current step complete, activates the next one.
+  const handleDownload = () => {
+    // mock: no-op
+  };
 
-  const handleStepComplete = useCallback((stepLabel: string) => {
-    setState((s) => {
-      if (!s.loadedProfile) return s;
-      const steps = s.loadedProfile.structure.steps;
-      const nextIndex = s.currentStepIndex + 1;
-      const nextStep = steps[nextIndex];
+  // Resets workflow state for the currently-loaded profile.
+  // Keeps profile selection; only clears file + generation state.
+  const handleReset = () => {
+    setFilePath(null);
+    setFileName(null);
+    setFileStatus("none");
+    setGenerateStatus("idle");
+    setGenerateProgress(0);
+  };
 
-      const updatedStatuses = {
-        ...s.stepStatuses,
-        [stepLabel]: "complete" as StepStatus,
-        ...(nextStep ? { [nextStep.label]: "active" as StepStatus } : {}),
-      };
-
-      return {
-        ...s,
-        currentStepIndex: nextIndex,
-        stepStatuses: updatedStatuses,
-      };
-    });
-  }, []);
-
-  // ── Mark step errored ───────────────────────────────────────────────────────
-
-  const handleStepError = useCallback((stepLabel: string, message: string) => {
-    setState((s) => ({
-      ...s,
-      stepStatuses: {
-        ...s.stepStatuses,
-        [stepLabel]: "error" as StepStatus,
-      },
-    }));
-    setError(message);
-  }, []);
-
-  // ── Store output path after transform ──────────────────────────────────────
-
-  const handleOutputReady = useCallback((outputLabel: string, filePath: string) => {
-    setState((s) => ({
-      ...s,
-      outputPaths: { ...s.outputPaths, [outputLabel]: filePath },
-    }));
-  }, []);
-
-  // ── Derive current step ─────────────────────────────────────────────────────
-
-  const currentStep = state.loadedProfile?.structure.steps[state.currentStepIndex] ?? null;
-  const currentInstructions = currentStep
-    ? state.loadedProfile?.instructions[currentStep.label] ?? null
-    : state.loadedProfile?.instructions["_header"] ?? null;
-
-  // ── Render ──────────────────────────────────────────────────────────────────
+  // Suppress unused-warning; filePath is used once we wire backend
+  void filePath;
 
   return (
-    <div className="app-container">
-
-      {/* ── Top bar ── */}
-      <header className="app-header">
-        <h1>Import Tool</h1>
-        {state.loadedProfile && (
-          <span className="profile-badge">
-            {state.loadedProfile.structure.name} v{state.loadedProfile.structure.version}
-          </span>
-        )}
-      </header>
-
-      {/* ── Global error banner ── */}
-      {error && (
-        <div className="error-banner">
-          <span>{error}</span>
-          <button onClick={() => setError(null)}>✕</button>
-        </div>
-      )}
-
-      {/* ── Main layout ── */}
-      <div className="main-layout">
-
-        {/* ── Left sidebar: profile picker + step list ── */}
-        <aside className="sidebar">
-          <ProfilePicker
-            profiles={state.profiles}
-            selected={state.selectedProfile}
-            onSelect={handleProfileSelect}
-            loading={loading}
+    <div className="flex flex-col h-screen bg-neutral-100 text-neutral-900">
+      <Titlebar />
+      <div className="flex-1 p-4 pt-0 overflow-hidden">
+        <div className="flex h-full bg-white rounded-xl border border-neutral-200 shadow-md overflow-hidden">
+          <Sidebar
+            profiles={profiles}
+            selectedProfile={selectedProfile}
+            onSelectProfile={setSelectedProfile}
+            loadedProfile={loadedProfile}
+            stepsDone={stepsDone}
+            onReset={handleReset}
           />
-
-          {/* Step list — only shown once a profile is loaded */}
-          {state.loadedProfile && (
-            <nav className="step-list">
-              {state.loadedProfile.structure.steps.map((step, i) => {
-                const status = state.stepStatuses[step.label] ?? "pending";
-                return (
-                  <div
-                    key={step.label}
-                    className={`step-item step-item--${status}`}
-                  >
-                    <span className="step-number">{i + 1}</span>
-                    <span className="step-label">
-                      {/* Use the ## heading from instructions if available,
-                          otherwise fall back to the label from YAML */}
-                      {getStepDisplayName(step.label, state.loadedProfile!.instructions)}
-                    </span>
-                    <span className="step-status-icon">
-                      {status === "complete" && "✓"}
-                      {status === "error" && "✕"}
-                      {status === "active" && "›"}
-                    </span>
-                  </div>
-                );
-              })}
-            </nav>
-          )}
-        </aside>
-
-        {/* ── Center: active step UI ── */}
-        <main className="step-area">
-          {!state.loadedProfile && (
-            <div className="empty-state">
-              <p>Select a profile to get started.</p>
-            </div>
-          )}
-
-          {state.loadedProfile && currentStep && (
-            <StepPanel
-              step={currentStep}
-              stepIndex={state.currentStepIndex}
-              totalSteps={state.loadedProfile.structure.steps.length}
-              profile={state.loadedProfile}
-              attachedFiles={state.attachedFiles}
-              onFileAttach={handleFileAttach}
-              onStepComplete={handleStepComplete}
-              onStepError={handleStepError}
-              onOutputReady={handleOutputReady}
-            />
-          )}
-
-          {/* All steps complete */}
-          {state.loadedProfile &&
-            state.currentStepIndex >= state.loadedProfile.structure.steps.length && (
-            <div className="complete-state">
-              <h2>All steps complete</h2>
-              <p>Your import files are ready.</p>
-              <button onClick={() => handleProfileSelect(state.selectedProfile!)}>
-                Start over
-              </button>
-            </div>
-          )}
-        </main>
-
-        {/* ── Right panel: instructions for current step ── */}
-        <aside className="instructions-panel">
-          {currentInstructions && (
-            <InstructionsPanel
-              markdown={currentInstructions}
-              tempDir={state.loadedProfile?.temp_dir ?? ""}
-            />
-          )}
-        </aside>
-
+          <MainPanel
+            loadedProfile={loadedProfile}
+            stepsDone={stepsDone}
+            fileName={fileName}
+            fileStatus={fileStatus}
+            generateStatus={generateStatus}
+            generateProgress={generateProgress}
+            onFileSelect={handleFileSelect}
+            onValidate={handleValidate}
+            onGenerate={handleGenerate}
+            onDownload={handleDownload}
+          />
+        </div>
       </div>
     </div>
   );
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-// Extracts the ## heading text from a step's markdown section to use
-// as the display name in the step list, falling back to the raw label.
-function getStepDisplayName(
-  label: string,
-  instructions: Record<string, string>
-): string {
-  const content = instructions[label];
-  if (!content) return label;
-  const headingMatch = content.match(/^##\s+(.+)$/m);
-  return headingMatch ? headingMatch[1].trim() : label;
 }

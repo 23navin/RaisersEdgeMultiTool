@@ -20,6 +20,7 @@ Upload the un-edited data file (typcally `file_from_vendor.csv`) that the vendor
 ## Import into database
 
 Import into the database using the `SimpleImport` profile.
+
 ![Import tool](assets/import_profile.png)
 
 If there are exceptions, contact vendor.

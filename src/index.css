@@ -121,34 +121,11 @@
   * {
     @apply border-border outline-ring/50;
     }
-  body {
-    @apply bg-background text-foreground;
+  html, body {
+    @apply font-sans bg-background text-foreground;
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
     }
-  html {
-    @apply font-sans;
-    }
 }
 
-.main-layout {
-  display: flex;
-  flex-direction: row;
-  height: calc(100vh - 60px);
-}
-
-.sidebar {
-  width: 220px;
-  border-right: 1px solid #ccc;
-  padding: 16px;
-}
-
-.step-area {
-  flex: 1;
-  padding: 16px;
-}
-
-.instructions-panel {
-  width: 300px;
-  border-left: 1px solid #ccc;
-  padding: 16px;
-  overflow-y: auto;
-}
