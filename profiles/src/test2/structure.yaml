@@ -50,4 +50,4 @@ steps:
       - Update_Records
 
   - label: Import
-    type: instruction
+    type: manual_instruction
