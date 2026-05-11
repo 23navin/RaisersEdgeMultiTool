@@ -50,9 +50,7 @@ export default function App() {
   // that Tauri sets, or fall back to a hardcoded dev path.
 
   useEffect(() => {
-    invoke<ProfileSummary[]>("list_profiles", { 
-      profilesDir: "/Users/navin/Developer/tauri-import/profiles" 
-    })
+    invoke<ProfileSummary[]>("list_profiles")
     .then((profiles) => {
       setState((s) => ({ ...s, profiles }));
     })

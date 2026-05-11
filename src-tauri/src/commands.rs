@@ -14,9 +14,21 @@ use crate::errors::AppError;
 // Scans profiles/ folder, returns lightweight summary for each .import file
 
 #[tauri::command]
-pub fn list_profiles(profiles_dir: String) -> Result<Vec<ProfileSummary>, String> {
-    profile::list_profiles(Path::new(&profiles_dir))
-        .map_err(|e| e.to_string())
+pub fn list_profiles() -> Result<Vec<ProfileSummary>, String> {
+    #[cfg(debug_assertions)]
+    let profiles_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .ok_or_else(|| "cannot find project root".to_string())?
+        .join("profiles");
+
+    #[cfg(not(debug_assertions))]
+    let profiles_dir = std::env::current_exe()
+        .map_err(|e| e.to_string())?
+        .parent()
+        .ok_or_else(|| "cannot find exe dir".to_string())?
+        .join("profiles");
+
+    profile::list_profiles(&profiles_dir).map_err(|e| e.to_string())
 }
 
 // ── load_profile ──────────────────────────────────────────────────────────────
