@@ -1,0 +1,7 @@
+id,name,class,priority,subclass
+12345,Widget Alpha,Alpha,1,Type A
+45678,sprocket alpha,Alpha,1,None
+56789,donut beta,Beta,2,Type A
+23456,widget beta,Beta,2,Type B
+34567,WIDGET GAMMA,Gamma,3,Type C
+67890,gadget gamma,Gamma,3,None

@@ -169,17 +169,14 @@ pub fn run_transform(
     let file_str = file_path.to_string_lossy().replace('\\', "/");
     let sql = sql_content.replace("{{input_file}}", &file_str);
 
-    // Build output path: same dir as input, labeled with output name + timestamp
+    // Write to system temp dir so the input folder stays clean
     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
     let output_filename = format!(
         "{}_{}.csv",
         output_label.to_lowercase().replace(' ', "_"),
         timestamp
     );
-    let output_path: PathBuf = file_path
-        .parent()
-        .unwrap_or(Path::new("."))
-        .join(&output_filename);
+    let output_path: PathBuf = std::env::temp_dir().join(&output_filename);
 
     let output_str = output_path.to_string_lossy().replace('\\', "/");
 

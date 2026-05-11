@@ -242,7 +242,6 @@ export default function App() {
               totalSteps={state.loadedProfile.structure.steps.length}
               profile={state.loadedProfile}
               attachedFiles={state.attachedFiles}
-              outputPaths={state.outputPaths}
               onFileAttach={handleFileAttach}
               onStepComplete={handleStepComplete}
               onStepError={handleStepError}

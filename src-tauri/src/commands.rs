@@ -77,3 +77,14 @@ pub fn run_profile(
     db::run_transform(Path::new(&file_path), sql, &output_label)
         .map_err(|e| e.to_string())
 }
+
+// ── save_output ───────────────────────────────────────────────────────────────
+// Called by: StepPanel.tsx when user confirms the Save As dialog
+// Copies the generated temp file to the user-chosen destination
+
+#[tauri::command]
+pub fn save_output(src_path: String, dest_path: String) -> Result<(), String> {
+    std::fs::copy(&src_path, &dest_path)
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}

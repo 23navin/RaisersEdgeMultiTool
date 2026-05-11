@@ -14,6 +14,7 @@ fn main() {
             commands::load_profile,
             commands::validate_file,
             commands::run_profile,
+            commands::save_output,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

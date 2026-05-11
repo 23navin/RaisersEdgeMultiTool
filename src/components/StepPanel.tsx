@@ -12,7 +12,7 @@
 
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import type {
   Step,
   LoadedProfile,
@@ -26,7 +26,6 @@ type Props = {
   totalSteps: number;
   profile: LoadedProfile;
   attachedFiles: Record<string, FileAttachment>;
-  outputPaths: Record<string, string>;
   onFileAttach: (inputLabel: string, filePath: string) => void;
   onStepComplete: (stepLabel: string) => void;
   onStepError: (stepLabel: string, message: string) => void;
@@ -53,7 +52,6 @@ export function StepPanel({
   totalSteps,
   profile,
   attachedFiles,
-  outputPaths,
   onFileAttach,
   onStepComplete,
   onStepError,
@@ -63,6 +61,7 @@ export function StepPanel({
   const [validationResults, setValidationResults] = useState<
     Record<string, { ok: boolean; errors: string[] }>
   >({});
+  const [tempOutput, setTempOutput] = useState<{ path: string; rowCount: number } | null>(null);
 
   // ── file_input step ─────────────────────────────────────────────────────────
   // Shows a file picker for each input the step requires.
@@ -70,9 +69,9 @@ export function StepPanel({
 
   async function handleFilePick(inputLabel: string) {
     const inputDef = getInputDef(profile, inputLabel);
-    const extensions = inputDef?.input_type === "csv"
+    const extensions = inputDef?.type === "csv"
       ? ["csv"]
-      : inputDef?.input_type === "xlsx"
+      : inputDef?.type === "xlsx"
       ? ["xlsx", "xls"]
       : ["csv", "xlsx"];
 
@@ -152,16 +151,15 @@ export function StepPanel({
 
   async function handleTransform() {
     if (!step.sql || !step.input || !step.output) return;
-    setRunning(true);
 
     const inputLabel = getInputLabel(step.input[0]);
     const file = attachedFiles[inputLabel];
     if (!file) {
       onStepError(step.label, `No file attached for ${inputLabel}`);
-      setRunning(false);
       return;
     }
 
+    setRunning(true);
     try {
       const result = await invoke<{ output_path: string; row_count: number }>(
         "run_profile",
@@ -172,13 +170,32 @@ export function StepPanel({
           outputLabel: step.output[0],
         }
       );
-
-      onOutputReady(step.output[0], result.output_path);
-      onStepComplete(step.label);
+      setTempOutput({ path: result.output_path, rowCount: result.row_count });
     } catch (e) {
       onStepError(step.label, `Transform failed: ${e}`);
     } finally {
       setRunning(false);
+    }
+  }
+
+  async function handleSave() {
+    if (!tempOutput || !step.output) return;
+
+    const outputLabel = step.output[0];
+    const defaultFilename = outputLabel.toLowerCase().replace(/\s+/g, "_") + ".csv";
+    const chosenPath = await save({
+      filters: [{ name: "CSV", extensions: ["csv"] }],
+      defaultPath: defaultFilename,
+    });
+
+    if (!chosenPath) return; // user cancelled
+
+    try {
+      await invoke("save_output", { srcPath: tempOutput.path, destPath: chosenPath });
+      onOutputReady(outputLabel, chosenPath);
+      onStepComplete(step.label);
+    } catch (e) {
+      onStepError(step.label, `Save failed: ${e}`);
     }
   }
 
@@ -259,21 +276,23 @@ export function StepPanel({
       {/* ── sql_transform ── */}
       {step.type === "sql_transform" && (
         <div className="step-panel__body">
-          <p>Generate the import file using the profile transform.</p>
-          {step.output?.map((outputLabel) => {
-            const path = outputPaths[outputLabel];
-            return path ? (
-              <div key={outputLabel} className="output-result">
-                <span>✓ {outputLabel}</span>
-                <span className="output-path">{path}</span>
+          {!tempOutput ? (
+            <>
+              <p>Generate the import file using the profile transform.</p>
+              <div className="step-panel__actions">
+                <button onClick={handleTransform} disabled={running}>
+                  {running ? "Generating..." : "Generate Import File"}
+                </button>
               </div>
-            ) : null;
-          })}
-          <div className="step-panel__actions">
-            <button onClick={handleTransform} disabled={running}>
-              {running ? "Generating..." : "Generate Import File"}
-            </button>
-          </div>
+            </>
+          ) : (
+            <>
+              <p>✓ {tempOutput.rowCount} rows generated. Save the file to continue.</p>
+              <div className="step-panel__actions">
+                <button onClick={handleSave}>Save File…</button>
+              </div>
+            </>
+          )}
         </div>
       )}
 
