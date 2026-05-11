@@ -186,7 +186,7 @@ pub fn run_transform(
     // Execute the transform and write directly to CSV via DuckDB COPY
     let copy_sql = format!(
         "COPY ({}) TO '{}' (HEADER, DELIMITER ',')",
-        sql.trim_end_matches(';'),
+        sql.trim().trim_end_matches(';').trim(),
         output_str
     );
 

@@ -155,7 +155,7 @@ pub fn load_profile(zip_path: &Path) -> Result<LoadedProfile, AppError> {
         .map_err(|e| AppError::IoError(format!("Cannot read zip archive: {}", e)))?;
 
     // Extract to a temp directory named after the zip file stem
-    // e.g. profiles/vendor_a.zip → /tmp/import-tool-vendor_a/
+    // e.g. profiles/vendor_a.import → /tmp/import-tool-vendor_a/
     let stem = zip_path
         .file_stem()
         .unwrap_or_default()
@@ -186,15 +186,24 @@ pub fn load_profile(zip_path: &Path) -> Result<LoadedProfile, AppError> {
         }
     }
 
+    load_from_dir(&temp_dir)
+}
+
+// ── load_from_dir ─────────────────────────────────────────────────────────────
+// Reads a profile from an already-extracted directory.
+// Called by validate_file and run_profile, which receive temp_dir from the
+// frontend rather than the original zip path.
+
+pub fn load_from_dir(dir: &Path) -> Result<LoadedProfile, AppError> {
     // Read and parse structure.yaml
-    let yaml_path = temp_dir.join("structure.yaml");
+    let yaml_path = dir.join("structure.yaml");
     let yaml_content = fs::read_to_string(&yaml_path)
         .map_err(|e| AppError::IoError(format!("Cannot read structure.yaml: {}", e)))?;
     let structure: ProfileStructure = serde_yaml::from_str(&yaml_content)
         .map_err(|e| AppError::ParseError(format!("Invalid structure.yaml: {}", e)))?;
 
-    // Read and parse instructions.md (optional — not every profile may have one yet)
-    let md_path = temp_dir.join("instructions.md");
+    // Read and parse instructions.md (optional)
+    let md_path = dir.join("instructions.md");
     let instructions = if md_path.exists() {
         let md_content = fs::read_to_string(&md_path)
             .map_err(|e| AppError::IoError(format!("Cannot read instructions.md: {}", e)))?;
@@ -205,10 +214,10 @@ pub fn load_profile(zip_path: &Path) -> Result<LoadedProfile, AppError> {
 
     // Read all .sql files from the sql/ folder
     let mut sql_files: HashMap<String, String> = HashMap::new();
-    let sql_dir = temp_dir.join("sql");
+    let sql_dir = dir.join("sql");
     if sql_dir.exists() {
         for entry in fs::read_dir(&sql_dir)
-            .map_err(|e| AppError::IoError(e.to_string()))? 
+            .map_err(|e| AppError::IoError(e.to_string()))?
         {
             let entry = entry.map_err(|e| AppError::IoError(e.to_string()))?;
             let path = entry.path();
@@ -225,7 +234,7 @@ pub fn load_profile(zip_path: &Path) -> Result<LoadedProfile, AppError> {
         structure,
         instructions,
         sql_files,
-        temp_dir,
+        temp_dir: dir.to_path_buf(),
     })
 }
 

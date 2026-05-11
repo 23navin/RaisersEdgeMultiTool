@@ -42,7 +42,7 @@ pub fn validate_file(
 ) -> Result<ValidationResult, String> {
     // Re-load the profile to get the validation rules
     // (profile is already extracted, temp_dir path comes from frontend)
-    let loaded = profile::load_profile(Path::new(&zip_path))
+    let loaded = profile::load_from_dir(Path::new(&zip_path))
         .map_err(|e| e.to_string())?;
 
     // Find the input definition for this label
@@ -68,7 +68,7 @@ pub fn run_profile(
     zip_path: String,        // temp dir path — profile already extracted
     output_label: String,    // used for output filename prefix
 ) -> Result<TransformResult, String> {
-    let loaded = profile::load_profile(Path::new(&zip_path))
+    let loaded = profile::load_from_dir(Path::new(&zip_path))
         .map_err(|e| e.to_string())?;
 
     let sql = loaded.sql_files.get(&sql_file)
