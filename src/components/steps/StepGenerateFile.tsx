@@ -177,9 +177,9 @@ function TransformBlock({ t }: { t: TransformRow }) {
       </div>
 
       {t.generateStatus === "error" && t.errors.length > 0 && (
-        <div className="mt-[8px] bg-white border border-neutral-200 overflow-hidden">
+        <div className="mt-[8px] bg-[#fef2f2] border border-[#fecaca] overflow-hidden">
           <table className="w-full text-[12px] border-collapse">
-            <thead className="bg-neutral-50 text-neutral-500">
+            <thead className="bg-[#fee2e2] text-[#991b1b]">
               <tr>
                 <th className="text-left px-[10px] py-[5px] font-medium w-[55px]">Line</th>
                 <th className="text-left px-[10px] py-[5px] font-medium w-[90px]">Type</th>
@@ -188,11 +188,11 @@ function TransformBlock({ t }: { t: TransformRow }) {
             </thead>
             <tbody>
               {t.errors.map((err, i) => (
-                <tr key={i} className="border-t border-neutral-200">
-                  <td className="px-[10px] py-[5px] font-mono text-neutral-500">
+                <tr key={i} className="border-t border-[#fecaca]">
+                  <td className="px-[10px] py-[5px] font-mono text-[#b91c1c]">
                     {err.line ?? "—"}
                   </td>
-                  <td className="px-[10px] py-[5px] font-mono text-neutral-900">
+                  <td className="px-[10px] py-[5px] font-mono text-[#7f1d1d]">
                     {err.errorType}
                   </td>
                   <td className="px-[10px] py-[5px] text-[#b91c1c]">{err.message}</td>
