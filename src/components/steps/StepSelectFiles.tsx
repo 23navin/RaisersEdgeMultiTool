@@ -38,7 +38,7 @@ function renderInlineMd(text: string) {
       return (
         <code
           key={i}
-          className="font-mono text-[12px] bg-neutral-100 px-[5px] py-[1px] border border-neutral-200"
+          className="font-mono text-[12px] bg-neutral-100 px-[5px] py-[1px]"
         >
           {part.slice(1, -1)}
         </code>
@@ -180,7 +180,7 @@ export function StepSelectFiles({
           {renderInlineMd(description)}
         </p>
       )}
-      <div className="bg-neutral-100 px-[12px] py-[8px] flex flex-col gap-[8px]">
+      <div className="bg-neutral-50 border border-neutral-200 px-[12px] py-[8px] flex flex-col gap-[8px]">
         {rows.map((row) => (
           <FileRow
             key={row.inputLabel}

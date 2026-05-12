@@ -202,10 +202,12 @@ function TransformBlock({ t }: { t: TransformRow }) {
 
 export function StepGenerateFile({ transforms }: Props) {
   return (
-    <div className="bg-neutral-100 px-[12px] py-[10px] flex flex-col gap-[12px]">
+    <div className="bg-neutral-50 border border-neutral-200 px-[12px] py-[10px] flex flex-col gap-[12px]">
       {transforms.map((t, i) => (
         <div key={i}>
-          {i > 0 && <div className="h-px bg-neutral-200 mb-[12px]" />}
+          {i > 0 && (
+            <div className="h-px bg-neutral-200 -mx-[12px] mb-[12px]" />
+          )}
           <TransformBlock t={t} />
         </div>
       ))}

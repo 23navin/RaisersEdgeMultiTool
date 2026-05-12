@@ -53,7 +53,7 @@ function renderInlineMd(text: string) {
       return (
         <code
           key={i}
-          className="font-mono text-[12px] bg-neutral-100 px-[5px] py-[1px] border border-neutral-200"
+          className="font-mono text-[12px] bg-neutral-100 px-[5px] py-[1px]"
         >
           {part.slice(1, -1)}
         </code>
@@ -83,7 +83,7 @@ function ImageBlock({ alt, src, tempDir }: { alt: string; src: string; tempDir: 
 
   if (!resolvedSrc || errored) {
     return (
-      <div className="h-[80px] border border-neutral-200 bg-neutral-50 flex items-center justify-center gap-[8px] text-neutral-400 text-[12px] my-[10px]">
+      <div className="h-[80px] bg-neutral-100 flex items-center justify-center gap-[8px] text-neutral-400 text-[12px] my-[10px]">
         <ImageIcon size={18} />
         <span>{alt}</span>
       </div>
@@ -95,7 +95,7 @@ function ImageBlock({ alt, src, tempDir }: { alt: string; src: string; tempDir: 
       src={resolvedSrc}
       alt={alt}
       onError={() => setErrored(true)}
-      className="w-full my-[10px] border border-neutral-200"
+      className="w-full my-[10px]"
     />
   );
 }
