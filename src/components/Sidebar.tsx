@@ -50,7 +50,9 @@ export function Sidebar({
   onReset,
 }: SidebarProps) {
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
   const selected = profiles.find((p) => p.id === selectedProfile);
+  const query = search.trim().toLowerCase();
 
   return (
     <aside className="w-[214px] shrink-0 border-r border-neutral-200 flex flex-col pt-[15px]">
@@ -75,30 +77,45 @@ export function Sidebar({
           </PopoverTrigger>
           <PopoverContent className="w-[250px] p-0" align="start">
             <Command>
-              <CommandInput placeholder="Search profiles…" className="text-[13px]" />
+              <CommandInput
+                placeholder="Search profiles…"
+                className="text-[13px]"
+                value={search}
+                onValueChange={setSearch}
+              />
               <CommandList>
                 <CommandEmpty>No profile found 😵‍💫</CommandEmpty>
                 <CommandGroup>
-                  {profiles.map((p) => (
-                    <CommandItem
-                      key={p.id}
-                      value={p.name}
-                      onSelect={() => {
-                        onSelectProfile(p.id);
-                        setOpen(false);
-                      }}
-                      className="text-[13px]"
-                    >
-                      <span className="flex-1 truncate">{p.name}</span>
-                      <CheckIcon
-                        size={14}
-                        className={cn(
-                          "shrink-0",
-                          selectedProfile === p.id ? "opacity-100" : "opacity-0"
+                  {profiles.map((p) => {
+                    const idMatches =
+                      query.length > 0 && p.id.toLowerCase().includes(query);
+                    return (
+                      <CommandItem
+                        key={p.id}
+                        value={p.name}
+                        keywords={[p.id]}
+                        onSelect={() => {
+                          onSelectProfile(p.id);
+                          setOpen(false);
+                        }}
+                        className="text-[13px]"
+                      >
+                        <span className="flex-1 truncate">{p.name}</span>
+                        {idMatches && (
+                          <span className="text-neutral-400 truncate">
+                            {p.id}
+                          </span>
                         )}
-                      />
-                    </CommandItem>
-                  ))}
+                        <CheckIcon
+                          size={14}
+                          className={cn(
+                            "shrink-0",
+                            selectedProfile === p.id ? "opacity-100" : "opacity-0"
+                          )}
+                        />
+                      </CommandItem>
+                    );
+                  })}
                 </CommandGroup>
               </CommandList>
             </Command>
