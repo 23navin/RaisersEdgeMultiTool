@@ -219,7 +219,7 @@ function NoticeBlock({ notice }: { notice: Notice }) {
       <div className="flex items-start gap-[6px] px-[10px] py-[6px] border-b border-[#fde68a] bg-[#fef3c7]">
         <InfoIcon size={13} className="text-[#92400e] mt-[1px] shrink-0" />
         <div className="min-w-0">
-          <div className="text-[12px] font-medium text-[#92400e]">
+          <div className="text-[12px] font-medium text-[#92400e] my-[-1px]">
             {notice.label}
           </div>
           {notice.description && (
