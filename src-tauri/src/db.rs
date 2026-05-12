@@ -9,24 +9,59 @@
 //   - Write the result to an output CSV
 //   - Return row count and output path
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use duckdb::Connection;
 use serde::Serialize;
 use crate::errors::AppError;
-use crate::profile::{LoadedProfile, ColumnValidation};
+use crate::profile::ColumnValidation;
 
 // ── Result types returned to commands.rs ─────────────────────────────────────
 
 #[derive(Debug, Serialize)]
+pub struct ValidationError {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub row: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub column: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    pub message: String,
+}
+
+#[derive(Debug, Serialize)]
 pub struct ValidationResult {
     pub ok: bool,
-    pub errors: Vec<String>,
+    pub errors: Vec<ValidationError>,
+    pub notices: Vec<Notice>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Notice {
+    pub label: String,
+    pub description: Option<String>,
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<String>>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct OutputFile {
+    pub label: String,
+    pub path: String,
+    pub row_count: usize,
 }
 
 #[derive(Debug, Serialize)]
 pub struct TransformResult {
-    pub output_path: String,
-    pub row_count: usize,
+    pub outputs: Vec<OutputFile>,
+    pub notices: Vec<Notice>,
+}
+
+// Passed in from commands.rs — already-resolved SQL content for one notice.
+pub struct NoticeInput<'a> {
+    pub label: &'a str,
+    pub description: Option<&'a str>,
+    pub sql_content: &'a str,
 }
 
 // ── validate_file ─────────────────────────────────────────────────────────────
@@ -70,30 +105,60 @@ pub fn validate_file(
         .filter_map(|r| r.ok())
         .collect();
 
-    let mut errors: Vec<String> = Vec::new();
+    let mut errors: Vec<ValidationError> = Vec::new();
+    let mut mismatches: Vec<(String, String)> = Vec::new(); // (expected_label, found_column)
+    let push = |errors: &mut Vec<ValidationError>, column: &str, message: String| {
+        errors.push(ValidationError {
+            row: None,
+            column: Some(column.to_string()),
+            value: None,
+            message,
+        });
+    };
 
     for v in validations {
-        // Check column exists
-        if !actual_columns.iter().any(|c| c == &v.label) {
-            if v.required {
-                errors.push(format!("Missing required column: '{}'", v.label));
+        // Resolve which actual column maps to this validation rule:
+        //   1. Case-sensitive exact match.
+        //   2. Fall back to a normalized match (lowercased, special characters
+        //      stripped). If that hits, the validation still applies and a
+        //      notice records the mismatch so the author can see it.
+        let resolved: Option<String> = if actual_columns.iter().any(|c| c == &v.label) {
+            Some(v.label.clone())
+        } else {
+            let target = normalize_col(&v.label);
+            if target.is_empty() {
+                None
+            } else {
+                actual_columns
+                    .iter()
+                    .find(|c| normalize_col(c) == target)
+                    .map(|c| {
+                        mismatches.push((v.label.clone(), c.clone()));
+                        c.clone()
+                    })
             }
-            continue; // skip further checks if column absent
-        }
+        };
+
+        let col = match resolved {
+            Some(c) => c,
+            None => {
+                if v.required {
+                    push(&mut errors, &v.label, format!("Missing required column '{}'", v.label));
+                }
+                continue;
+            }
+        };
 
         // Check nulls in required columns
         if v.required {
             let null_sql = format!(
                 "SELECT COUNT(*) FROM {} WHERE \"{}\" IS NULL OR TRIM(CAST(\"{}\" AS VARCHAR)) = ''",
-                read_fn, v.label, v.label
+                read_fn, col, col
             );
             if let Ok(mut stmt) = conn.prepare(&null_sql) {
                 if let Ok(count) = stmt.query_row([], |r| r.get::<_, i64>(0)) {
                     if count > 0 {
-                        errors.push(format!(
-                            "Column '{}' has {} empty or null value(s)",
-                            v.label, count
-                        ));
+                        push(&mut errors, &v.label, format!("{} empty or null value(s)", count));
                     }
                 }
             }
@@ -108,36 +173,58 @@ pub fn validate_file(
                 .join(", ");
             let bad_sql = format!(
                 "SELECT COUNT(*) FROM {} WHERE \"{}\" NOT IN ({}) AND \"{}\" IS NOT NULL",
-                read_fn, v.label, values_list, v.label
+                read_fn, col, values_list, col
             );
             if let Ok(mut stmt) = conn.prepare(&bad_sql) {
                 if let Ok(count) = stmt.query_row([], |r| r.get::<_, i64>(0)) {
                     if count > 0 {
-                        errors.push(format!(
-                            "Column '{}' has {} value(s) not in allowed list: {}",
-                            v.label,
-                            count,
-                            allowed.join(", ")
-                        ));
+                        push(
+                            &mut errors,
+                            &v.label,
+                            format!(
+                                "{} value(s) not in allowed list [{}]",
+                                count,
+                                allowed.join(", ")
+                            ),
+                        );
                     }
                 }
             }
         }
 
-        // Check digit length for number columns
+        // Number-typed columns: first check that values are actually numeric,
+        // then (optionally) check the digit count.
         if v.col_type == "number" {
+            let non_num_sql = format!(
+                "SELECT COUNT(*) FROM {} WHERE TRY_CAST(\"{}\" AS DOUBLE) IS NULL \
+                 AND \"{}\" IS NOT NULL AND TRIM(CAST(\"{}\" AS VARCHAR)) != ''",
+                read_fn, col, col, col
+            );
+            if let Ok(mut stmt) = conn.prepare(&non_num_sql) {
+                if let Ok(count) = stmt.query_row([], |r| r.get::<_, i64>(0)) {
+                    if count > 0 {
+                        push(
+                            &mut errors,
+                            &v.label,
+                            format!("{} non-numeric value(s)", count),
+                        );
+                    }
+                }
+            }
+
             if let Some(digits) = v.digits {
                 let digit_sql = format!(
                     "SELECT COUNT(*) FROM {} WHERE LENGTH(CAST(\"{}\" AS VARCHAR)) != {}",
-                    read_fn, v.label, digits
+                    read_fn, col, digits
                 );
                 if let Ok(mut stmt) = conn.prepare(&digit_sql) {
                     if let Ok(count) = stmt.query_row([], |r| r.get::<_, i64>(0)) {
                         if count > 0 {
-                            errors.push(format!(
-                                "Column '{}' has {} value(s) that are not exactly {} digits",
-                                v.label, count, digits
-                            ));
+                            push(
+                                &mut errors,
+                                &v.label,
+                                format!("{} value(s) are not exactly {} digits", count, digits),
+                            );
                         }
                     }
                 }
@@ -145,60 +232,269 @@ pub fn validate_file(
         }
     }
 
+    let mut notices: Vec<Notice> = Vec::new();
+    if !mismatches.is_empty() {
+        notices.push(Notice {
+            label: "Column name mismatches".to_string(),
+            description: Some(
+                "These columns matched after ignoring case and special characters. \
+                 Consider renaming them for an exact match."
+                    .to_string(),
+            ),
+            columns: vec!["Expected".to_string(), "Found in file".to_string()],
+            rows: mismatches
+                .into_iter()
+                .map(|(e, a)| vec![e, a])
+                .collect(),
+        });
+    }
+
     Ok(ValidationResult {
         ok: errors.is_empty(),
         errors,
+        notices,
     })
 }
 
+// Lowercased + alphanumeric-only form of a column header — used to compare
+// expected vs. actual column names while ignoring case and punctuation.
+fn normalize_col(s: &str) -> String {
+    s.chars()
+        .flat_map(|c| c.to_lowercase())
+        .filter(|c| c.is_alphanumeric())
+        .collect()
+}
+
 // ── run_transform ─────────────────────────────────────────────────────────────
-// Executes the profile's SQL against the input file and writes a CSV output.
-// {{input_file}} in the SQL is replaced with the actual file path.
-// Output is written to the same directory as the input file with a timestamp.
+// Executes the profile's SQL against one or more input files and writes one
+// CSV per declared output label.
+//
+// Input substitution:
+//   - `{{input:Label}}` resolves to the path for the input with that label.
+//   - `{{input_file}}` is a legacy single-input alias — substituted to the
+//     sole path when the transform has exactly one input. Erroring if used
+//     with multiple inputs so authors disambiguate.
+//
+// Output shapes:
+//
+// 1. Multi-output: the SQL contains one or more {{output:LabelName}}
+//    placeholders. Each placeholder resolves to a temp-dir path for that
+//    declared output. The SQL is executed as a batch — author writes the
+//    COPY statements themselves, one per output.
+//
+// 2. Single-output legacy: the SQL is a bare SELECT (no {{output:...}}
+//    placeholders). It is wrapped in COPY (...) TO 'path' and written to the
+//    one declared output. Requires exactly one entry in `output_labels`.
 
 pub fn run_transform(
-    file_path: &Path,
+    file_paths: &HashMap<String, String>,
     sql_content: &str,
-    output_label: &str,
+    output_labels: &[String],
+    notices: &[NoticeInput<'_>],
 ) -> Result<TransformResult, AppError> {
+    if output_labels.is_empty() {
+        return Err(AppError::SqlError(
+            "Transform has no declared outputs".to_string(),
+        ));
+    }
+    if file_paths.is_empty() {
+        return Err(AppError::SqlError(
+            "Transform was called with no input files".to_string(),
+        ));
+    }
+
     let conn = Connection::open_in_memory()
         .map_err(|e| AppError::SqlError(e.to_string()))?;
 
-    // Replace the placeholder with the actual file path
     // Forward slashes work on all platforms including Windows in DuckDB
-    let file_str = file_path.to_string_lossy().replace('\\', "/");
-    let sql = sql_content.replace("{{input_file}}", &file_str);
+    let normalized: HashMap<&str, String> = file_paths
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.replace('\\', "/")))
+        .collect();
 
-    // Write to system temp dir so the input folder stays clean
+    // Assign a temp-dir path per output label up front so we can substitute
+    // {{output:Label}} placeholders and remember which path belongs to which.
     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-    let output_filename = format!(
-        "{}_{}.csv",
-        output_label.to_lowercase().replace(' ', "_"),
-        timestamp
-    );
-    let output_path: PathBuf = std::env::temp_dir().join(&output_filename);
+    let outputs: Vec<(String, PathBuf)> = output_labels
+        .iter()
+        .map(|label| {
+            let filename = format!(
+                "{}_{}.csv",
+                label.to_lowercase().replace(' ', "_"),
+                timestamp
+            );
+            (label.clone(), std::env::temp_dir().join(filename))
+        })
+        .collect();
 
-    let output_str = output_path.to_string_lossy().replace('\\', "/");
+    // Resolve {{input:Label}} placeholders first, then the legacy
+    // {{input_file}} alias, then each {{output:Label}}.
+    let mut sql = sql_content.to_string();
+    for (label, path) in &normalized {
+        let placeholder = format!("{{{{input:{}}}}}", label);
+        sql = sql.replace(&placeholder, path);
+    }
+    if sql.contains("{{input_file}}") {
+        if normalized.len() != 1 {
+            return Err(AppError::SqlError(format!(
+                "SQL uses {{{{input_file}}}} but transform has {} inputs. \
+                 Use {{{{input:Label}}}} placeholders to disambiguate.",
+                normalized.len()
+            )));
+        }
+        let only_path = normalized.values().next().unwrap();
+        sql = sql.replace("{{input_file}}", only_path);
+    }
+    let mut multi_output_mode = false;
+    for (label, path) in &outputs {
+        let placeholder = format!("{{{{output:{}}}}}", label);
+        if sql.contains(&placeholder) {
+            multi_output_mode = true;
+            let path_str = path.to_string_lossy().replace('\\', "/");
+            sql = sql.replace(&placeholder, &path_str);
+        }
+    }
 
-    // Execute the transform and write directly to CSV via DuckDB COPY
-    let copy_sql = format!(
-        "COPY ({}) TO '{}' (HEADER, DELIMITER ',')",
-        sql.trim().trim_end_matches(';').trim(),
-        output_str
-    );
+    if multi_output_mode {
+        // The author wrote the COPY statements themselves — execute as-is.
+        conn.execute_batch(&sql)
+            .map_err(|e| AppError::SqlError(format!("Transform failed: {}", e)))?;
+    } else {
+        // Legacy single-output: wrap the SELECT in a COPY to the lone output.
+        if outputs.len() != 1 {
+            return Err(AppError::SqlError(format!(
+                "Transform declares {} outputs but SQL contains no {{{{output:Label}}}} placeholders. \
+                 Either declare exactly one output or add {{{{output:Label}}}} placeholders to the SQL.",
+                outputs.len()
+            )));
+        }
+        let output_str = outputs[0].1.to_string_lossy().replace('\\', "/");
+        let copy_sql = format!(
+            "COPY ({}) TO '{}' (HEADER, DELIMITER ',')",
+            sql.trim().trim_end_matches(';').trim(),
+            output_str
+        );
+        conn.execute_batch(&copy_sql)
+            .map_err(|e| AppError::SqlError(format!("Transform failed: {}", e)))?;
+    }
 
-    conn.execute_batch(&copy_sql)
-        .map_err(|e| AppError::SqlError(format!("Transform failed: {}", e)))?;
+    // Tally each declared output. A missing file in multi-output mode means
+    // the author's SQL didn't actually write to that placeholder — surface
+    // that as an error rather than silently returning a 0-row entry.
+    let mut output_files: Vec<OutputFile> = Vec::with_capacity(outputs.len());
+    for (label, path) in &outputs {
+        if !path.exists() {
+            return Err(AppError::SqlError(format!(
+                "Output '{}' was declared but the SQL did not write to it (expected {{{{output:{}}}}})",
+                label, label
+            )));
+        }
+        let path_str = path.to_string_lossy().replace('\\', "/");
+        let count_sql = format!("SELECT COUNT(*) FROM read_csv_auto('{}')", path_str);
+        let row_count: usize = conn
+            .query_row(&count_sql, [], |r| r.get::<_, i64>(0))
+            .map(|n| n as usize)
+            .unwrap_or(0);
+        output_files.push(OutputFile {
+            label: label.clone(),
+            path: path.to_string_lossy().to_string(),
+            row_count,
+        });
+    }
 
-    // Count output rows
-    let count_sql = format!("SELECT COUNT(*) FROM read_csv_auto('{}')", output_str);
-    let row_count: usize = conn
-        .query_row(&count_sql, [], |r| r.get::<_, i64>(0))
-        .map(|n| n as usize)
-        .unwrap_or(0);
+    // Run any attached notice queries against the same inputs. Notices are
+    // informational — empty result set means nothing to surface. We discard
+    // notices whose own query errors out (logged via the error string in the
+    // label) rather than failing the whole transform.
+    let notice_results: Vec<Notice> = notices
+        .iter()
+        .map(|n| run_notice(&conn, n, &normalized))
+        .collect();
 
     Ok(TransformResult {
-        output_path: output_path.to_string_lossy().to_string(),
-        row_count,
+        outputs: output_files,
+        notices: notice_results,
     })
+}
+
+// ── run_notice ────────────────────────────────────────────────────────────────
+// Executes a single notice query and returns the rows as plain strings.
+// Notices are wrapped in `SELECT CAST(col AS VARCHAR)` so every value can be
+// read as a String regardless of the underlying DuckDB column type — keeps
+// the serialization to the frontend uniform.
+
+fn run_notice(
+    conn: &Connection,
+    n: &NoticeInput<'_>,
+    file_paths: &HashMap<&str, String>,
+) -> Notice {
+    let mut user_sql = n.sql_content.to_string();
+    for (label, path) in file_paths {
+        let placeholder = format!("{{{{input:{}}}}}", label);
+        user_sql = user_sql.replace(&placeholder, path);
+    }
+    if user_sql.contains("{{input_file}}") && file_paths.len() == 1 {
+        let only_path = file_paths.values().next().unwrap();
+        user_sql = user_sql.replace("{{input_file}}", only_path);
+    }
+    let trimmed = user_sql.trim().trim_end_matches(';').trim();
+
+    // Phase 1: discover the column names returned by the user's query.
+    let describe_sql = format!("DESCRIBE {}", trimmed);
+    let columns: Vec<String> = match conn.prepare(&describe_sql) {
+        Ok(mut stmt) => stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map(|iter| iter.filter_map(|r| r.ok()).collect())
+            .unwrap_or_default(),
+        Err(e) => {
+            return Notice {
+                label: n.label.to_string(),
+                description: n.description.map(|s| s.to_string()),
+                columns: vec!["Error".to_string()],
+                rows: vec![vec![format!("Notice query failed: {}", e)]],
+            };
+        }
+    };
+
+    if columns.is_empty() {
+        return Notice {
+            label: n.label.to_string(),
+            description: n.description.map(|s| s.to_string()),
+            columns: vec![],
+            rows: vec![],
+        };
+    }
+
+    // Phase 2: re-issue the query wrapped in a CAST-to-VARCHAR projection so
+    // every cell deserializes as a String.
+    let cast_list = columns
+        .iter()
+        .map(|c| format!("CAST(\"{}\" AS VARCHAR) AS \"{}\"", c, c))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let wrapped = format!("SELECT {} FROM ({}) _notice", cast_list, trimmed);
+
+    let rows: Vec<Vec<String>> = match conn.prepare(&wrapped) {
+        Ok(mut stmt) => {
+            let col_count = columns.len();
+            stmt.query_map([], |row| {
+                let mut data: Vec<String> = Vec::with_capacity(col_count);
+                for i in 0..col_count {
+                    let v: Option<String> = row.get(i).unwrap_or(None);
+                    data.push(v.unwrap_or_default());
+                }
+                Ok(data)
+            })
+            .map(|iter| iter.filter_map(|r| r.ok()).collect())
+            .unwrap_or_default()
+        }
+        Err(e) => vec![vec![format!("Notice query failed: {}", e)]],
+    };
+
+    Notice {
+        label: n.label.to_string(),
+        description: n.description.map(|s| s.to_string()),
+        columns,
+        rows,
+    }
 }

@@ -1,24 +1,20 @@
 ---
-id: test1
-name: Simple Import
-version: 1.0.0
+id: test2
+name: Multi-File Vendor Import
+version: 2.0.0
 min_app_version: 0.1.0
 
 inputs:
-  - label: Classification
+  - label: Inventory
     type: csv
     required: true
     validation:
-      - label: ID
+      - label: 'Item #'
         required: true
         type: number
-        digits: 5
+        digits: 6
 
-      - label: name
-        required: true
-        type: string
-
-      - label: class
+      - label: Category
         required: true
         type: string
         value:
@@ -26,28 +22,81 @@ inputs:
           - Beta
           - Gamma
 
-      - label: subclass
-        required: false
+  - label: Pricing
+    type: xlsx
+    required: true
+    validation:
+      - label: SKU
+        required: true
         type: string
 
+      - label: Price
+        required: true
+        type: number
+
+  - label: Categories
+    type: csv
+    required: false
+    validation:
+      - label: Category
+        required: true
+        type: string
+
+      - label: Description
+        required: true
+        type: string
+
+
 outputs:
-  - label: Update_Records
+  - label: Inventory_Import
+    type: csv
+
+  - label: Pricing_Update
+    type: csv
+
+  - label: Audit_Log
     type: csv
 
 steps:
-  - label: AddSourceFiles
+  - label: UploadVendorX
     type: file_input
     input:
-      - label: Classification
+      - label: Inventory
+        validate: true
+      - label: Categories
+        validate: false
+
+  - label: BuildOutputs
+    type: sql_transform
+    transforms:
+      - input:
+          - Inventory
+          - Categories
+        sql: inventory.sql
+        output:
+          - Inventory_Import
+
+  - label: ImportFiles
+    type: manual_instruction
+
+  - label: UploadPricing
+    type: file_input
+    input:
+      - label: Pricing
         validate: true
 
-  - label: CreateImportFile
+  - label: PricingCheck
     type: sql_transform
-    input:
-      - Classification
-    sql: primary_transform.sql
-    output:
-      - Update_Records
+    transforms:
+      - input:
+          - Pricing
+        sql: pricing.sql
+        output:
+          - Pricing_Update
 
-  - label: Import
-    type: manual_instruction
+      - input:
+          - Categories
+          - Pricing
+        sql: audit.sql
+        output:
+          - Audit_Log

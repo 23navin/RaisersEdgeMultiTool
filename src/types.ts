@@ -20,7 +20,7 @@ export type ProfileSummary = {
 export type ColumnValidation = {
   label: string;
   required: boolean;
-  col_type: string;        // "string" | "number"
+  type: string;            // "string" | "number"
   digits?: number;         // only for number columns
   value?: string[];        // allowed values if restricted e.g. ["Alpha", "Beta", "Gamma"]
 };
@@ -44,12 +44,77 @@ export type StepInputRef =
   | string
   | { label: string; validate?: boolean };
 
+// A notice query attached to a sql_transform. Runs after the main transform
+// succeeds; returned rows are surfaced as informational items (NOT errors)
+// that the user may need to address externally before moving on.
+// The SQL is expected to return zero rows in the nominal case and one row
+// per item-needing-attention otherwise. Column headers from the result set
+// drive the displayed table columns.
+export type NoticeQuery = {
+  label: string;            // shown as the notice heading
+  sql: string;              // filename inside the bundle's sql/ folder
+  description?: string;     // optional sub-heading prose
+};
+
+// One transform unit inside a sql_transform step. A step can contain one
+// (use the step-level input/sql/output fields) or many (use the transforms
+// array). When `transforms` is present, the step-level fields are ignored.
+export type SqlTransform = {
+  input?: StepInputRef[];
+  sql: string;
+  output?: string[];
+  notices?: NoticeQuery[];
+};
+
 export type Step = {
   label: string;
-  type: string;            // "file_input" | "validation" | "sql_transform" | "manual_instruction"
-  input?: StepInputRef[];
-  sql?: string;            // filename inside sql/ folder
-  output?: string[];
+  type: string;            // "file_input" | "sql_transform" | "manual_instruction"
+  input?: StepInputRef[];  // file_input: one upload row per entry. sql_transform: single-transform shortcut.
+  sql?: string;            // sql_transform single-transform shortcut
+  output?: string[];       // sql_transform single-transform shortcut
+  notices?: NoticeQuery[]; // sql_transform single-transform shortcut
+  transforms?: SqlTransform[]; // sql_transform multi-transform form
+};
+
+// One row in a file_input step's validation-errors table. Most fields are
+// optional because the backend currently aggregates per-column (e.g. "3 nulls
+// in column X") rather than enumerating offending rows.
+export type ValidationError = {
+  row?: number;
+  column?: string;
+  value?: string;
+  message: string;
+};
+
+// One row in a sql_transform's SQL/DuckDB error table.
+export type SqlError = {
+  line?: number;
+  errorType: string;   // "Parser" | "Binder" | "Runtime" | etc.
+  message: string;
+};
+
+// A populated notice returned from the backend after running a NoticeQuery.
+// `columns` are the header names from the SQL result set, in order.
+// `rows` are the data rows (each cell stringified for display).
+export type Notice = {
+  label: string;
+  description?: string;
+  columns: string[];
+  rows: string[][];
+};
+
+// One file emitted by a sql_transform. A transform can produce many of these
+// when its SQL uses {{output:Label}} placeholders, one per declared output.
+export type OutputFile = {
+  label: string;
+  path: string;
+  row_count: number;
+};
+
+// Result returned by run_profile — mirrors db::TransformResult in Rust.
+export type TransformResult = {
+  outputs: OutputFile[];
+  notices: Notice[];
 };
 
 export type ProfileStructure = {
@@ -72,28 +137,3 @@ export type LoadedProfile = {
   temp_dir: string;
 };
 
-// ── App state types ───────────────────────────────────────────────────────────
-// Not from Rust — used internally by the frontend to track workflow state
-
-export type StepStatus =
-  | "pending"      // not reached yet
-  | "active"       // current step
-  | "complete"     // finished successfully
-  | "error";       // something went wrong
-
-export type FileAttachment = {
-  inputLabel: string;    // matches InputDefinition.label e.g. "Classification"
-  filePath: string;      // absolute path on disk
-  validated: boolean;
-  validationErrors: string[];
-};
-
-export type AppState = {
-  profiles: ProfileSummary[];
-  selectedProfile: ProfileSummary | null;
-  loadedProfile: LoadedProfile | null;
-  currentStepIndex: number;
-  stepStatuses: Record<string, StepStatus>;  // step label → status
-  attachedFiles: Record<string, FileAttachment>; // inputLabel → attachment
-  outputPaths: Record<string, string>;       // outputLabel → file path
-};

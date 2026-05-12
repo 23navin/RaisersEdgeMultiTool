@@ -1,0 +1,6 @@
+item_id,category,category_description,priority
+100001,Alpha,Primary fasteners,1
+100004,Alpha,Primary fasteners,1
+100002,Beta,Secondary fasteners,2
+100005,Beta,Secondary fasteners,2
+100003,Gamma,Specialty hardware,3

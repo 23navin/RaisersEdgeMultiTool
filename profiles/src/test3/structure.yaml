@@ -1,0 +1,56 @@
+---
+id: test3
+name: Catalog Import (with notices)
+version: 1.0.0
+min_app_version: 0.1.0
+
+inputs:
+  - label: Catalog
+    type: csv
+    required: true
+    validation:
+      - label: SKU
+        required: true
+        type: string
+
+      - label: Category
+        required: true
+        type: string
+
+      - label: Unit
+        required: true
+        type: string
+
+outputs:
+  - label: Catalog_Import
+    type: csv
+
+steps:
+  - label: UploadCatalog
+    type: file_input
+    input:
+      - label: Catalog
+        validate: true
+
+  - label: BuildCatalog
+    type: sql_transform
+    input:
+      - Catalog
+    sql: catalog.sql
+    output:
+      - Catalog_Import
+    notices:
+      - label: Unrecognized Categories
+        sql: notices/unknown_categories.sql
+        description: >-
+          These category values aren't in the master list. Add them in the
+          Catalog Admin tool before importing.
+
+      - label: Unit-of-Measure Changes
+        sql: notices/unit_changes.sql
+        description: >-
+          These SKUs have a different unit of measure than the last import.
+          Confirm with the buyer before proceeding.
+
+  - label: Import
+    type: manual_instruction

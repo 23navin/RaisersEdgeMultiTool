@@ -57,11 +57,18 @@ import-tool/
 ├── src/                          # FRONTEND — React app
 │   ├── main.tsx                  # React entry point
 │   ├── types.ts                  # Shared TypeScript types — mirrors Rust structs exactly
-│   ├── App.tsx                   # Root component — all shared state + all invoke() calls except step actions
+│   ├── App.tsx                   # Root component — all shared state + all invoke() calls
+│   ├── lib/
+│   │   └── utils.ts              # cn() helper for Tailwind class composition
 │   └── components/
-│       ├── ProfilePicker.tsx     # Profile dropdown
-│       ├── StepPanel.tsx         # Active step UI (file_input / validation / sql_transform / manual_instruction)
-│       └── InstructionsPanel.tsx # Right sidebar — renders step markdown instructions
+│       ├── Titlebar.tsx          # Top window chrome
+│       ├── Sidebar.tsx           # Profile picker + step progress list
+│       ├── MainPanel.tsx         # Renders one section per step from the loaded profile
+│       ├── steps/
+│       │   ├── StepSelectFiles.tsx   # file_input step rendering
+│       │   ├── StepGenerateFile.tsx  # sql_transform step rendering
+│       │   └── StepImport.tsx        # manual_instruction step rendering
+│       └── ui/                   # Shadcn primitives (button, popover, command)
 │
 ├── src-tauri/                    # BACKEND — Rust binary
 │   ├── Cargo.toml                # Rust dependencies
@@ -73,21 +80,29 @@ import-tool/
 │       └── errors.rs             # Shared AppError enum
 │
 └── profiles/                     # PROFILE BUNDLES — not compiled in, ship alongside exe
-    └── vendor_name.import        # zip archive containing structure.yaml, instructions.md, sql/
+    ├── src/<name>/               # Source folder per profile — structure.yaml, instructions.md, sql/, optional test-files/
+    ├── build.sh                  # Repacks each src/<name>/ into <name>.import
+    └── <name>.import             # zip archive consumed by the running app
 ```
 
 ---
 
-## The Four Backend Commands
+## The Five Backend Commands
 
 Every command must be registered in `main.rs` inside `generate_handler![]` or `invoke()` fails silently.
 
 | Command | Called from | Args | Returns |
 |---|---|---|---|
-| `list_profiles` | `App.tsx` on mount | `profilesDir` | `ProfileSummary[]` |
+| `list_profiles` | `App.tsx` on mount | _(none)_ — derives path from `CARGO_MANIFEST_DIR` (dev) or `current_exe` (release) | `ProfileSummary[]` |
 | `load_profile` | `App.tsx` on profile select | `zipPath` | `LoadedProfile` |
-| `validate_file` | `StepPanel.tsx` on validation step | `filePath`, `profileId`, `inputLabel`, `zipPath` | `ValidationResult` |
-| `run_profile` | `StepPanel.tsx` on sql_transform step | `filePath`, `sqlFile`, `zipPath`, `outputLabel` | `TransformResult` |
+| `validate_file` | `App.tsx` on validate click | `filePath`, `inputLabel`, `zipPath` | `ValidationResult` |
+| `run_profile` | `App.tsx` on generate click | `filePaths` (map of input label → file path), `sqlFile`, `zipPath`, `outputLabels` | `TransformResult` |
+| `save_output` | `App.tsx` on download click | `srcPath`, `destPath` | `void` |
+
+`zipPath` for `validate_file` and `run_profile` is actually the extracted temp dir
+from `loadedProfile.temp_dir`, not the original `.import` zip. Naming kept for
+backwards compatibility — the backend re-reads `structure.yaml` and SQL files from
+that directory.
 
 ---
 
@@ -124,9 +139,6 @@ outputs:
 steps:
   - label: Upload File
     type: file_input
-    input: ["Classification"]
-  - label: Validate
-    type: validation
     input:
       - label: Classification
         validate: true
@@ -137,9 +149,27 @@ steps:
     output: ["Import File"]
 ```
 
-SQL files use `{{input_file}}` as a placeholder — replaced at runtime. DuckDB reads files directly:
-- `read_csv_auto('{{input_file}}')` for CSV
-- `read_xlsx('{{input_file}}')` for Excel
+Step types supported: `file_input`, `sql_transform`, `manual_instruction`.
+Validation is not its own step type — it's a per-row checkbox inside a
+`file_input` step.
+
+`sql_transform` steps can declare multiple transforms via a `transforms:` array
+(each entry has its own `input`, `sql`, `output`, optional `notices`), or use
+the step-level `input`/`sql`/`output` shortcut for a single transform.
+
+### SQL placeholders
+
+DuckDB reads input files directly via `read_csv_auto(...)` or `read_xlsx(...)`.
+Three placeholder forms are substituted at runtime:
+
+- `{{input:Label}}` — resolves to the path of the input with that label.
+  Required when the transform declares multiple inputs.
+- `{{input_file}}` — legacy single-input alias. Only valid when the transform
+  has exactly one input; otherwise the run errors out.
+- `{{output:Label}}` — resolves to a temp-dir path for the declared output.
+  When present, the SQL author writes their own `COPY (...) TO '{{output:X}}'`
+  statements (multi-output mode). When absent, the SQL is treated as a bare
+  `SELECT` and wrapped in a `COPY` to the single declared output.
 
 Column names with spaces, `#`, `/` etc. must be double-quoted in SQL: `"Item #"`.
 
@@ -147,20 +177,28 @@ Column names with spaces, `#`, `/` etc. must be double-quoted in SQL: `"Item #"`
 
 ## Frontend State Architecture
 
-`App.tsx` owns all shared state (`AppState` from `types.ts`) and is the **only** place that calls
-`list_profiles` and `load_profile`. Child components receive data and callbacks as props.
+`App.tsx` owns all shared state (`files`, `generations`, `selectedProfile`) and
+is the **only** place that calls `invoke()`. Handlers (`handleFileSelect`,
+`handleValidate`, `handleGenerate`, `handleDownload`, `handleSelectProfile`)
+live in `App.tsx` and are passed down as props.
 
-`StepPanel.tsx` is the exception — it calls `validate_file` and `run_profile` directly, then
-reports results up via `onStepComplete`, `onStepError`, and `onOutputReady` callbacks.
+Render hierarchy:
+- `App.tsx` → `Titlebar` + `Sidebar` + `MainPanel`
+- `MainPanel` iterates `loadedProfile.structure.steps` and dispatches each to
+  the matching step component:
+  - `steps/StepSelectFiles.tsx` for `file_input` — one row per declared input,
+    each with Upload + filename pill + Validate button. Inline error table
+    when validation fails.
+  - `steps/StepGenerateFile.tsx` for `sql_transform` — pipeline diagram
+    (inputs → DB → outputs) + Generate button + progress bar + per-output
+    Download buttons. Renders one pipeline per transform when the step has a
+    `transforms:` array.
+  - `steps/StepImport.tsx` for `manual_instruction` — renders the markdown
+    body with image assets resolved against `loadedProfile.temp_dir`.
 
-Step types and what `StepPanel` renders for each:
-- `file_input` — native file picker (Tauri dialog plugin), per-input attach buttons
-- `validation` — calls `validate_file`, shows column-level errors
-- `sql_transform` — calls `run_profile`, shows output file path and row count
-- `manual_instruction` — no app action, just a "Mark Complete" button
-
-The `loadedProfile.temp_dir` (where the zip was extracted) is threaded through to `StepPanel`
-and passed back to `validate_file` and `run_profile` so Rust can re-read validation rules and SQL.
+The `loadedProfile.temp_dir` is threaded through `MainPanel` to each step
+component and passed back to `validate_file` and `run_profile` so Rust can
+re-read validation rules and SQL.
 
 ---
 
@@ -203,7 +241,8 @@ and passed back to `validate_file` and `run_profile` so Rust can re-read validat
 - **Windows path backslash in SQL?** → Replace `\` with `/` in `db.rs` before string substitution
 - **Excel header not on row 1?** → Add `OFFSET 1` or use a CTE in the profile SQL
 - **State read too early?** → Use the value returned by the setter callback, not the stale state variable
-- **`validate_file` uses `zipPath` not a temp dir path** → The backend re-extracts from the original zip path
+- **`validate_file` / `run_profile` `zipPath` arg is the extracted temp dir, not the .import zip** → naming is misleading; the backend reads `structure.yaml` and SQL straight from that directory
+- **`{{input_file}}` errors in a multi-input transform** → use `{{input:Label}}` placeholders to disambiguate, one per declared input
 
 ---
 

@@ -1,0 +1,53 @@
+---
+id: test1
+name: Simple Import
+version: 1.0.0
+min_app_version: 0.1.0
+
+inputs:
+  - label: Classification
+    type: csv
+    required: true
+    validation:
+      - label: ID
+        required: true
+        type: number
+        digits: 5
+
+      - label: name
+        required: true
+        type: string
+
+      - label: class
+        required: true
+        type: string
+        value:
+          - Alpha
+          - Beta
+          - Gamma
+
+      - label: subclass
+        required: false
+        type: string
+
+outputs:
+  - label: Update_Records
+    type: csv
+
+steps:
+  - label: AddSourceFiles
+    type: file_input
+    input:
+      - label: Classification
+        validate: true
+
+  - label: CreateImportFile
+    type: sql_transform
+    input:
+      - Classification
+    sql: primary_transform.sql
+    output:
+      - Update_Records
+
+  - label: Import
+    type: manual_instruction

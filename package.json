@@ -16,6 +16,7 @@
     "@tauri-apps/plugin-opener": "^2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
     "internal-ip": "^9.0.0",
     "js-yaml": "^4.1.1",
     "lucide-react": "^1.14.0",

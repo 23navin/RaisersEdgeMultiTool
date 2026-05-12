@@ -1,0 +1,53 @@
+---
+id: test4
+name: Order Export (multi-output)
+version: 1.0.0
+min_app_version: 0.1.0
+
+inputs:
+  - label: Orders
+    type: csv
+    required: true
+    validation:
+      - label: 'Order #'
+        required: true
+        type: number
+        digits: 8
+
+      - label: Status
+        required: true
+        type: string
+        value:
+          - Shipped
+          - Pending
+          - Cancelled
+
+outputs:
+  - label: Shipped_Orders
+    type: csv
+
+  - label: Pending_Orders
+    type: csv
+
+  - label: Cancelled_Orders
+    type: csv
+
+steps:
+  - label: UploadOrders
+    type: file_input
+    input:
+      - label: Orders
+        validate: true
+
+  - label: SplitOrders
+    type: sql_transform
+    input:
+      - Orders
+    sql: split_orders.sql
+    output:
+      - Shipped_Orders
+      - Pending_Orders
+      - Cancelled_Orders
+
+  - label: Import
+    type: manual_instruction

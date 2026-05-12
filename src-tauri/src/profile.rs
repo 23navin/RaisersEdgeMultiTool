@@ -20,14 +20,6 @@ use crate::errors::AppError;
 // Every field name must match the YAML key, or use #[serde(rename = "...")]
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct ProfileMeta {
-    pub id: String,
-    pub name: String,
-    pub version: String,
-    pub min_app_version: String,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ColumnValidation {
     pub label: String,
     pub required: bool,
@@ -69,14 +61,37 @@ pub enum StepInputRef {
     Detailed(StepInput),
 }
 
+// A notice query attached to a sql_transform. Runs after the main transform
+// succeeds; returned rows become informational items the user needs to
+// address externally (e.g. "this category isn't in the master list").
+// SQL filename resolves against the bundle's sql/ folder.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct NoticeQuery {
+    pub label: String,
+    pub sql: String,
+    pub description: Option<String>,
+}
+
+// One transform unit inside a sql_transform step. Use the step-level
+// input/sql/output for a single transform; use `transforms` for multiple.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct SqlTransform {
+    pub input: Option<Vec<StepInputRef>>,
+    pub sql: String,
+    pub output: Option<Vec<String>>,
+    pub notices: Option<Vec<NoticeQuery>>,
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Step {
     pub label: String,
     #[serde(rename = "type")]
-    pub step_type: String,       // "file_input", "validation", "sql_transform"
+    pub step_type: String,       // "file_input", "sql_transform", "manual_instruction"
     pub input: Option<Vec<StepInputRef>>,
-    pub sql: Option<String>,     // filename inside sql/ folder
-    pub output: Option<Vec<String>>,
+    pub sql: Option<String>,     // sql_transform single-transform shortcut
+    pub output: Option<Vec<String>>, // sql_transform single-transform shortcut
+    pub notices: Option<Vec<NoticeQuery>>, // sql_transform single-transform shortcut
+    pub transforms: Option<Vec<SqlTransform>>, // sql_transform multi-transform form
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -212,22 +227,14 @@ pub fn load_from_dir(dir: &Path) -> Result<LoadedProfile, AppError> {
         HashMap::new()
     };
 
-    // Read all .sql files from the sql/ folder
+    // Read all .sql files from the sql/ folder. Walks subdirectories so
+    // notice queries under sql/notices/ are picked up. Keys are paths
+    // relative to sql_dir with forward slashes, matching how YAML
+    // references them (e.g. "notices/unknown_categories.sql").
     let mut sql_files: HashMap<String, String> = HashMap::new();
     let sql_dir = dir.join("sql");
     if sql_dir.exists() {
-        for entry in fs::read_dir(&sql_dir)
-            .map_err(|e| AppError::IoError(e.to_string()))?
-        {
-            let entry = entry.map_err(|e| AppError::IoError(e.to_string()))?;
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("sql") {
-                let filename = path.file_name().unwrap().to_string_lossy().to_string();
-                let content = fs::read_to_string(&path)
-                    .map_err(|e| AppError::IoError(format!("Cannot read {}: {}", filename, e)))?;
-                sql_files.insert(filename, content);
-            }
-        }
+        collect_sql_files(&sql_dir, &sql_dir, &mut sql_files)?;
     }
 
     Ok(LoadedProfile {
@@ -236,6 +243,30 @@ pub fn load_from_dir(dir: &Path) -> Result<LoadedProfile, AppError> {
         sql_files,
         temp_dir: dir.to_path_buf(),
     })
+}
+
+fn collect_sql_files(
+    root: &Path,
+    dir: &Path,
+    out: &mut HashMap<String, String>,
+) -> Result<(), AppError> {
+    for entry in fs::read_dir(dir).map_err(|e| AppError::IoError(e.to_string()))? {
+        let entry = entry.map_err(|e| AppError::IoError(e.to_string()))?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_sql_files(root, &path, out)?;
+        } else if path.extension().and_then(|e| e.to_str()) == Some("sql") {
+            let rel = path
+                .strip_prefix(root)
+                .map_err(|e| AppError::IoError(e.to_string()))?
+                .to_string_lossy()
+                .replace('\\', "/");
+            let content = fs::read_to_string(&path)
+                .map_err(|e| AppError::IoError(format!("Cannot read {}: {}", rel, e)))?;
+            out.insert(rel, content);
+        }
+    }
+    Ok(())
 }
 
 // ── Profile listing ───────────────────────────────────────────────────────────
@@ -294,6 +325,8 @@ pub fn list_profiles(profiles_dir: &Path) -> Result<Vec<ProfileSummary>, AppErro
             zip_path: path.to_string_lossy().to_string(),
         });
     }
+
+    profiles.sort_by(|a, b| a.id.cmp(&b.id));
 
     Ok(profiles)
 }
