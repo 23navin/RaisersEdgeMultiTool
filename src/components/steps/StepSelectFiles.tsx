@@ -31,7 +31,7 @@ function renderInlineMd(text: string) {
       return (
         <code
           key={i}
-          className="font-mono text-[12px] bg-neutral-100 px-[5px] py-[1px] rounded border border-neutral-200"
+          className="font-mono text-[12px] bg-neutral-100 px-[5px] py-[1px] border border-neutral-200"
         >
           {part.slice(1, -1)}
         </code>
@@ -56,20 +56,21 @@ export function StepSelectFiles({
   const validateDisabled = fileStatus === "none";
 
   const baseBtn =
-    "rounded-[10px] h-[32px] px-[14px] text-[13px] font-medium border-0 shadow-none active:translate-y-0";
-  const activeBtn = "bg-[#1a1a1a] hover:bg-[#2a2a2a] text-white";
+    "rounded-none h-[32px] px-[14px] text-[13px] font-medium border-0 shadow-none transform-gpu";
+  const activeBtn =
+    "bg-[#1a1a1a] hover:bg-[#2a2a2a] text-white cursor-pointer";
   const doneBtn =
-    "bg-[#e0ddd8] hover:bg-[#e0ddd8] text-neutral-500 disabled:opacity-100";
+    "bg-[#e0ddd8] hover:bg-[#d4d0c9] text-neutral-500 hover:text-neutral-700 disabled:opacity-100 cursor-pointer";
   const notReadyBtn =
-    "bg-neutral-200 hover:bg-neutral-200 text-neutral-400 disabled:opacity-100";
+    "bg-neutral-200 hover:bg-neutral-200 text-neutral-400 disabled:opacity-100 cursor-not-allowed";
 
   const uploadBtnStyle = fileStatus === "none" ? activeBtn : doneBtn;
 
   const validateVisual =
     fileStatus === "valid"
-      ? { className: "bg-[#bbf7d0] hover:bg-[#bbf7d0] text-[#15803d] disabled:opacity-100", Icon: CheckIcon }
+      ? { className: "bg-[#bbf7d0] hover:bg-[#a7ebbf] text-[#15803d] disabled:opacity-100 cursor-pointer", Icon: CheckIcon }
       : fileStatus === "invalid"
-      ? { className: "bg-[#fecaca] hover:bg-[#fecaca] text-[#b91c1c] disabled:opacity-100", Icon: XIcon }
+      ? { className: "bg-[#fecaca] hover:bg-[#f9b9b9] text-[#b91c1c] disabled:opacity-100 cursor-pointer", Icon: XIcon }
       : fileStatus === "pending"
       ? { className: activeBtn, Icon: ListChecksIcon }
       : { className: notReadyBtn, Icon: ListChecksIcon };
@@ -89,7 +90,7 @@ export function StepSelectFiles({
           {renderInlineMd(description)}
         </p>
       )}
-      <div className="bg-neutral-100 rounded-xl px-[12px] py-[8px]">
+      <div className="bg-neutral-100 px-[12px] py-[8px]">
         <div className="flex items-center gap-[8px]">
           <span className="text-[12px] font-medium text-neutral-900 whitespace-nowrap">
             {inputLabel}
@@ -106,7 +107,7 @@ export function StepSelectFiles({
 
           <div
             className={
-              "flex-1 h-[28px] flex items-center px-[9px] rounded-md border font-mono text-[12px] overflow-hidden text-ellipsis whitespace-nowrap bg-white " +
+              "flex-1 h-[28px] flex items-center px-[9px] border font-mono text-[12px] overflow-hidden text-ellipsis whitespace-nowrap bg-white " +
               (fileName
                 ? "border-neutral-300 text-neutral-900"
                 : "border-neutral-200 text-neutral-400")

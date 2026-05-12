@@ -27,7 +27,7 @@ type Props = {
 
 function PipeNode({ icon: Icon, label }: { icon: LucideIcon; label: string }) {
   return (
-    <div className="inline-flex items-center gap-[5px] px-[10px] py-[4px] rounded-md text-neutral-500 text-[11px] whitespace-nowrap">
+    <div className="inline-flex items-center gap-[5px] px-[10px] py-[4px] text-neutral-500 text-[11px] whitespace-nowrap">
       <Icon size={12} />
       <span className="overflow-hidden text-ellipsis">{label}</span>
     </div>
@@ -63,12 +63,13 @@ export function StepGenerateFile({
     generateStatus === "done" ? "bg-green-500" : "bg-neutral-400";
 
   const baseBtn =
-    "rounded-[10px] h-[32px] px-[14px] text-[13px] font-medium border-0 shadow-none active:translate-y-0";
-  const activeBtn = "bg-[#1a1a1a] hover:bg-[#2a2a2a] text-white";
+    "rounded-none h-[32px] px-[14px] text-[13px] font-medium border-0 shadow-none transform-gpu";
+  const activeBtn =
+    "bg-[#1a1a1a] hover:bg-[#2a2a2a] text-white cursor-pointer";
   const doneBtn =
-    "bg-[#e0ddd8] hover:bg-[#e0ddd8] text-neutral-500 disabled:opacity-100";
+    "bg-[#e0ddd8] hover:bg-[#d4d0c9] text-neutral-500 hover:text-neutral-700 disabled:opacity-100 cursor-pointer";
   const notReadyBtn =
-    "bg-neutral-200 hover:bg-neutral-200 text-neutral-400 disabled:opacity-100";
+    "bg-neutral-200 hover:bg-neutral-200 text-neutral-400 disabled:opacity-100 cursor-not-allowed";
 
   const generateBtnStyle =
     generateStatus === "done"
@@ -81,7 +82,7 @@ export function StepGenerateFile({
     generateStatus === "done" ? activeBtn : notReadyBtn;
 
   return (
-    <div className="bg-neutral-100 rounded-xl px-[12px] py-[10px]">
+    <div className="bg-neutral-100 px-[12px] py-[10px]">
       {/* Pipeline diagram */}
       <div className="flex items-center justify-center w-full mb-[10px]">
         <div className="flex flex-col gap-[5px] shrink-0">
@@ -121,7 +122,7 @@ export function StepGenerateFile({
           Generate
         </Button>
 
-        <div className="flex-1 h-[5px] rounded-full bg-white overflow-hidden">
+        <div className="flex-1 h-[5px] bg-white overflow-hidden">
           <div
             className={`h-full ${fillColor} transition-[width] duration-200`}
             style={{ width: `${generateProgress}%` }}
