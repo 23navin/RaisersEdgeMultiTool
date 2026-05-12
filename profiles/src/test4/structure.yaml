@@ -9,7 +9,7 @@ inputs:
     type: csv
     required: true
     validation:
-      - label: Order #
+      - label: 'Order #'
         required: true
         type: number
         digits: 8

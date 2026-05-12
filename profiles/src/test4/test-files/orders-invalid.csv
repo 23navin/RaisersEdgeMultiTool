@@ -1,0 +1,9 @@
+Order #,Status,Customer,Total
+1,Shipped,Acme Corp,142.5
+2,Pending,Globex,89.99
+3,Shipped,Initech,310
+4,Cancelled,Soylent,55
+4,Pending,Umbrella,200.75
+5,Shipped,Acme Corp,42.25
+6,Cancelled,Globex,17
+1000001A,Pending,Private,162
