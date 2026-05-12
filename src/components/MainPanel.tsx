@@ -55,7 +55,7 @@ function refLabel(ref: StepInputRef): string {
 // Heading row used by every step section.
 function StepHeading({ name, done }: { name: string; done: boolean }) {
   return (
-    <div className="flex items-center justify-between mb-[7px]">
+    <div className="flex items-center gap-[6px] mb-[7px]">
       <h2 className="text-[14px] font-medium text-neutral-900">{name}</h2>
       {done && <CheckIcon size={14} className="text-green-500" />}
     </div>
@@ -104,10 +104,11 @@ export function MainPanel({
 
         {/* Steps */}
         <div className="flex flex-col gap-[20px]">
-          {structure.steps.map((step) => (
+          {structure.steps.map((step, idx) => (
             <StepSection
               key={step.label}
               step={step}
+              stepNumber={idx + 1}
               done={stepsDone[step.label] ?? false}
               structure={structure}
               instructions={instructions}
@@ -131,6 +132,7 @@ export function MainPanel({
 
 type StepSectionProps = Omit<MainPanelProps, "loadedProfile" | "stepsDone"> & {
   step: Step;
+  stepNumber: number;
   done: boolean;
   structure: LoadedProfile["structure"];
   instructions: Record<string, string>;
@@ -139,6 +141,7 @@ type StepSectionProps = Omit<MainPanelProps, "loadedProfile" | "stepsDone"> & {
 
 function StepSection({
   step,
+  stepNumber,
   done,
   structure,
   instructions,
@@ -151,7 +154,7 @@ function StepSection({
   onGenerate,
   onDownload,
 }: StepSectionProps) {
-  const name = stepDisplayName(step.label, instructions);
+  const name = `${stepNumber}. ${stepDisplayName(step.label, instructions)}`;
   const heading = <StepHeading name={name} done={done} />;
 
   switch (step.type) {
@@ -169,7 +172,7 @@ function StepSection({
         };
       });
       return (
-        <section>
+        <section id={`step-${step.label}`} className="scroll-mt-[18px]">
           {heading}
           <StepSelectFiles
             description={stepBody(instructions[step.label])}
@@ -218,7 +221,7 @@ function StepSection({
         };
       });
       return (
-        <section>
+        <section id={`step-${step.label}`} className="scroll-mt-[18px]">
           {heading}
           <StepGenerateFile transforms={transformRows} />
         </section>
@@ -226,7 +229,7 @@ function StepSection({
     }
     case "manual_instruction": {
       return (
-        <section>
+        <section id={`step-${step.label}`} className="scroll-mt-[18px]">
           {heading}
           <StepImport
             markdown={stepBody(instructions[step.label])}

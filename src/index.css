@@ -129,3 +129,35 @@
     }
 }
 
+/* Step heading shimmer — triggered by adding .step-flash to a section
+   when the user clicks its row in the sidebar. A short, single-pass
+   gradient sweep over the heading text, left to right.
+   Gradient is 2x heading width with the highlight band in its center.
+   Position 200% parks the image off the left; -100% off the right;
+   in between, the highlight sweeps across. */
+@keyframes step-shimmer {
+  0%   { background-position:  200% 0; }
+  100% { background-position: -100% 0; }
+}
+
+.step-flash h2 {
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 40%,
+    rgba(250, 204, 21, 0.55) 50%,
+    transparent 60%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  background-position: -100% 0;
+  animation: step-shimmer 0.9s ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .step-flash h2 {
+    animation: none;
+  }
+}
+

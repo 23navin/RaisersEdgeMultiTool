@@ -4,14 +4,23 @@
 // The vertical rule under the step list aligns with the horizontal center
 // of the profile icon above it.
 
-import { FileInputIcon, CheckIcon, RotateCcwIcon } from "lucide-react";
+import { useState } from "react";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "./ui/select";
+  FileInputIcon,
+  CheckIcon,
+  RotateCcwIcon,
+  ChevronsUpDownIcon,
+} from "lucide-react";
+import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
+import {
+  Command,
+  CommandInput,
+  CommandList,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+} from "./ui/command";
+import { cn } from "@/lib/utils";
 import type { LoadedProfile, ProfileSummary } from "../types";
 
 type SidebarProps = {
@@ -40,26 +49,61 @@ export function Sidebar({
   stepsDone,
   onReset,
 }: SidebarProps) {
+  const [open, setOpen] = useState(false);
+  const selected = profiles.find((p) => p.id === selectedProfile);
+
   return (
     <aside className="w-[214px] shrink-0 border-r border-neutral-200 flex flex-col pt-[10px]">
-      {/* Profile select row */}
+      {/* Profile combobox row */}
       <div className="flex items-center gap-[7px] px-[10px] pb-[10px]">
         <FileInputIcon size={16} className="text-neutral-400 shrink-0" />
-        <Select
-          value={selectedProfile ?? undefined}
-          onValueChange={onSelectProfile}
-        >
-          <SelectTrigger className="h-[30px] w-[170px] text-[13px] *:data-[slot=select-value]:block *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:truncate">
-            <SelectValue placeholder="Select profile…" />
-          </SelectTrigger>
-          <SelectContent>
-            {profiles.map((p) => (
-              <SelectItem key={p.id} value={p.id}>
-                {p.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger
+            role="combobox"
+            aria-expanded={open}
+            className="h-[30px] w-[170px] flex items-center justify-between gap-1.5 rounded-lg border border-input bg-transparent px-2.5 text-[13px] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 cursor-pointer hover:bg-neutral-50"
+          >
+            <span
+              className={cn(
+                "min-w-0 truncate",
+                selected ? "text-neutral-900" : "text-neutral-400"
+              )}
+            >
+              {selected?.name ?? "Select profile…"}
+            </span>
+            <ChevronsUpDownIcon className="size-4 shrink-0 opacity-50" />
+          </PopoverTrigger>
+          <PopoverContent className="w-[220px] p-0" align="start">
+            <Command>
+              <CommandInput placeholder="Search profiles…" className="text-[13px]" />
+              <CommandList>
+                <CommandEmpty>No profile found.</CommandEmpty>
+                <CommandGroup>
+                  {profiles.map((p) => (
+                    <CommandItem
+                      key={p.id}
+                      value={p.name}
+                      onSelect={() => {
+                        onSelectProfile(p.id);
+                        setOpen(false);
+                      }}
+                      className="text-[13px]"
+                    >
+                      <span className="flex-1 truncate">{p.name}</span>
+                      <CheckIcon
+                        size={14}
+                        className={cn(
+                          "shrink-0",
+                          selectedProfile === p.id ? "opacity-100" : "opacity-0"
+                        )}
+                      />
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
       </div>
 
       {/* Step list — vertical rule aligns with the icon's horizontal center.
@@ -71,9 +115,19 @@ export function Sidebar({
               const done = stepsDone[step.label] ?? false;
               const name = stepDisplayName(step.label, loadedProfile.instructions);
               return (
-                <div
+                <button
                   key={step.label}
-                  className="flex items-center justify-between px-[6px] py-[5px] rounded-md hover:bg-neutral-50"
+                  type="button"
+                  onClick={() => {
+                    const el = document.getElementById(`step-${step.label}`);
+                    if (!el) return;
+                    el.scrollIntoView({ behavior: "smooth", block: "start" });
+                    // Retrigger the shimmer if the same step is clicked again.
+                    el.classList.remove("step-flash");
+                    void el.offsetWidth;
+                    el.classList.add("step-flash");
+                  }}
+                  className="flex items-center justify-between px-[6px] py-[5px] rounded-md hover:bg-neutral-50 text-left cursor-pointer bg-transparent border-0"
                 >
                   <span
                     className={
@@ -84,7 +138,7 @@ export function Sidebar({
                     {name}
                   </span>
                   {done && <CheckIcon size={13} className="text-green-500" />}
-                </div>
+                </button>
               );
             })}
           </nav>
