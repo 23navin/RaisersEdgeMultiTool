@@ -87,6 +87,10 @@ function TransformBlock({ t }: { t: TransformRow }) {
       ? "bg-red-500"
       : "bg-neutral-400";
 
+  // Bar track stays the same grey as a disabled button in every state;
+  // the colored fill grows on top of it.
+  const trackColor = "bg-neutral-200";
+
   const generateBtnStyle =
     t.generateStatus === "done"
       ? doneBtn
@@ -148,7 +152,7 @@ function TransformBlock({ t }: { t: TransformRow }) {
           Generate
         </Button>
 
-        <div className="flex-1 h-[5px] bg-white overflow-hidden">
+        <div className={`flex-1 h-[5px] ${trackColor} overflow-hidden`}>
           <div
             className={`h-full ${fillColor} transition-[width] duration-200`}
             style={{ width: `${t.generateProgress}%` }}
