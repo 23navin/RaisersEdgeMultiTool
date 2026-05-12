@@ -4,8 +4,9 @@
 // section per step from the loaded profile, in document order.
 
 import { CheckIcon } from "lucide-react";
-import type { LoadedProfile, Step, StepInputRef } from "../types";
+import type { LoadedProfile, Step } from "../types";
 import type { FileEntry, GenEntry } from "../App";
+import { refLabel, stepTransforms } from "../lib/profile-utils";
 import { StepSelectFiles } from "./steps/StepSelectFiles";
 import { StepGenerateFile } from "./steps/StepGenerateFile";
 import { StepImport } from "./steps/StepImport";
@@ -45,11 +46,6 @@ function stepDisplayName(label: string, instructions: Record<string, string>) {
   if (!md) return label;
   const m = md.match(/^##\s+(.+)$/m);
   return m ? m[1].trim() : label;
-}
-
-// Normalizes a step.input entry (string or { label, validate? }) to a label.
-function refLabel(ref: StepInputRef): string {
-  return typeof ref === "string" ? ref : ref.label;
 }
 
 // Heading row used by every step section.
@@ -183,12 +179,7 @@ function StepSection({
       );
     }
     case "sql_transform": {
-      const transforms =
-        step.transforms && step.transforms.length > 0
-          ? step.transforms
-          : [{ input: step.input, sql: step.sql ?? "", output: step.output }];
-
-      const transformRows = transforms.map((t, idx) => {
+      const transformRows = stepTransforms(step).map((t, idx) => {
         const inputRefs = t.input ?? [];
         const gen = generations[`${step.label}::${idx}`];
         const inputs = inputRefs.map((r) => {

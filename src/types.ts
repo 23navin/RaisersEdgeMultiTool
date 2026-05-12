@@ -20,7 +20,7 @@ export type ProfileSummary = {
 export type ColumnValidation = {
   label: string;
   required: boolean;
-  col_type: string;        // "string" | "number"
+  type: string;            // "string" | "number"
   digits?: number;         // only for number columns
   value?: string[];        // allowed values if restricted e.g. ["Alpha", "Beta", "Gamma"]
 };

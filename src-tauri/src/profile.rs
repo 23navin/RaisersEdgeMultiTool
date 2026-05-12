@@ -20,14 +20,6 @@ use crate::errors::AppError;
 // Every field name must match the YAML key, or use #[serde(rename = "...")]
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct ProfileMeta {
-    pub id: String,
-    pub name: String,
-    pub version: String,
-    pub min_app_version: String,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ColumnValidation {
     pub label: String,
     pub required: bool,

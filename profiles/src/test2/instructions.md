@@ -1,26 +1,39 @@
-# Simple Import
+# Multi-File Vendor Import
 
-Update records in database with new info from vendor.
+Processes `inventory.csv`, `pricing.xlsx`, and `categories.csv` from VendorX
+into the target database.
 
 ---
 
-<!-- label: AddSourceFiles-->
-## Select Source Files
+<!-- label: UploadVendorX -->
+## Upload VendorX Files
 
-Upload the un-edited data file (typcally `file_from_vendor.csv`) that the vendor provided.
+From the VendorX portal, download `inventory.csv` (required — `Item #` 6 digits,
+`Category` one of `Alpha`, `Beta`, `Gamma`) and `categories.csv` (optional
+reference list, skip if unchanged).
 
-<!-- file_input: Classification -->
+<!-- label: UploadPricing -->
+## Upload Pricing
 
-<!-- label: CreateImportFile -->
-## Generate Import File
+Provide the `pricing.xlsx` workbook. Use the `Current` sheet with the header on
+row 1.
 
-<!-- download: Update_Records -->
+<!-- label: BuildOutputs -->
+## Build Output Files
 
-<!-- label: Import -->
+Produces `Inventory_Import` (merges inventory with category metadata),
+`Pricing_Update` (diff against current DB values), and `Audit_Log`
+(category/pricing reconciliation) in this step.
+
+<!-- label: ImportFiles -->
 ## Import into database
 
-Import into the database using the `SimpleImport` profile.
+Run the imports in this order using the `BulkImport` profile:
+
+1. `Inventory_Import` first.
+
+2. Then `Pricing_Update`.
 
 ![Import tool](assets/import_profile.png)
 
-If there are exceptions, contact vendor.
+If there are exceptions, contact `vendor@example.com`.

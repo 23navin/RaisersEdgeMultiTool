@@ -10,7 +10,10 @@ for profile_dir in "$SRC_DIR"/*/; do
   out="$SCRIPT_DIR/$name.import"
 
   echo "Building $name.import..."
-  (cd "$profile_dir" && zip -r --quiet "$out" . --exclude "test-files/*")
+  rm -f "$out"
+  (cd "$profile_dir" && zip -r --quiet "$out" . \
+      --exclude "test-files/*" \
+      --exclude "*.DS_Store")
   echo "  → $out"
 done
 

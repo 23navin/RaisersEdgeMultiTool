@@ -9,11 +9,12 @@
 //   - Write the result to an output CSV
 //   - Return row count and output path
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use duckdb::Connection;
 use serde::Serialize;
 use crate::errors::AppError;
-use crate::profile::{LoadedProfile, ColumnValidation};
+use crate::profile::ColumnValidation;
 
 // ── Result types returned to commands.rs ─────────────────────────────────────
 
@@ -174,10 +175,16 @@ pub fn validate_file(
 }
 
 // ── run_transform ─────────────────────────────────────────────────────────────
-// Executes the profile's SQL against the input file and writes one CSV per
-// declared output label. {{input_file}} resolves to the input path.
+// Executes the profile's SQL against one or more input files and writes one
+// CSV per declared output label.
 //
-// Two SQL shapes are supported:
+// Input substitution:
+//   - `{{input:Label}}` resolves to the path for the input with that label.
+//   - `{{input_file}}` is a legacy single-input alias — substituted to the
+//     sole path when the transform has exactly one input. Erroring if used
+//     with multiple inputs so authors disambiguate.
+//
+// Output shapes:
 //
 // 1. Multi-output: the SQL contains one or more {{output:LabelName}}
 //    placeholders. Each placeholder resolves to a temp-dir path for that
@@ -189,7 +196,7 @@ pub fn validate_file(
 //    one declared output. Requires exactly one entry in `output_labels`.
 
 pub fn run_transform(
-    file_path: &Path,
+    file_paths: &HashMap<String, String>,
     sql_content: &str,
     output_labels: &[String],
     notices: &[NoticeInput<'_>],
@@ -199,12 +206,20 @@ pub fn run_transform(
             "Transform has no declared outputs".to_string(),
         ));
     }
+    if file_paths.is_empty() {
+        return Err(AppError::SqlError(
+            "Transform was called with no input files".to_string(),
+        ));
+    }
 
     let conn = Connection::open_in_memory()
         .map_err(|e| AppError::SqlError(e.to_string()))?;
 
     // Forward slashes work on all platforms including Windows in DuckDB
-    let file_str = file_path.to_string_lossy().replace('\\', "/");
+    let normalized: HashMap<&str, String> = file_paths
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.replace('\\', "/")))
+        .collect();
 
     // Assign a temp-dir path per output label up front so we can substitute
     // {{output:Label}} placeholders and remember which path belongs to which.
@@ -221,8 +236,24 @@ pub fn run_transform(
         })
         .collect();
 
-    // Start by resolving {{input_file}}, then resolve each {{output:Label}}.
-    let mut sql = sql_content.replace("{{input_file}}", &file_str);
+    // Resolve {{input:Label}} placeholders first, then the legacy
+    // {{input_file}} alias, then each {{output:Label}}.
+    let mut sql = sql_content.to_string();
+    for (label, path) in &normalized {
+        let placeholder = format!("{{{{input:{}}}}}", label);
+        sql = sql.replace(&placeholder, path);
+    }
+    if sql.contains("{{input_file}}") {
+        if normalized.len() != 1 {
+            return Err(AppError::SqlError(format!(
+                "SQL uses {{{{input_file}}}} but transform has {} inputs. \
+                 Use {{{{input:Label}}}} placeholders to disambiguate.",
+                normalized.len()
+            )));
+        }
+        let only_path = normalized.values().next().unwrap();
+        sql = sql.replace("{{input_file}}", only_path);
+    }
     let mut multi_output_mode = false;
     for (label, path) in &outputs {
         let placeholder = format!("{{{{output:{}}}}}", label);
@@ -280,13 +311,13 @@ pub fn run_transform(
         });
     }
 
-    // Run any attached notice queries against the same input. Notices are
+    // Run any attached notice queries against the same inputs. Notices are
     // informational — empty result set means nothing to surface. We discard
     // notices whose own query errors out (logged via the error string in the
     // label) rather than failing the whole transform.
     let notice_results: Vec<Notice> = notices
         .iter()
-        .map(|n| run_notice(&conn, n, &file_str))
+        .map(|n| run_notice(&conn, n, &normalized))
         .collect();
 
     Ok(TransformResult {
@@ -301,8 +332,20 @@ pub fn run_transform(
 // read as a String regardless of the underlying DuckDB column type — keeps
 // the serialization to the frontend uniform.
 
-fn run_notice(conn: &Connection, n: &NoticeInput<'_>, file_str: &str) -> Notice {
-    let user_sql = n.sql_content.replace("{{input_file}}", file_str);
+fn run_notice(
+    conn: &Connection,
+    n: &NoticeInput<'_>,
+    file_paths: &HashMap<&str, String>,
+) -> Notice {
+    let mut user_sql = n.sql_content.to_string();
+    for (label, path) in file_paths {
+        let placeholder = format!("{{{{input:{}}}}}", label);
+        user_sql = user_sql.replace(&placeholder, path);
+    }
+    if user_sql.contains("{{input_file}}") && file_paths.len() == 1 {
+        let only_path = file_paths.values().next().unwrap();
+        user_sql = user_sql.replace("{{input_file}}", only_path);
+    }
     let trimmed = user_sql.trim().trim_end_matches(';').trim();
 
     // Phase 1: discover the column names returned by the user's query.

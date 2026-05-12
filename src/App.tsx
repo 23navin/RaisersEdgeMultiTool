@@ -12,12 +12,12 @@ import type {
   OutputFile,
   ProfileSummary,
   SqlError,
-  StepInputRef,
   ValidationError,
 } from "./types";
 import { Titlebar } from "./components/Titlebar";
 import { Sidebar } from "./components/Sidebar";
 import { MainPanel } from "./components/MainPanel";
+import { refLabel, stepTransforms } from "./lib/profile-utils";
 
 export type FileStatus = "none" | "pending" | "valid" | "invalid";
 export type GenerateStatus = "idle" | "running" | "done" | "error";
@@ -35,10 +35,6 @@ export type GenEntry = {
   notices?: Notice[];
   outputs?: OutputFile[];
 };
-
-function refLabel(ref: StepInputRef): string {
-  return typeof ref === "string" ? ref : ref.label;
-}
 
 // Composite key for a single transform within a sql_transform step.
 function genKey(stepLabel: string, transformIdx: number): string {
@@ -111,11 +107,11 @@ const MOCK_PROFILE_2: LoadedProfile = {
         type: "csv",
         required: true,
         validation: [
-          { label: "Item #", required: true, col_type: "number", digits: 6 },
+          { label: "Item #", required: true, type: "number", digits: 6 },
           {
             label: "Category",
             required: true,
-            col_type: "string",
+            type: "string",
             value: ["Alpha", "Beta", "Gamma"],
           },
         ],
@@ -125,8 +121,8 @@ const MOCK_PROFILE_2: LoadedProfile = {
         type: "xlsx",
         required: true,
         validation: [
-          { label: "SKU", required: true, col_type: "string" },
-          { label: "Price", required: true, col_type: "number" },
+          { label: "SKU", required: true, type: "string" },
+          { label: "Price", required: true, type: "number" },
         ],
       },
       {
@@ -215,8 +211,9 @@ const MOCK_PROFILE_3: LoadedProfile = {
         type: "csv",
         required: true,
         validation: [
-          { label: "SKU", required: true, col_type: "string" },
-          { label: "Category", required: true, col_type: "string" },
+          { label: "SKU", required: true, type: "string" },
+          { label: "Category", required: true, type: "string" },
+          { label: "Unit", required: true, type: "string" },
         ],
       },
     ],
@@ -282,11 +279,11 @@ const MOCK_PROFILE_4: LoadedProfile = {
         type: "csv",
         required: true,
         validation: [
-          { label: "Order #", required: true, col_type: "number", digits: 8 },
+          { label: "Order #", required: true, type: "number", digits: 8 },
           {
             label: "Status",
             required: true,
-            col_type: "string",
+            type: "string",
             value: ["Shipped", "Pending", "Cancelled"],
           },
         ],
@@ -371,14 +368,6 @@ export default function App() {
 
   const [files, setFiles] = useState<Record<string, FileEntry>>({});
   const [generations, setGenerations] = useState<Record<string, GenEntry>>({});
-
-  // Normalizes a sql_transform step to a list of (input, sql, output) tuples.
-  // Supports both the multi-transform `transforms` array and the legacy
-  // single-transform step-level fields.
-  const stepTransforms = (step: LoadedProfile["structure"]["steps"][number]) => {
-    if (step.transforms && step.transforms.length > 0) return step.transforms;
-    return [{ input: step.input, sql: step.sql ?? "", output: step.output }];
-  };
 
   // ── Derived step completion ────────────────────────────────────────────────
   const stepsDone: Record<string, boolean> = {};

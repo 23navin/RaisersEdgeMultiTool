@@ -1,13 +1,13 @@
 // commands.rs
 //
-// All three invoke() targets the frontend calls.
+// All five invoke() targets the frontend calls.
 // Thin layer — receives args, calls profile.rs or db.rs, returns result.
 // Errors are converted to String so the frontend receives them directly.
 
+use std::collections::HashMap;
 use std::path::Path;
 use crate::profile::{self, ProfileSummary, LoadedProfile, NoticeQuery};
 use crate::db::{self, ValidationResult, TransformResult, NoticeInput};
-use crate::errors::AppError;
 
 // ── list_profiles ─────────────────────────────────────────────────────────────
 // Called by: App.tsx on mount
@@ -48,7 +48,6 @@ pub fn load_profile(zip_path: String) -> Result<LoadedProfile, String> {
 #[tauri::command]
 pub fn validate_file(
     file_path: String,
-    profile_id: String,      // used for error messages
     input_label: String,     // which input definition to validate against
     zip_path: String,        // path to extracted temp dir to re-read the profile
 ) -> Result<ValidationResult, String> {
@@ -71,14 +70,19 @@ pub fn validate_file(
 
 // ── run_profile ───────────────────────────────────────────────────────────────
 // Called by: StepPanel.tsx on sql_transform steps
-// Executes the step's SQL against the attached input file, writes output CSV
+// Executes the step's SQL against the attached input files, writes output CSV.
+//
+// `file_paths` maps each declared input label to its uploaded file path.
+// The SQL author references inputs with {{input:Label}} placeholders, or
+// {{input_file}} as a legacy single-input alias (only valid when the
+// transform has exactly one input).
 
 #[tauri::command]
 pub fn run_profile(
-    file_path: String,
-    sql_file: String,             // filename e.g. "primary_transform.sql"
-    zip_path: String,             // temp dir path — profile already extracted
-    output_labels: Vec<String>,   // every output declared on this transform
+    file_paths: HashMap<String, String>,  // input_label → file_path
+    sql_file: String,                     // filename e.g. "primary_transform.sql"
+    zip_path: String,                     // temp dir path — profile already extracted
+    output_labels: Vec<String>,           // every output declared on this transform
 ) -> Result<TransformResult, String> {
     let loaded = profile::load_from_dir(Path::new(&zip_path))
         .map_err(|e| e.to_string())?;
@@ -101,7 +105,7 @@ pub fn run_profile(
         })
         .collect();
 
-    db::run_transform(Path::new(&file_path), sql, &output_labels, &notices)
+    db::run_transform(&file_paths, sql, &output_labels, &notices)
         .map_err(|e| e.to_string())
 }
 
