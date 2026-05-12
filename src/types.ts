@@ -44,12 +44,37 @@ export type StepInputRef =
   | string
   | { label: string; validate?: boolean };
 
+// One transform unit inside a sql_transform step. A step can contain one
+// (use the step-level input/sql/output fields) or many (use the transforms
+// array). When `transforms` is present, the step-level fields are ignored.
+export type SqlTransform = {
+  input?: StepInputRef[];
+  sql: string;
+  output?: string[];
+};
+
 export type Step = {
   label: string;
-  type: string;            // "file_input" | "validation" | "sql_transform" | "manual_instruction"
-  input?: StepInputRef[];
-  sql?: string;            // filename inside sql/ folder
-  output?: string[];
+  type: string;            // "file_input" | "sql_transform" | "manual_instruction"
+  input?: StepInputRef[];  // file_input: one upload row per entry. sql_transform: single-transform shortcut.
+  sql?: string;            // sql_transform single-transform shortcut
+  output?: string[];       // sql_transform single-transform shortcut
+  transforms?: SqlTransform[]; // sql_transform multi-transform form
+};
+
+// One row in a file_input step's validation-errors table.
+export type ValidationError = {
+  row: number;
+  column: string;
+  value: string;
+  message: string;
+};
+
+// One row in a sql_transform's SQL/DuckDB error table.
+export type SqlError = {
+  line?: number;
+  errorType: string;   // "Parser" | "Binder" | "Runtime" | etc.
+  message: string;
 };
 
 export type ProfileStructure = {

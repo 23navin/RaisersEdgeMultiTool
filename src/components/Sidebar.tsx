@@ -49,7 +49,7 @@ export function Sidebar({
           value={selectedProfile ?? undefined}
           onValueChange={onSelectProfile}
         >
-          <SelectTrigger className="h-[30px] w-full text-[13px]">
+          <SelectTrigger className="h-[30px] w-[170px] text-[13px] *:data-[slot=select-value]:block *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:truncate">
             <SelectValue placeholder="Select profile…" />
           </SelectTrigger>
           <SelectContent>

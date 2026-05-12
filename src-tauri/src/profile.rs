@@ -69,14 +69,24 @@ pub enum StepInputRef {
     Detailed(StepInput),
 }
 
+// One transform unit inside a sql_transform step. Use the step-level
+// input/sql/output for a single transform; use `transforms` for multiple.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct SqlTransform {
+    pub input: Option<Vec<StepInputRef>>,
+    pub sql: String,
+    pub output: Option<Vec<String>>,
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Step {
     pub label: String,
     #[serde(rename = "type")]
-    pub step_type: String,       // "file_input", "validation", "sql_transform"
+    pub step_type: String,       // "file_input", "sql_transform", "manual_instruction"
     pub input: Option<Vec<StepInputRef>>,
-    pub sql: Option<String>,     // filename inside sql/ folder
-    pub output: Option<Vec<String>>,
+    pub sql: Option<String>,     // sql_transform single-transform shortcut
+    pub output: Option<Vec<String>>, // sql_transform single-transform shortcut
+    pub transforms: Option<Vec<SqlTransform>>, // sql_transform multi-transform form
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

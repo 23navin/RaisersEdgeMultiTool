@@ -1,8 +1,9 @@
 // StepGenerateFile.tsx
 //
 // Renders steps with type=sql_transform.
-// Card contains the pipeline diagram (inputs → DB → outputs) and a
-// generate row (Generate / progress / Download).
+// One step's card can contain multiple transforms — each transform is its
+// own pipeline diagram (inputs → DB → outputs) plus a generate/progress/
+// download row. Multiple transforms are separated by a thin divider.
 
 import {
   DatabaseIcon,
@@ -10,33 +11,52 @@ import {
   TableIcon,
   PlayIcon,
   DownloadIcon,
+  CheckIcon,
+  XIcon,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "../ui/button";
 import type { GenerateStatus } from "../../App";
+import type { SqlError } from "../../types";
 
-type Props = {
-  inputs: string[];
-  outputs: string[];
+export type PipeItem = { label: string; ready: boolean };
+
+export type TransformRow = {
+  inputs: PipeItem[];
+  outputs: PipeItem[];
   canGenerate: boolean;
   generateStatus: GenerateStatus;
   generateProgress: number;
+  errors: SqlError[];
   onGenerate: () => void;
   onDownload: () => void;
 };
 
-function PipeNode({ icon: Icon, label }: { icon: LucideIcon; label: string }) {
+type Props = {
+  transforms: TransformRow[];
+};
+
+function PipeNode({
+  icon: Icon,
+  label,
+  ready,
+}: {
+  icon: LucideIcon;
+  label: string;
+  ready: boolean;
+}) {
+  const StatusIcon = ready ? CheckIcon : XIcon;
+  const statusColor = ready ? "text-green-600" : "text-red-600";
   return (
     <div className="inline-flex items-center gap-[5px] px-[10px] py-[4px] text-neutral-500 text-[11px] whitespace-nowrap">
       <Icon size={12} />
       <span className="overflow-hidden text-ellipsis">{label}</span>
+      <StatusIcon size={12} className={statusColor} strokeWidth={2.5} />
     </div>
   );
 }
 
 function ArrowSVG() {
-  // The line fills available width via flex; the arrowhead is a fixed-size
-  // SVG so it doesn't distort when the window is resized.
   return (
     <div className="flex items-center w-full">
       <div className="flex-1 h-px bg-[#d1d5db]" />
@@ -47,47 +67,48 @@ function ArrowSVG() {
   );
 }
 
-export function StepGenerateFile({
-  inputs,
-  outputs,
-  canGenerate,
-  generateStatus,
-  generateProgress,
-  onGenerate,
-  onDownload,
-}: Props) {
-  const generateDisabled = !canGenerate || generateStatus === "running";
-  const downloadDisabled = generateStatus !== "done";
+const baseBtn =
+  "rounded-none h-[32px] px-[14px] text-[13px] font-medium border-0 shadow-none transform-gpu";
+const activeBtn =
+  "bg-[#1a1a1a] hover:bg-[#2a2a2a] text-white cursor-pointer";
+const doneBtn =
+  "bg-[#e0ddd8] hover:bg-[#d4d0c9] text-neutral-500 hover:text-neutral-700 disabled:opacity-100 cursor-pointer";
+const notReadyBtn =
+  "bg-neutral-200 hover:bg-neutral-200 text-neutral-400 disabled:opacity-100 cursor-not-allowed";
+
+function TransformBlock({ t }: { t: TransformRow }) {
+  const generateDisabled = !t.canGenerate || t.generateStatus === "running";
+  const downloadDisabled = t.generateStatus !== "done";
 
   const fillColor =
-    generateStatus === "done" ? "bg-green-500" : "bg-neutral-400";
-
-  const baseBtn =
-    "rounded-none h-[32px] px-[14px] text-[13px] font-medium border-0 shadow-none transform-gpu";
-  const activeBtn =
-    "bg-[#1a1a1a] hover:bg-[#2a2a2a] text-white cursor-pointer";
-  const doneBtn =
-    "bg-[#e0ddd8] hover:bg-[#d4d0c9] text-neutral-500 hover:text-neutral-700 disabled:opacity-100 cursor-pointer";
-  const notReadyBtn =
-    "bg-neutral-200 hover:bg-neutral-200 text-neutral-400 disabled:opacity-100 cursor-not-allowed";
+    t.generateStatus === "done"
+      ? "bg-green-500"
+      : t.generateStatus === "error"
+      ? "bg-red-500"
+      : "bg-neutral-400";
 
   const generateBtnStyle =
-    generateStatus === "done"
+    t.generateStatus === "done"
       ? doneBtn
-      : canGenerate
+      : t.canGenerate
       ? activeBtn
       : notReadyBtn;
 
   const downloadBtnStyle =
-    generateStatus === "done" ? activeBtn : notReadyBtn;
+    t.generateStatus === "done" ? activeBtn : notReadyBtn;
 
   return (
-    <div className="bg-neutral-100 px-[12px] py-[10px]">
+    <div>
       {/* Pipeline diagram */}
       <div className="flex items-center justify-center w-full mb-[10px]">
         <div className="flex flex-col gap-[5px] shrink-0">
-          {inputs.map((label) => (
-            <PipeNode key={label} icon={FileTextIcon} label={label} />
+          {t.inputs.map((item) => (
+            <PipeNode
+              key={item.label}
+              icon={FileTextIcon}
+              label={item.label}
+              ready={item.ready}
+            />
           ))}
         </div>
 
@@ -104,8 +125,13 @@ export function StepGenerateFile({
         </div>
 
         <div className="flex flex-col gap-[5px] shrink-0">
-          {outputs.map((label) => (
-            <PipeNode key={label} icon={TableIcon} label={label} />
+          {t.outputs.map((item) => (
+            <PipeNode
+              key={item.label}
+              icon={TableIcon}
+              label={item.label}
+              ready={item.ready}
+            />
           ))}
         </div>
       </div>
@@ -114,7 +140,7 @@ export function StepGenerateFile({
       <div className="flex items-center gap-[8px]">
         <Button
           type="button"
-          onClick={onGenerate}
+          onClick={t.onGenerate}
           disabled={generateDisabled}
           className={`${baseBtn} ${generateBtnStyle}`}
         >
@@ -125,13 +151,13 @@ export function StepGenerateFile({
         <div className="flex-1 h-[5px] bg-white overflow-hidden">
           <div
             className={`h-full ${fillColor} transition-[width] duration-200`}
-            style={{ width: `${generateProgress}%` }}
+            style={{ width: `${t.generateProgress}%` }}
           />
         </div>
 
         <Button
           type="button"
-          onClick={onDownload}
+          onClick={t.onDownload}
           disabled={downloadDisabled}
           className={`${baseBtn} ${downloadBtnStyle}`}
         >
@@ -139,6 +165,46 @@ export function StepGenerateFile({
           Download
         </Button>
       </div>
+
+      {t.generateStatus === "error" && t.errors.length > 0 && (
+        <div className="mt-[8px] bg-white border border-neutral-200 overflow-hidden">
+          <table className="w-full text-[12px] border-collapse">
+            <thead className="bg-neutral-50 text-neutral-500">
+              <tr>
+                <th className="text-left px-[10px] py-[5px] font-medium w-[55px]">Line</th>
+                <th className="text-left px-[10px] py-[5px] font-medium w-[90px]">Type</th>
+                <th className="text-left px-[10px] py-[5px] font-medium">Message</th>
+              </tr>
+            </thead>
+            <tbody>
+              {t.errors.map((err, i) => (
+                <tr key={i} className="border-t border-neutral-200">
+                  <td className="px-[10px] py-[5px] font-mono text-neutral-500">
+                    {err.line ?? "—"}
+                  </td>
+                  <td className="px-[10px] py-[5px] font-mono text-neutral-900">
+                    {err.errorType}
+                  </td>
+                  <td className="px-[10px] py-[5px] text-[#b91c1c]">{err.message}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function StepGenerateFile({ transforms }: Props) {
+  return (
+    <div className="bg-neutral-100 px-[12px] py-[10px] flex flex-col gap-[12px]">
+      {transforms.map((t, i) => (
+        <div key={i}>
+          {i > 0 && <div className="h-px bg-neutral-200 mb-[12px]" />}
+          <TransformBlock t={t} />
+        </div>
+      ))}
     </div>
   );
 }

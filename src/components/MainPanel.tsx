@@ -5,7 +5,7 @@
 
 import { CheckIcon } from "lucide-react";
 import type { LoadedProfile, Step, StepInputRef } from "../types";
-import type { FileStatus, GenerateStatus } from "../App";
+import type { FileEntry, GenEntry } from "../App";
 import { StepSelectFiles } from "./steps/StepSelectFiles";
 import { StepGenerateFile } from "./steps/StepGenerateFile";
 import { StepImport } from "./steps/StepImport";
@@ -13,14 +13,13 @@ import { StepImport } from "./steps/StepImport";
 type MainPanelProps = {
   loadedProfile: LoadedProfile | null;
   stepsDone: Record<string, boolean>;
-  fileName: string | null;
-  fileStatus: FileStatus;
-  generateStatus: GenerateStatus;
-  generateProgress: number;
-  onFileSelect: (path: string, name: string) => void;
-  onValidate: () => void;
-  onGenerate: () => void;
-  onDownload: () => void;
+  files: Record<string, FileEntry>;
+  generations: Record<string, GenEntry>;
+  onFileSelect: (inputLabel: string, path: string, name: string) => void;
+  onValidate: (inputLabel: string) => void;
+  onClearFile: (inputLabel: string) => void;
+  onGenerate: (stepLabel: string, transformIdx: number) => void;
+  onDownload: (stepLabel: string, transformIdx: number) => void;
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -66,12 +65,11 @@ function StepHeading({ name, done }: { name: string; done: boolean }) {
 export function MainPanel({
   loadedProfile,
   stepsDone,
-  fileName,
-  fileStatus,
-  generateStatus,
-  generateProgress,
+  files,
+  generations,
   onFileSelect,
   onValidate,
+  onClearFile,
   onGenerate,
   onDownload,
 }: MainPanelProps) {
@@ -88,38 +86,42 @@ export function MainPanel({
 
   return (
     <main className="flex-1 overflow-y-auto px-[22px] py-[18px]">
-      {/* Profile header */}
-      <div className="pb-[14px] border-b border-neutral-200 mb-[20px]">
-        <h1 className="text-[17px] font-medium text-neutral-900">
-          {structure.name}
-        </h1>
-        {description && (
-          <p className="text-[13px] text-neutral-500 leading-relaxed mt-[3px]">
-            {description}
-          </p>
-        )}
-      </div>
+      <div
+        key={structure.id}
+        className="animate-in fade-in duration-200"
+      >
+        {/* Profile header */}
+        <div className="pb-[14px] border-b border-neutral-200 mb-[20px]">
+          <h1 className="text-[17px] font-medium text-neutral-900">
+            {structure.name}
+          </h1>
+          {description && (
+            <p className="text-[13px] text-neutral-500 leading-relaxed mt-[3px]">
+              {description}
+            </p>
+          )}
+        </div>
 
-      {/* Steps */}
-      <div className="flex flex-col gap-[20px]">
-        {structure.steps.map((step) => (
-          <StepSection
-            key={step.label}
-            step={step}
-            done={stepsDone[step.label] ?? false}
-            structure={structure}
-            instructions={instructions}
-            tempDir={temp_dir}
-            fileName={fileName}
-            fileStatus={fileStatus}
-            generateStatus={generateStatus}
-            generateProgress={generateProgress}
-            onFileSelect={onFileSelect}
-            onValidate={onValidate}
-            onGenerate={onGenerate}
-            onDownload={onDownload}
-          />
-        ))}
+        {/* Steps */}
+        <div className="flex flex-col gap-[20px]">
+          {structure.steps.map((step) => (
+            <StepSection
+              key={step.label}
+              step={step}
+              done={stepsDone[step.label] ?? false}
+              structure={structure}
+              instructions={instructions}
+              tempDir={temp_dir}
+              files={files}
+              generations={generations}
+              onFileSelect={onFileSelect}
+              onValidate={onValidate}
+              onClearFile={onClearFile}
+              onGenerate={onGenerate}
+              onDownload={onDownload}
+            />
+          ))}
+        </div>
       </div>
     </main>
   );
@@ -141,12 +143,11 @@ function StepSection({
   structure,
   instructions,
   tempDir,
-  fileName,
-  fileStatus,
-  generateStatus,
-  generateProgress,
+  files,
+  generations,
   onFileSelect,
   onValidate,
+  onClearFile,
   onGenerate,
   onDownload,
 }: StepSectionProps) {
@@ -155,39 +156,71 @@ function StepSection({
 
   switch (step.type) {
     case "file_input": {
-      const inputLabel = refLabel(step.input?.[0] ?? "");
-      const inputDef = structure.inputs.find((i) => i.label === inputLabel);
-      const accepts = inputDef ? [inputDef.type] : ["csv"];
+      const rows = (step.input ?? []).map((ref) => {
+        const lbl = refLabel(ref);
+        const def = structure.inputs.find((i) => i.label === lbl);
+        const entry = files[lbl];
+        return {
+          inputLabel: lbl,
+          accepts: def ? [def.type] : ["csv"],
+          fileName: entry?.name ?? null,
+          fileStatus: entry?.status ?? ("none" as const),
+          errors: entry?.errors ?? [],
+        };
+      });
       return (
         <section>
           {heading}
           <StepSelectFiles
             description={stepBody(instructions[step.label])}
-            inputLabel={inputLabel}
-            accepts={accepts}
-            fileName={fileName}
-            fileStatus={fileStatus}
+            rows={rows}
             onFileSelect={onFileSelect}
             onValidate={onValidate}
+            onClear={onClearFile}
           />
         </section>
       );
     }
     case "sql_transform": {
-      const inputs = (step.input ?? []).map(refLabel);
-      const outputs = step.output ?? [];
+      const transforms =
+        step.transforms && step.transforms.length > 0
+          ? step.transforms
+          : [{ input: step.input, sql: step.sql ?? "", output: step.output }];
+
+      const transformRows = transforms.map((t, idx) => {
+        const inputRefs = t.input ?? [];
+        const gen = generations[`${step.label}::${idx}`];
+        const inputs = inputRefs.map((r) => {
+          const lbl = refLabel(r);
+          const f = files[lbl];
+          return { label: lbl, ready: f?.status === "valid" };
+        });
+        const outputs = (t.output ?? []).map((label) => ({
+          label,
+          ready: gen?.status === "done",
+        }));
+        const canGenerate = inputRefs.every((r) => {
+          const lbl = refLabel(r);
+          const def = structure.inputs.find((i) => i.label === lbl);
+          const f = files[lbl];
+          if (def?.required) return f?.status === "valid";
+          return !f || f.status === "valid";
+        });
+        return {
+          inputs,
+          outputs,
+          canGenerate,
+          generateStatus: gen?.status ?? ("idle" as const),
+          generateProgress: gen?.progress ?? 0,
+          errors: gen?.errors ?? [],
+          onGenerate: () => onGenerate(step.label, idx),
+          onDownload: () => onDownload(step.label, idx),
+        };
+      });
       return (
         <section>
           {heading}
-          <StepGenerateFile
-            inputs={inputs}
-            outputs={outputs}
-            canGenerate={fileStatus === "valid"}
-            generateStatus={generateStatus}
-            generateProgress={generateProgress}
-            onGenerate={onGenerate}
-            onDownload={onDownload}
-          />
+          <StepGenerateFile transforms={transformRows} />
         </section>
       );
     }
