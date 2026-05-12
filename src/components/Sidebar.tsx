@@ -73,11 +73,11 @@ export function Sidebar({
             </span>
             <ChevronsUpDownIcon className="size-4 shrink-0 opacity-50" />
           </PopoverTrigger>
-          <PopoverContent className="w-[220px] p-0" align="start">
+          <PopoverContent className="w-[250px] p-0" align="start">
             <Command>
               <CommandInput placeholder="Search profiles…" className="text-[13px]" />
               <CommandList>
-                <CommandEmpty>No profile found.</CommandEmpty>
+                <CommandEmpty>No profile found 😵‍💫</CommandEmpty>
                 <CommandGroup>
                   {profiles.map((p) => (
                     <CommandItem
