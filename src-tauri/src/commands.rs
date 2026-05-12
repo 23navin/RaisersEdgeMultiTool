@@ -5,8 +5,8 @@
 // Errors are converted to String so the frontend receives them directly.
 
 use std::path::Path;
-use crate::profile::{self, ProfileSummary, LoadedProfile};
-use crate::db::{self, ValidationResult, TransformResult};
+use crate::profile::{self, ProfileSummary, LoadedProfile, NoticeQuery};
+use crate::db::{self, ValidationResult, TransformResult, NoticeInput};
 use crate::errors::AppError;
 
 // ── list_profiles ─────────────────────────────────────────────────────────────
@@ -86,8 +86,45 @@ pub fn run_profile(
     let sql = loaded.sql_files.get(&sql_file)
         .ok_or_else(|| format!("SQL file '{}' not found in profile", sql_file))?;
 
-    db::run_transform(Path::new(&file_path), sql, &output_label)
+    // Find the transform that owns this sql_file so we can pick up any
+    // notice queries it declares. Matches by sql filename — adequate while
+    // each transform within a profile names a unique .sql file.
+    let notice_defs = find_notices_for_sql(&loaded, &sql_file);
+    let notices: Vec<NoticeInput> = notice_defs
+        .iter()
+        .filter_map(|n| {
+            loaded.sql_files.get(&n.sql).map(|content| NoticeInput {
+                label: &n.label,
+                description: n.description.as_deref(),
+                sql_content: content,
+            })
+        })
+        .collect();
+
+    db::run_transform(Path::new(&file_path), sql, &output_label, &notices)
         .map_err(|e| e.to_string())
+}
+
+// Returns the NoticeQuery list attached to the first transform whose `sql`
+// field matches `sql_file`. Walks both the multi-transform `transforms` form
+// and the legacy single-transform shortcut on the step itself.
+fn find_notices_for_sql<'a>(loaded: &'a LoadedProfile, sql_file: &str) -> Vec<&'a NoticeQuery> {
+    for step in &loaded.structure.steps {
+        if step.step_type != "sql_transform" {
+            continue;
+        }
+        if let Some(transforms) = &step.transforms {
+            for t in transforms {
+                if t.sql == sql_file {
+                    return t.notices.as_deref().unwrap_or(&[]).iter().collect();
+                }
+            }
+        }
+        if step.sql.as_deref() == Some(sql_file) {
+            return step.notices.as_deref().unwrap_or(&[]).iter().collect();
+        }
+    }
+    Vec::new()
 }
 
 // ── save_output ───────────────────────────────────────────────────────────────

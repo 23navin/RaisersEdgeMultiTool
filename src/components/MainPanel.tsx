@@ -214,6 +214,7 @@ function StepSection({
           generateStatus: gen?.status ?? ("idle" as const),
           generateProgress: gen?.progress ?? 0,
           errors: gen?.errors ?? [],
+          notices: gen?.notices ?? [],
           onGenerate: () => onGenerate(step.label, idx),
           onDownload: () => onDownload(step.label, idx),
         };

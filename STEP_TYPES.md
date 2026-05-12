@@ -174,6 +174,34 @@ Renders the **pipeline diagram + Generate/progress/Download** row
       output: [Pricing_Update]
 ```
 
+### YAML — transform with notices
+```yaml
+- label: BuildCatalog
+  type: sql_transform
+  input: [Catalog]
+  sql: catalog.sql
+  output: [Catalog_Import]
+  notices:
+    - label: "Unrecognized Categories"
+      sql: notices/unknown_categories.sql
+      description: >-
+        These category values aren't in the master list. Add them in the
+        Catalog Admin tool before importing.
+```
+
+- `notices` is an array of informational queries that run **after** the main
+  transform succeeds. They surface data that's nominally valid but needs
+  external follow-up (new lookup values, unit-of-measure changes, etc.) —
+  they do NOT mark the transform as failed.
+- Each notice has `label` (heading), `sql` (filename inside the bundle's
+  `sql/` folder), and optional `description` (sub-heading prose).
+- The notice SQL is expected to return zero rows in the nominal case. Any
+  returned rows are rendered as a table beneath the Generate row using the
+  result-set column names as headers.
+- `{{input_file}}` substitution works the same way as in the main transform.
+- Notices live on the individual transform — both the single-transform
+  shortcut and entries inside `transforms[]` support a `notices` field.
+
 - Each transform produces its own pipeline diagram + Generate/Download
   row inside the step's card, with a thin divider between them.
 - Each transform is generated independently — `canGenerate`,
@@ -219,6 +247,12 @@ Optional body describing what this transform does.
   appears below the Generate/Download row listing each `SqlError` from
   `src/types.ts` with columns: `Line`, `Type`, `Message`. The backend
   should return one row per DuckDB / SQL error.
+- **Notices** — when `generateStatus === "done"`, any non-empty `Notice`
+  from the backend renders as an amber callout beneath the Generate/Download
+  row. Each callout shows the notice's `label` and `description`, then a
+  table whose columns/rows come straight from the notice query's result set.
+  Notices are informational only — they don't change `done` status or
+  prevent the user from moving on, but they should be addressed externally.
 
 ---
 
@@ -273,7 +307,7 @@ multi-transform steps track each transform independently.
 | Step type            | Required fields                      | Optional fields                          |
 | -------------------- | ------------------------------------ | ---------------------------------------- |
 | `file_input`         | `label`, `type`, at least one `input`| `input[].validate`                       |
-| `sql_transform`      | `label`, `type`, `sql` or `transforms`| `input`, `output`, `transforms[].input`, `transforms[].output` |
+| `sql_transform`      | `label`, `type`, `sql` or `transforms`| `input`, `output`, `notices`, `transforms[].input`, `transforms[].output`, `transforms[].notices` |
 | `manual_instruction` | `label`, `type`                      | —                                        |
 
 ---

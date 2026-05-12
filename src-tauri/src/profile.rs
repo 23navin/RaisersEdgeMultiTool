@@ -69,6 +69,17 @@ pub enum StepInputRef {
     Detailed(StepInput),
 }
 
+// A notice query attached to a sql_transform. Runs after the main transform
+// succeeds; returned rows become informational items the user needs to
+// address externally (e.g. "this category isn't in the master list").
+// SQL filename resolves against the bundle's sql/ folder.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct NoticeQuery {
+    pub label: String,
+    pub sql: String,
+    pub description: Option<String>,
+}
+
 // One transform unit inside a sql_transform step. Use the step-level
 // input/sql/output for a single transform; use `transforms` for multiple.
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -76,6 +87,7 @@ pub struct SqlTransform {
     pub input: Option<Vec<StepInputRef>>,
     pub sql: String,
     pub output: Option<Vec<String>>,
+    pub notices: Option<Vec<NoticeQuery>>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -86,6 +98,7 @@ pub struct Step {
     pub input: Option<Vec<StepInputRef>>,
     pub sql: Option<String>,     // sql_transform single-transform shortcut
     pub output: Option<Vec<String>>, // sql_transform single-transform shortcut
+    pub notices: Option<Vec<NoticeQuery>>, // sql_transform single-transform shortcut
     pub transforms: Option<Vec<SqlTransform>>, // sql_transform multi-transform form
 }
 

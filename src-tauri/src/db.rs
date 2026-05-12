@@ -24,9 +24,25 @@ pub struct ValidationResult {
 }
 
 #[derive(Debug, Serialize)]
+pub struct Notice {
+    pub label: String,
+    pub description: Option<String>,
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<String>>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct TransformResult {
     pub output_path: String,
     pub row_count: usize,
+    pub notices: Vec<Notice>,
+}
+
+// Passed in from commands.rs — already-resolved SQL content for one notice.
+pub struct NoticeInput<'a> {
+    pub label: &'a str,
+    pub description: Option<&'a str>,
+    pub sql_content: &'a str,
 }
 
 // ── validate_file ─────────────────────────────────────────────────────────────
@@ -160,6 +176,7 @@ pub fn run_transform(
     file_path: &Path,
     sql_content: &str,
     output_label: &str,
+    notices: &[NoticeInput<'_>],
 ) -> Result<TransformResult, AppError> {
     let conn = Connection::open_in_memory()
         .map_err(|e| AppError::SqlError(e.to_string()))?;
@@ -197,8 +214,88 @@ pub fn run_transform(
         .map(|n| n as usize)
         .unwrap_or(0);
 
+    // Run any attached notice queries against the same input. Notices are
+    // informational — empty result set means nothing to surface. We discard
+    // notices whose own query errors out (logged via the error string in the
+    // label) rather than failing the whole transform.
+    let notice_results: Vec<Notice> = notices
+        .iter()
+        .map(|n| run_notice(&conn, n, &file_str))
+        .collect();
+
     Ok(TransformResult {
         output_path: output_path.to_string_lossy().to_string(),
         row_count,
+        notices: notice_results,
     })
+}
+
+// ── run_notice ────────────────────────────────────────────────────────────────
+// Executes a single notice query and returns the rows as plain strings.
+// Notices are wrapped in `SELECT CAST(col AS VARCHAR)` so every value can be
+// read as a String regardless of the underlying DuckDB column type — keeps
+// the serialization to the frontend uniform.
+
+fn run_notice(conn: &Connection, n: &NoticeInput<'_>, file_str: &str) -> Notice {
+    let user_sql = n.sql_content.replace("{{input_file}}", file_str);
+    let trimmed = user_sql.trim().trim_end_matches(';').trim();
+
+    // Phase 1: discover the column names returned by the user's query.
+    let describe_sql = format!("DESCRIBE {}", trimmed);
+    let columns: Vec<String> = match conn.prepare(&describe_sql) {
+        Ok(mut stmt) => stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map(|iter| iter.filter_map(|r| r.ok()).collect())
+            .unwrap_or_default(),
+        Err(e) => {
+            return Notice {
+                label: n.label.to_string(),
+                description: n.description.map(|s| s.to_string()),
+                columns: vec!["Error".to_string()],
+                rows: vec![vec![format!("Notice query failed: {}", e)]],
+            };
+        }
+    };
+
+    if columns.is_empty() {
+        return Notice {
+            label: n.label.to_string(),
+            description: n.description.map(|s| s.to_string()),
+            columns: vec![],
+            rows: vec![],
+        };
+    }
+
+    // Phase 2: re-issue the query wrapped in a CAST-to-VARCHAR projection so
+    // every cell deserializes as a String.
+    let cast_list = columns
+        .iter()
+        .map(|c| format!("CAST(\"{}\" AS VARCHAR) AS \"{}\"", c, c))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let wrapped = format!("SELECT {} FROM ({}) _notice", cast_list, trimmed);
+
+    let rows: Vec<Vec<String>> = match conn.prepare(&wrapped) {
+        Ok(mut stmt) => {
+            let col_count = columns.len();
+            stmt.query_map([], |row| {
+                let mut data: Vec<String> = Vec::with_capacity(col_count);
+                for i in 0..col_count {
+                    let v: Option<String> = row.get(i).unwrap_or(None);
+                    data.push(v.unwrap_or_default());
+                }
+                Ok(data)
+            })
+            .map(|iter| iter.filter_map(|r| r.ok()).collect())
+            .unwrap_or_default()
+        }
+        Err(e) => vec![vec![format!("Notice query failed: {}", e)]],
+    };
+
+    Notice {
+        label: n.label.to_string(),
+        description: n.description.map(|s| s.to_string()),
+        columns,
+        rows,
+    }
 }

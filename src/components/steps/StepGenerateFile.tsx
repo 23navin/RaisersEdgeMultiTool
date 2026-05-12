@@ -13,11 +13,12 @@ import {
   DownloadIcon,
   CheckIcon,
   XIcon,
+  InfoIcon,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "../ui/button";
 import type { GenerateStatus } from "../../App";
-import type { SqlError } from "../../types";
+import type { Notice, SqlError } from "../../types";
 
 export type PipeItem = { label: string; ready: boolean };
 
@@ -28,6 +29,7 @@ export type TransformRow = {
   generateStatus: GenerateStatus;
   generateProgress: number;
   errors: SqlError[];
+  notices: Notice[];
   onGenerate: () => void;
   onDownload: () => void;
 };
@@ -199,6 +201,63 @@ function TransformBlock({ t }: { t: TransformRow }) {
             </tbody>
           </table>
         </div>
+      )}
+
+      {t.generateStatus === "done" &&
+        t.notices.filter((n) => n.rows.length > 0).map((n, i) => (
+          <NoticeBlock key={i} notice={n} />
+        ))}
+    </div>
+  );
+}
+
+// Informational, non-blocking callout shown beneath a successful transform.
+// Yellow/amber tone differentiates it from the red error table above.
+function NoticeBlock({ notice }: { notice: Notice }) {
+  return (
+    <div className="mt-[8px] bg-[#fffbeb] border border-[#fde68a] overflow-hidden">
+      <div className="flex items-start gap-[6px] px-[10px] py-[6px] border-b border-[#fde68a] bg-[#fef3c7]">
+        <InfoIcon size={13} className="text-[#92400e] mt-[1px] shrink-0" />
+        <div className="min-w-0">
+          <div className="text-[12px] font-medium text-[#92400e]">
+            {notice.label}
+          </div>
+          {notice.description && (
+            <div className="text-[12px] text-[#a16207] leading-snug mt-[1px]">
+              {notice.description}
+            </div>
+          )}
+        </div>
+      </div>
+      {notice.columns.length > 0 && (
+        <table className="w-full text-[12px] border-collapse">
+          <thead className="text-[#a16207]">
+            <tr>
+              {notice.columns.map((c) => (
+                <th
+                  key={c}
+                  className="text-left px-[10px] py-[5px] font-medium"
+                >
+                  {c}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {notice.rows.map((row, i) => (
+              <tr key={i} className="border-t border-[#fde68a]">
+                {row.map((cell, j) => (
+                  <td
+                    key={j}
+                    className="px-[10px] py-[5px] font-mono text-[#78350f]"
+                  >
+                    {cell}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </div>
   );

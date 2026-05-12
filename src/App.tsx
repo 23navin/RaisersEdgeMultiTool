@@ -8,6 +8,7 @@
 import { useState } from "react";
 import type {
   LoadedProfile,
+  Notice,
   ProfileSummary,
   SqlError,
   StepInputRef,
@@ -30,6 +31,7 @@ export type GenEntry = {
   status: GenerateStatus;
   progress: number;
   errors?: SqlError[];
+  notices?: Notice[];
 };
 
 function refLabel(ref: StepInputRef): string {
@@ -47,6 +49,7 @@ function genKey(stepLabel: string, transformIdx: number): string {
 const MOCK_PROFILES: ProfileSummary[] = [
   { id: "test1", name: "Simple Import", version: "1.0.0", zip_path: "" },
   { id: "test2", name: "Multi-File Vendor Import", version: "2.0.0", zip_path: "" },
+  { id: "test3", name: "Catalog Import (with notices)", version: "1.0.0", zip_path: "" },
 ];
 
 const MOCK_PROFILE: LoadedProfile = {
@@ -193,9 +196,104 @@ const MOCK_PROFILE_2: LoadedProfile = {
   temp_dir: "",
 };
 
+// MOCK_PROFILE_3 exercises the `notices` feature on sql_transform: the
+// catalog transform attaches two notice queries — one flags unrecognized
+// category values that need to be added to the master list externally,
+// the other flags items whose unit changed (informational, not a failure).
+const MOCK_PROFILE_3: LoadedProfile = {
+  structure: {
+    id: "test3",
+    name: "Catalog Import (with notices)",
+    version: "1.0.0",
+    min_app_version: "0.1.0",
+    inputs: [
+      {
+        label: "Catalog",
+        type: "csv",
+        required: true,
+        validation: [
+          { label: "SKU", required: true, col_type: "string" },
+          { label: "Category", required: true, col_type: "string" },
+        ],
+      },
+    ],
+    outputs: [{ label: "Catalog_Import", type: "csv" }],
+    steps: [
+      {
+        label: "UploadCatalog",
+        type: "file_input",
+        input: [{ label: "Catalog", validate: true }],
+      },
+      {
+        label: "BuildCatalog",
+        type: "sql_transform",
+        input: ["Catalog"],
+        sql: "catalog.sql",
+        output: ["Catalog_Import"],
+        notices: [
+          {
+            label: "Unrecognized Categories",
+            sql: "notices/unknown_categories.sql",
+            description:
+              "These category values aren't in the master list. Add them in the Catalog Admin tool before importing.",
+          },
+          {
+            label: "Unit-of-Measure Changes",
+            sql: "notices/unit_changes.sql",
+            description:
+              "These SKUs have a different unit of measure than the last import. Confirm with the buyer before proceeding.",
+          },
+        ],
+      },
+      { label: "Import", type: "manual_instruction" },
+    ],
+  },
+  instructions: {
+    _header:
+      "# Catalog Import\n\nMerges the vendor's catalog export with the database. The transform surfaces any values that need attention externally before the import is run.",
+    UploadCatalog:
+      "## Upload Catalog\n\nDrop the vendor's `catalog.csv` export. Required columns: `SKU`, `Category`.",
+    BuildCatalog:
+      "## Build Catalog Import\n\nGenerates `Catalog_Import.csv`. Watch for the **Unrecognized Categories** and **Unit-of-Measure Changes** notices — these don't block the export but should be resolved externally before importing.",
+    Import:
+      "## Import into database\n\nRun the `CatalogImport` profile in the bulk import tool with `Catalog_Import.csv`.",
+  },
+  sql_files: {},
+  temp_dir: "",
+};
+
 const MOCK_PROFILE_MAP: Record<string, LoadedProfile> = {
   test1: MOCK_PROFILE,
   test2: MOCK_PROFILE_2,
+  test3: MOCK_PROFILE_3,
+};
+
+// Mock notice results returned by handleGenerate when the test3 catalog
+// transform completes. Real backend populates this via NoticeQuery.sql.
+const MOCK_NOTICES_BY_SQL: Record<string, Notice[]> = {
+  "catalog.sql": [
+    {
+      label: "Unrecognized Categories",
+      description:
+        "These category values aren't in the master list. Add them in the Catalog Admin tool before importing.",
+      columns: ["Row", "SKU", "Category"],
+      rows: [
+        ["14", "AX-0042", "Outdoor Lighting"],
+        ["27", "BX-9931", "Smart Garden"],
+        ["63", "DX-1180", "Outdoor Lighting"],
+      ],
+    },
+    {
+      label: "Unit-of-Measure Changes",
+      description:
+        "These SKUs have a different unit of measure than the last import. Confirm with the buyer before proceeding.",
+      columns: ["SKU", "Previous Unit", "New Unit"],
+      rows: [
+        ["AX-0511", "EA", "PK"],
+        ["CX-2204", "BX", "EA"],
+      ],
+    },
+  ],
 };
 
 export default function App() {
@@ -314,12 +412,14 @@ export default function App() {
     // run deliberately fails at the end so the error table is demoable.
     const step = loadedProfile?.structure.steps.find((s) => s.label === stepLabel);
     const transforms = step ? stepTransforms(step) : [];
-    const willFail = transforms[transformIdx]?.sql === "audit.sql";
+    const sqlFile = transforms[transformIdx]?.sql ?? "";
+    const willFail = sqlFile === "audit.sql";
     const mockErrors: SqlError[] = [
       { line: 12, errorType: "Binder", message: 'Referenced column "SKU" not found in FROM clause' },
       { line: 24, errorType: "Parser", message: 'syntax error at or near "GROUP"' },
       { errorType: "Runtime", message: "Conversion Error: Could not cast value 'N/A' to DOUBLE" },
     ];
+    const mockNotices: Notice[] = MOCK_NOTICES_BY_SQL[sqlFile] ?? [];
 
     setGenerations((prev) => ({
       ...prev,
@@ -334,7 +434,7 @@ export default function App() {
         [key]: reachedEnd
           ? willFail
             ? { status: "error", progress: 100, errors: mockErrors }
-            : { status: "done", progress: 100 }
+            : { status: "done", progress: 100, notices: mockNotices }
           : { status: "running", progress: p },
       }));
       if (!reachedEnd) setTimeout(tick, 120);

@@ -44,6 +44,18 @@ export type StepInputRef =
   | string
   | { label: string; validate?: boolean };
 
+// A notice query attached to a sql_transform. Runs after the main transform
+// succeeds; returned rows are surfaced as informational items (NOT errors)
+// that the user may need to address externally before moving on.
+// The SQL is expected to return zero rows in the nominal case and one row
+// per item-needing-attention otherwise. Column headers from the result set
+// drive the displayed table columns.
+export type NoticeQuery = {
+  label: string;            // shown as the notice heading
+  sql: string;              // filename inside the bundle's sql/ folder
+  description?: string;     // optional sub-heading prose
+};
+
 // One transform unit inside a sql_transform step. A step can contain one
 // (use the step-level input/sql/output fields) or many (use the transforms
 // array). When `transforms` is present, the step-level fields are ignored.
@@ -51,6 +63,7 @@ export type SqlTransform = {
   input?: StepInputRef[];
   sql: string;
   output?: string[];
+  notices?: NoticeQuery[];
 };
 
 export type Step = {
@@ -59,6 +72,7 @@ export type Step = {
   input?: StepInputRef[];  // file_input: one upload row per entry. sql_transform: single-transform shortcut.
   sql?: string;            // sql_transform single-transform shortcut
   output?: string[];       // sql_transform single-transform shortcut
+  notices?: NoticeQuery[]; // sql_transform single-transform shortcut
   transforms?: SqlTransform[]; // sql_transform multi-transform form
 };
 
@@ -75,6 +89,16 @@ export type SqlError = {
   line?: number;
   errorType: string;   // "Parser" | "Binder" | "Runtime" | etc.
   message: string;
+};
+
+// A populated notice returned from the backend after running a NoticeQuery.
+// `columns` are the header names from the SQL result set, in order.
+// `rows` are the data rows (each cell stringified for display).
+export type Notice = {
+  label: string;
+  description?: string;
+  columns: string[];
+  rows: string[][];
 };
 
 export type ProfileStructure = {
