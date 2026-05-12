@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "App Name",
+  "productName": "Multitool",
   "version": "0.1.0",
   "identifier": "com.navin.tauri-import",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "App Name",
+        "title": "Database Multitool",
         "width": 1200,
         "height": 800,
         "minWidth": 900,

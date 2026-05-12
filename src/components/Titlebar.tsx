@@ -52,7 +52,7 @@ export function Titlebar() {
       >
         <div className="h-[32px] inline-flex items-center px-[3px]">
           <span className="text-[18px] font-medium text-neutral-700">
-            App Name
+            Database Multitool
           </span>
         </div>
       </div>
