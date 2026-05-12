@@ -6,7 +6,6 @@
 // on the left so they don't overlap the app name.
 
 import {
-  DatabaseIcon,
   FileInputIcon,
   SendIcon,
   BarChartIcon,
@@ -51,7 +50,6 @@ export function Titlebar() {
         data-tauri-drag-region
         className="min-w-[220px] flex items-center gap-[9px] pl-[90px]"
       >
-        {/* <DatabaseIcon size={20} className="text-neutral-400" /> */}
         <div className="h-[32px] inline-flex items-center px-[3px]">
           <span className="text-[18px] font-medium text-neutral-700">
             App Name

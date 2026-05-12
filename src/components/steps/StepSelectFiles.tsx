@@ -17,7 +17,6 @@ import type { ValidationError } from "../../types";
 
 export type FileInputRow = {
   inputLabel: string;
-  accepts: string[];
   fileName: string | null;
   fileStatus: FileStatus;
   errors: ValidationError[];

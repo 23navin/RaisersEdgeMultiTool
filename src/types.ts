@@ -97,28 +97,3 @@ export type LoadedProfile = {
   temp_dir: string;
 };
 
-// ── App state types ───────────────────────────────────────────────────────────
-// Not from Rust — used internally by the frontend to track workflow state
-
-export type StepStatus =
-  | "pending"      // not reached yet
-  | "active"       // current step
-  | "complete"     // finished successfully
-  | "error";       // something went wrong
-
-export type FileAttachment = {
-  inputLabel: string;    // matches InputDefinition.label e.g. "Classification"
-  filePath: string;      // absolute path on disk
-  validated: boolean;
-  validationErrors: string[];
-};
-
-export type AppState = {
-  profiles: ProfileSummary[];
-  selectedProfile: ProfileSummary | null;
-  loadedProfile: LoadedProfile | null;
-  currentStepIndex: number;
-  stepStatuses: Record<string, StepStatus>;  // step label → status
-  attachedFiles: Record<string, FileAttachment>; // inputLabel → attachment
-  outputPaths: Record<string, string>;       // outputLabel → file path
-};

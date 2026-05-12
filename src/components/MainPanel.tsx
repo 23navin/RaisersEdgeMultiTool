@@ -161,11 +161,9 @@ function StepSection({
     case "file_input": {
       const rows = (step.input ?? []).map((ref) => {
         const lbl = refLabel(ref);
-        const def = structure.inputs.find((i) => i.label === lbl);
         const entry = files[lbl];
         return {
           inputLabel: lbl,
-          accepts: def ? [def.type] : ["csv"],
           fileName: entry?.name ?? null,
           fileStatus: entry?.status ?? ("none" as const),
           errors: entry?.errors ?? [],
