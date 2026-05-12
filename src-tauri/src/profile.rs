@@ -326,5 +326,7 @@ pub fn list_profiles(profiles_dir: &Path) -> Result<Vec<ProfileSummary>, AppErro
         });
     }
 
+    profiles.sort_by(|a, b| a.id.cmp(&b.id));
+
     Ok(profiles)
 }
