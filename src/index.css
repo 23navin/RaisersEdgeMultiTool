@@ -160,3 +160,60 @@
     animation: none;
   }
 }
+
+/* Subtle reveal for transform result blocks (error table, notice block).
+   Container eases in with a small upward drift; rows stagger in just
+   after the container so the table "fills" instead of popping. */
+@keyframes ui-reveal {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes ui-reveal-row {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.ui-reveal {
+  animation: ui-reveal 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: opacity, transform;
+}
+
+.ui-reveal-row {
+  animation: ui-reveal-row 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: opacity, transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-reveal,
+  .ui-reveal-row {
+    animation: none;
+  }
+}
+
+/* Smoothly expands the enclosing card when a result block is mounted.
+   Uses the grid-template-rows 0fr → 1fr trick so the wrapper grows
+   from 0 to its natural height without a measured pixel value.
+   Same timing as .ui-reveal so the height grow and the table fade
+   read as a single motion. */
+@keyframes ui-grow {
+  from { grid-template-rows: 0fr; }
+  to   { grid-template-rows: 1fr; }
+}
+
+.ui-grow {
+  display: grid;
+  grid-template-rows: 1fr;
+  animation: ui-grow 150ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.ui-grow > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-grow {
+    animation: none;
+  }
+}

@@ -177,36 +177,52 @@ function TransformBlock({ t }: { t: TransformRow }) {
       </div>
 
       {t.generateStatus === "error" && t.errors.length > 0 && (
-        <div className="mt-[8px] bg-[#fef2f2] border border-[#fecaca] overflow-hidden">
-          <table className="w-full text-[12px] border-collapse">
-            <thead className="bg-[#fee2e2] text-[#991b1b]">
-              <tr>
-                <th className="text-left px-[10px] py-[5px] font-medium w-[55px]">Line</th>
-                <th className="text-left px-[10px] py-[5px] font-medium w-[90px]">Type</th>
-                <th className="text-left px-[10px] py-[5px] font-medium">Message</th>
-              </tr>
-            </thead>
-            <tbody>
-              {t.errors.map((err, i) => (
-                <tr key={i} className="border-t border-[#fecaca]">
-                  <td className="px-[10px] py-[5px] font-mono text-[#b91c1c]">
-                    {err.line ?? "—"}
-                  </td>
-                  <td className="px-[10px] py-[5px] font-mono text-[#7f1d1d]">
-                    {err.errorType}
-                  </td>
-                  <td className="px-[10px] py-[5px] text-[#b91c1c]">{err.message}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="ui-grow">
+          <div>
+            <div className="ui-reveal mt-[8px] bg-[#fef2f2] border border-[#fecaca] overflow-hidden">
+              <table className="w-full text-[12px] border-collapse">
+                <thead className="bg-[#fee2e2] text-[#991b1b]">
+                  <tr>
+                    <th className="text-left px-[10px] py-[5px] font-medium w-[55px]">Line</th>
+                    <th className="text-left px-[10px] py-[5px] font-medium w-[90px]">Type</th>
+                    <th className="text-left px-[10px] py-[5px] font-medium">Message</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {t.errors.map((err, i) => (
+                    <tr
+                      key={i}
+                      className="ui-reveal-row border-t border-[#fecaca]"
+                      style={{ animationDelay: `${120 + i * 35}ms` }}
+                    >
+                      <td className="px-[10px] py-[5px] font-mono text-[#b91c1c]">
+                        {err.line ?? "—"}
+                      </td>
+                      <td className="px-[10px] py-[5px] font-mono text-[#7f1d1d]">
+                        {err.errorType}
+                      </td>
+                      <td className="px-[10px] py-[5px] text-[#b91c1c]">{err.message}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
 
       {t.generateStatus === "done" &&
-        t.notices.filter((n) => n.rows.length > 0).map((n, i) => (
-          <NoticeBlock key={i} notice={n} />
-        ))}
+        t.notices.filter((n) => n.rows.length > 0).length > 0 && (
+          <div className="ui-grow">
+            <div>
+              {t.notices
+                .filter((n) => n.rows.length > 0)
+                .map((n, i) => (
+                  <NoticeBlock key={i} notice={n} />
+                ))}
+            </div>
+          </div>
+        )}
     </div>
   );
 }
@@ -215,7 +231,7 @@ function TransformBlock({ t }: { t: TransformRow }) {
 // Yellow/amber tone differentiates it from the red error table above.
 function NoticeBlock({ notice }: { notice: Notice }) {
   return (
-    <div className="mt-[8px] bg-[#fffbeb] border border-[#fde68a] overflow-hidden">
+    <div className="ui-reveal mt-[8px] bg-[#fffbeb] border border-[#fde68a] overflow-hidden">
       <div className="flex items-start gap-[6px] px-[10px] py-[6px] border-b border-[#fde68a] bg-[#fef3c7]">
         <InfoIcon size={13} className="text-[#92400e] mt-[1px] shrink-0" />
         <div className="min-w-0">
@@ -245,7 +261,11 @@ function NoticeBlock({ notice }: { notice: Notice }) {
           </thead>
           <tbody>
             {notice.rows.map((row, i) => (
-              <tr key={i} className="border-t border-[#fde68a]">
+              <tr
+                key={i}
+                className="ui-reveal-row border-t border-[#fde68a]"
+                style={{ animationDelay: `${120 + i * 35}ms` }}
+              >
                 {row.map((cell, j) => (
                   <td
                     key={j}
