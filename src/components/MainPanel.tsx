@@ -158,11 +158,14 @@ function StepSection({
       const rows = (step.input ?? []).map((ref) => {
         const lbl = refLabel(ref);
         const entry = files[lbl];
+        const def = structure.inputs.find((i) => i.label === lbl);
         return {
           inputLabel: lbl,
+          inputType: def?.type ?? "csv",
           fileName: entry?.name ?? null,
           fileStatus: entry?.status ?? ("none" as const),
           errors: entry?.errors ?? [],
+          notices: entry?.notices ?? [],
         };
       });
       return (

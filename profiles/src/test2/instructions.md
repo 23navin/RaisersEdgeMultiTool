@@ -12,12 +12,6 @@ From the VendorX portal, download `inventory.csv` (required — `Item #` 6 digit
 `Category` one of `Alpha`, `Beta`, `Gamma`) and `categories.csv` (optional
 reference list, skip if unchanged).
 
-<!-- label: UploadPricing -->
-## Upload Pricing
-
-Provide the `pricing.xlsx` workbook. Use the `Current` sheet with the header on
-row 1.
-
 <!-- label: BuildOutputs -->
 ## Build Output Files
 
@@ -37,3 +31,14 @@ Run the imports in this order using the `BulkImport` profile:
 ![Import tool](assets/import_profile.png)
 
 If there are exceptions, contact `vendor@example.com`.
+
+<!-- label: UploadPricing -->
+## Upload Pricing
+
+Provide the `pricing.xlsx` workbook. Use the `Current` sheet with the header on
+row 1.
+
+<!-- label: PricingCheck -->
+## Verify Pricing
+
+Use the `pricing.xlsx` workbook to verify the Pricing and Categories data segments.

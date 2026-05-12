@@ -19,9 +19,21 @@ use crate::profile::ColumnValidation;
 // ── Result types returned to commands.rs ─────────────────────────────────────
 
 #[derive(Debug, Serialize)]
+pub struct ValidationError {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub row: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub column: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    pub message: String,
+}
+
+#[derive(Debug, Serialize)]
 pub struct ValidationResult {
     pub ok: bool,
-    pub errors: Vec<String>,
+    pub errors: Vec<ValidationError>,
+    pub notices: Vec<Notice>,
 }
 
 #[derive(Debug, Serialize)]
@@ -93,30 +105,60 @@ pub fn validate_file(
         .filter_map(|r| r.ok())
         .collect();
 
-    let mut errors: Vec<String> = Vec::new();
+    let mut errors: Vec<ValidationError> = Vec::new();
+    let mut mismatches: Vec<(String, String)> = Vec::new(); // (expected_label, found_column)
+    let push = |errors: &mut Vec<ValidationError>, column: &str, message: String| {
+        errors.push(ValidationError {
+            row: None,
+            column: Some(column.to_string()),
+            value: None,
+            message,
+        });
+    };
 
     for v in validations {
-        // Check column exists
-        if !actual_columns.iter().any(|c| c == &v.label) {
-            if v.required {
-                errors.push(format!("Missing required column: '{}'", v.label));
+        // Resolve which actual column maps to this validation rule:
+        //   1. Case-sensitive exact match.
+        //   2. Fall back to a normalized match (lowercased, special characters
+        //      stripped). If that hits, the validation still applies and a
+        //      notice records the mismatch so the author can see it.
+        let resolved: Option<String> = if actual_columns.iter().any(|c| c == &v.label) {
+            Some(v.label.clone())
+        } else {
+            let target = normalize_col(&v.label);
+            if target.is_empty() {
+                None
+            } else {
+                actual_columns
+                    .iter()
+                    .find(|c| normalize_col(c) == target)
+                    .map(|c| {
+                        mismatches.push((v.label.clone(), c.clone()));
+                        c.clone()
+                    })
             }
-            continue; // skip further checks if column absent
-        }
+        };
+
+        let col = match resolved {
+            Some(c) => c,
+            None => {
+                if v.required {
+                    push(&mut errors, &v.label, format!("Missing required column '{}'", v.label));
+                }
+                continue;
+            }
+        };
 
         // Check nulls in required columns
         if v.required {
             let null_sql = format!(
                 "SELECT COUNT(*) FROM {} WHERE \"{}\" IS NULL OR TRIM(CAST(\"{}\" AS VARCHAR)) = ''",
-                read_fn, v.label, v.label
+                read_fn, col, col
             );
             if let Ok(mut stmt) = conn.prepare(&null_sql) {
                 if let Ok(count) = stmt.query_row([], |r| r.get::<_, i64>(0)) {
                     if count > 0 {
-                        errors.push(format!(
-                            "Column '{}' has {} empty or null value(s)",
-                            v.label, count
-                        ));
+                        push(&mut errors, &v.label, format!("{} empty or null value(s)", count));
                     }
                 }
             }
@@ -131,17 +173,20 @@ pub fn validate_file(
                 .join(", ");
             let bad_sql = format!(
                 "SELECT COUNT(*) FROM {} WHERE \"{}\" NOT IN ({}) AND \"{}\" IS NOT NULL",
-                read_fn, v.label, values_list, v.label
+                read_fn, col, values_list, col
             );
             if let Ok(mut stmt) = conn.prepare(&bad_sql) {
                 if let Ok(count) = stmt.query_row([], |r| r.get::<_, i64>(0)) {
                     if count > 0 {
-                        errors.push(format!(
-                            "Column '{}' has {} value(s) not in allowed list: {}",
-                            v.label,
-                            count,
-                            allowed.join(", ")
-                        ));
+                        push(
+                            &mut errors,
+                            &v.label,
+                            format!(
+                                "{} value(s) not in allowed list [{}]",
+                                count,
+                                allowed.join(", ")
+                            ),
+                        );
                     }
                 }
             }
@@ -152,15 +197,16 @@ pub fn validate_file(
             if let Some(digits) = v.digits {
                 let digit_sql = format!(
                     "SELECT COUNT(*) FROM {} WHERE LENGTH(CAST(\"{}\" AS VARCHAR)) != {}",
-                    read_fn, v.label, digits
+                    read_fn, col, digits
                 );
                 if let Ok(mut stmt) = conn.prepare(&digit_sql) {
                     if let Ok(count) = stmt.query_row([], |r| r.get::<_, i64>(0)) {
                         if count > 0 {
-                            errors.push(format!(
-                                "Column '{}' has {} value(s) that are not exactly {} digits",
-                                v.label, count, digits
-                            ));
+                            push(
+                                &mut errors,
+                                &v.label,
+                                format!("{} value(s) are not exactly {} digits", count, digits),
+                            );
                         }
                     }
                 }
@@ -168,10 +214,37 @@ pub fn validate_file(
         }
     }
 
+    let mut notices: Vec<Notice> = Vec::new();
+    if !mismatches.is_empty() {
+        notices.push(Notice {
+            label: "Column name mismatches".to_string(),
+            description: Some(
+                "These columns matched after ignoring case and special characters. \
+                 Consider renaming them for an exact match."
+                    .to_string(),
+            ),
+            columns: vec!["Expected".to_string(), "Found in file".to_string()],
+            rows: mismatches
+                .into_iter()
+                .map(|(e, a)| vec![e, a])
+                .collect(),
+        });
+    }
+
     Ok(ValidationResult {
         ok: errors.is_empty(),
         errors,
+        notices,
     })
+}
+
+// Lowercased + alphanumeric-only form of a column header — used to compare
+// expected vs. actual column names while ignoring case and punctuation.
+fn normalize_col(s: &str) -> String {
+    s.chars()
+        .flat_map(|c| c.to_lowercase())
+        .filter(|c| c.is_alphanumeric())
+        .collect()
 }
 
 // ── run_transform ─────────────────────────────────────────────────────────────

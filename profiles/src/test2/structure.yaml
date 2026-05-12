@@ -9,7 +9,7 @@ inputs:
     type: csv
     required: true
     validation:
-      - label: Item #
+      - label: 'Item #'
         required: true
         type: number
         digits: 6
@@ -37,6 +37,15 @@ inputs:
   - label: Categories
     type: csv
     required: false
+    validation:
+      - label: Category
+        required: true
+        type: string
+
+      - label: Description
+        required: true
+        type: string
+
 
 outputs:
   - label: Inventory_Import
@@ -73,6 +82,7 @@ steps:
         output:
           - Inventory_Import
 
+  - label: PricingCheck
       - input:
           - Pricing
         sql: pricing.sql

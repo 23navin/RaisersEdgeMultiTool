@@ -76,11 +76,13 @@ export type Step = {
   transforms?: SqlTransform[]; // sql_transform multi-transform form
 };
 
-// One row in a file_input step's validation-errors table.
+// One row in a file_input step's validation-errors table. Most fields are
+// optional because the backend currently aggregates per-column (e.g. "3 nulls
+// in column X") rather than enumerating offending rows.
 export type ValidationError = {
-  row: number;
-  column: string;
-  value: string;
+  row?: number;
+  column?: string;
+  value?: string;
   message: string;
 };
 

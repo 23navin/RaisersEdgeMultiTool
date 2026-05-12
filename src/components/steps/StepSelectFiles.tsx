@@ -11,15 +11,20 @@ import {
   CheckIcon,
   XIcon,
 } from "lucide-react";
+import { open } from "@tauri-apps/plugin-dialog";
+import { basename } from "@tauri-apps/api/path";
 import { Button } from "../ui/button";
+import { NoticeBlock } from "../NoticeBlock";
 import type { FileStatus } from "../../App";
-import type { ValidationError } from "../../types";
+import type { Notice, ValidationError } from "../../types";
 
 export type FileInputRow = {
   inputLabel: string;
+  inputType: string;          // "csv" | "xlsx" — drives the file dialog filter
   fileName: string | null;
   fileStatus: FileStatus;
   errors: ValidationError[];
+  notices: Notice[];
 };
 
 type Props = {
@@ -68,7 +73,7 @@ function FileRow({
   onValidate: (inputLabel: string) => void;
   onClear: (inputLabel: string) => void;
 }) {
-  const { inputLabel, fileName, fileStatus, errors } = row;
+  const { inputLabel, inputType, fileName, fileStatus, errors, notices } = row;
   const validateDisabled = fileStatus === "none";
   const uploadBtnStyle = fileStatus === "none" ? activeBtn : doneBtn;
 
@@ -81,11 +86,20 @@ function FileRow({
       ? { className: activeBtn, Icon: ListChecksIcon }
       : { className: notReadyBtn, Icon: ListChecksIcon };
 
-  // Mock-phase: clicking Upload fakes a file selection.
-  const handleUploadClick = () => {
-    const fakeName = "file_from_vendor.csv";
-    const fakePath = `/mock/${fakeName}`;
-    onFileSelect(inputLabel, fakePath, fakeName);
+  const handleUploadClick = async () => {
+    const extensions =
+      inputType === "xlsx" ? ["xlsx", "xls"] : [inputType || "csv"];
+    try {
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: inputLabel, extensions }],
+      });
+      if (typeof selected !== "string") return; // user cancelled
+      const name = await basename(selected);
+      onFileSelect(inputLabel, selected, name);
+    } catch (e) {
+      console.error("file dialog failed:", e);
+    }
   };
 
   return (
@@ -167,6 +181,16 @@ function FileRow({
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+      )}
+
+      {notices.length > 0 && (
+        <div className="ui-grow">
+          <div>
+            {notices.map((n, i) => (
+              <NoticeBlock key={i} notice={n} />
+            ))}
           </div>
         </div>
       )}

@@ -227,22 +227,14 @@ pub fn load_from_dir(dir: &Path) -> Result<LoadedProfile, AppError> {
         HashMap::new()
     };
 
-    // Read all .sql files from the sql/ folder
+    // Read all .sql files from the sql/ folder. Walks subdirectories so
+    // notice queries under sql/notices/ are picked up. Keys are paths
+    // relative to sql_dir with forward slashes, matching how YAML
+    // references them (e.g. "notices/unknown_categories.sql").
     let mut sql_files: HashMap<String, String> = HashMap::new();
     let sql_dir = dir.join("sql");
     if sql_dir.exists() {
-        for entry in fs::read_dir(&sql_dir)
-            .map_err(|e| AppError::IoError(e.to_string()))?
-        {
-            let entry = entry.map_err(|e| AppError::IoError(e.to_string()))?;
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("sql") {
-                let filename = path.file_name().unwrap().to_string_lossy().to_string();
-                let content = fs::read_to_string(&path)
-                    .map_err(|e| AppError::IoError(format!("Cannot read {}: {}", filename, e)))?;
-                sql_files.insert(filename, content);
-            }
-        }
+        collect_sql_files(&sql_dir, &sql_dir, &mut sql_files)?;
     }
 
     Ok(LoadedProfile {
@@ -251,6 +243,30 @@ pub fn load_from_dir(dir: &Path) -> Result<LoadedProfile, AppError> {
         sql_files,
         temp_dir: dir.to_path_buf(),
     })
+}
+
+fn collect_sql_files(
+    root: &Path,
+    dir: &Path,
+    out: &mut HashMap<String, String>,
+) -> Result<(), AppError> {
+    for entry in fs::read_dir(dir).map_err(|e| AppError::IoError(e.to_string()))? {
+        let entry = entry.map_err(|e| AppError::IoError(e.to_string()))?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_sql_files(root, &path, out)?;
+        } else if path.extension().and_then(|e| e.to_str()) == Some("sql") {
+            let rel = path
+                .strip_prefix(root)
+                .map_err(|e| AppError::IoError(e.to_string()))?
+                .to_string_lossy()
+                .replace('\\', "/");
+            let content = fs::read_to_string(&path)
+                .map_err(|e| AppError::IoError(format!("Cannot read {}: {}", rel, e)))?;
+            out.insert(rel, content);
+        }
+    }
+    Ok(())
 }
 
 // ── Profile listing ───────────────────────────────────────────────────────────
