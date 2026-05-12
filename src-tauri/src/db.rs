@@ -192,8 +192,26 @@ pub fn validate_file(
             }
         }
 
-        // Check digit length for number columns
+        // Number-typed columns: first check that values are actually numeric,
+        // then (optionally) check the digit count.
         if v.col_type == "number" {
+            let non_num_sql = format!(
+                "SELECT COUNT(*) FROM {} WHERE TRY_CAST(\"{}\" AS DOUBLE) IS NULL \
+                 AND \"{}\" IS NOT NULL AND TRIM(CAST(\"{}\" AS VARCHAR)) != ''",
+                read_fn, col, col, col
+            );
+            if let Ok(mut stmt) = conn.prepare(&non_num_sql) {
+                if let Ok(count) = stmt.query_row([], |r| r.get::<_, i64>(0)) {
+                    if count > 0 {
+                        push(
+                            &mut errors,
+                            &v.label,
+                            format!("{} non-numeric value(s)", count),
+                        );
+                    }
+                }
+            }
+
             if let Some(digits) = v.digits {
                 let digit_sql = format!(
                     "SELECT COUNT(*) FROM {} WHERE LENGTH(CAST(\"{}\" AS VARCHAR)) != {}",
