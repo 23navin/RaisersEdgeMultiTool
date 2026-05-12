@@ -53,7 +53,7 @@ export function Sidebar({
   const selected = profiles.find((p) => p.id === selectedProfile);
 
   return (
-    <aside className="w-[214px] shrink-0 border-r border-neutral-200 flex flex-col pt-[10px]">
+    <aside className="w-[214px] shrink-0 border-r border-neutral-200 flex flex-col pt-[15px]">
       {/* Profile combobox row */}
       <div className="flex items-center gap-[7px] px-[10px] pb-[10px]">
         <FileInputIcon size={16} className="text-neutral-400 shrink-0" />
