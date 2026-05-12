@@ -101,6 +101,20 @@ export type Notice = {
   rows: string[][];
 };
 
+// One file emitted by a sql_transform. A transform can produce many of these
+// when its SQL uses {{output:Label}} placeholders, one per declared output.
+export type OutputFile = {
+  label: string;
+  path: string;
+  row_count: number;
+};
+
+// Result returned by run_profile — mirrors db::TransformResult in Rust.
+export type TransformResult = {
+  outputs: OutputFile[];
+  notices: Notice[];
+};
+
 export type ProfileStructure = {
   id: string;
   name: string;

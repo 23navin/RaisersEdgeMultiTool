@@ -32,9 +32,15 @@ pub struct Notice {
 }
 
 #[derive(Debug, Serialize)]
-pub struct TransformResult {
-    pub output_path: String,
+pub struct OutputFile {
+    pub label: String,
+    pub path: String,
     pub row_count: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TransformResult {
+    pub outputs: Vec<OutputFile>,
     pub notices: Vec<Notice>,
 }
 
@@ -168,51 +174,111 @@ pub fn validate_file(
 }
 
 // ── run_transform ─────────────────────────────────────────────────────────────
-// Executes the profile's SQL against the input file and writes a CSV output.
-// {{input_file}} in the SQL is replaced with the actual file path.
-// Output is written to the same directory as the input file with a timestamp.
+// Executes the profile's SQL against the input file and writes one CSV per
+// declared output label. {{input_file}} resolves to the input path.
+//
+// Two SQL shapes are supported:
+//
+// 1. Multi-output: the SQL contains one or more {{output:LabelName}}
+//    placeholders. Each placeholder resolves to a temp-dir path for that
+//    declared output. The SQL is executed as a batch — author writes the
+//    COPY statements themselves, one per output.
+//
+// 2. Single-output legacy: the SQL is a bare SELECT (no {{output:...}}
+//    placeholders). It is wrapped in COPY (...) TO 'path' and written to the
+//    one declared output. Requires exactly one entry in `output_labels`.
 
 pub fn run_transform(
     file_path: &Path,
     sql_content: &str,
-    output_label: &str,
+    output_labels: &[String],
     notices: &[NoticeInput<'_>],
 ) -> Result<TransformResult, AppError> {
+    if output_labels.is_empty() {
+        return Err(AppError::SqlError(
+            "Transform has no declared outputs".to_string(),
+        ));
+    }
+
     let conn = Connection::open_in_memory()
         .map_err(|e| AppError::SqlError(e.to_string()))?;
 
-    // Replace the placeholder with the actual file path
     // Forward slashes work on all platforms including Windows in DuckDB
     let file_str = file_path.to_string_lossy().replace('\\', "/");
-    let sql = sql_content.replace("{{input_file}}", &file_str);
 
-    // Write to system temp dir so the input folder stays clean
+    // Assign a temp-dir path per output label up front so we can substitute
+    // {{output:Label}} placeholders and remember which path belongs to which.
     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-    let output_filename = format!(
-        "{}_{}.csv",
-        output_label.to_lowercase().replace(' ', "_"),
-        timestamp
-    );
-    let output_path: PathBuf = std::env::temp_dir().join(&output_filename);
+    let outputs: Vec<(String, PathBuf)> = output_labels
+        .iter()
+        .map(|label| {
+            let filename = format!(
+                "{}_{}.csv",
+                label.to_lowercase().replace(' ', "_"),
+                timestamp
+            );
+            (label.clone(), std::env::temp_dir().join(filename))
+        })
+        .collect();
 
-    let output_str = output_path.to_string_lossy().replace('\\', "/");
+    // Start by resolving {{input_file}}, then resolve each {{output:Label}}.
+    let mut sql = sql_content.replace("{{input_file}}", &file_str);
+    let mut multi_output_mode = false;
+    for (label, path) in &outputs {
+        let placeholder = format!("{{{{output:{}}}}}", label);
+        if sql.contains(&placeholder) {
+            multi_output_mode = true;
+            let path_str = path.to_string_lossy().replace('\\', "/");
+            sql = sql.replace(&placeholder, &path_str);
+        }
+    }
 
-    // Execute the transform and write directly to CSV via DuckDB COPY
-    let copy_sql = format!(
-        "COPY ({}) TO '{}' (HEADER, DELIMITER ',')",
-        sql.trim().trim_end_matches(';').trim(),
-        output_str
-    );
+    if multi_output_mode {
+        // The author wrote the COPY statements themselves — execute as-is.
+        conn.execute_batch(&sql)
+            .map_err(|e| AppError::SqlError(format!("Transform failed: {}", e)))?;
+    } else {
+        // Legacy single-output: wrap the SELECT in a COPY to the lone output.
+        if outputs.len() != 1 {
+            return Err(AppError::SqlError(format!(
+                "Transform declares {} outputs but SQL contains no {{{{output:Label}}}} placeholders. \
+                 Either declare exactly one output or add {{{{output:Label}}}} placeholders to the SQL.",
+                outputs.len()
+            )));
+        }
+        let output_str = outputs[0].1.to_string_lossy().replace('\\', "/");
+        let copy_sql = format!(
+            "COPY ({}) TO '{}' (HEADER, DELIMITER ',')",
+            sql.trim().trim_end_matches(';').trim(),
+            output_str
+        );
+        conn.execute_batch(&copy_sql)
+            .map_err(|e| AppError::SqlError(format!("Transform failed: {}", e)))?;
+    }
 
-    conn.execute_batch(&copy_sql)
-        .map_err(|e| AppError::SqlError(format!("Transform failed: {}", e)))?;
-
-    // Count output rows
-    let count_sql = format!("SELECT COUNT(*) FROM read_csv_auto('{}')", output_str);
-    let row_count: usize = conn
-        .query_row(&count_sql, [], |r| r.get::<_, i64>(0))
-        .map(|n| n as usize)
-        .unwrap_or(0);
+    // Tally each declared output. A missing file in multi-output mode means
+    // the author's SQL didn't actually write to that placeholder — surface
+    // that as an error rather than silently returning a 0-row entry.
+    let mut output_files: Vec<OutputFile> = Vec::with_capacity(outputs.len());
+    for (label, path) in &outputs {
+        if !path.exists() {
+            return Err(AppError::SqlError(format!(
+                "Output '{}' was declared but the SQL did not write to it (expected {{{{output:{}}}}})",
+                label, label
+            )));
+        }
+        let path_str = path.to_string_lossy().replace('\\', "/");
+        let count_sql = format!("SELECT COUNT(*) FROM read_csv_auto('{}')", path_str);
+        let row_count: usize = conn
+            .query_row(&count_sql, [], |r| r.get::<_, i64>(0))
+            .map(|n| n as usize)
+            .unwrap_or(0);
+        output_files.push(OutputFile {
+            label: label.clone(),
+            path: path.to_string_lossy().to_string(),
+            row_count,
+        });
+    }
 
     // Run any attached notice queries against the same input. Notices are
     // informational — empty result set means nothing to surface. We discard
@@ -224,8 +290,7 @@ pub fn run_transform(
         .collect();
 
     Ok(TransformResult {
-        output_path: output_path.to_string_lossy().to_string(),
-        row_count,
+        outputs: output_files,
         notices: notice_results,
     })
 }

@@ -9,6 +9,7 @@ import { useState } from "react";
 import type {
   LoadedProfile,
   Notice,
+  OutputFile,
   ProfileSummary,
   SqlError,
   StepInputRef,
@@ -32,6 +33,7 @@ export type GenEntry = {
   progress: number;
   errors?: SqlError[];
   notices?: Notice[];
+  outputs?: OutputFile[];
 };
 
 function refLabel(ref: StepInputRef): string {
@@ -50,6 +52,7 @@ const MOCK_PROFILES: ProfileSummary[] = [
   { id: "test1", name: "Simple Import", version: "1.0.0", zip_path: "" },
   { id: "test2", name: "Multi-File Vendor Import", version: "2.0.0", zip_path: "" },
   { id: "test3", name: "Catalog Import (with notices)", version: "1.0.0", zip_path: "" },
+  { id: "test4", name: "Order Export (multi-output)", version: "1.0.0", zip_path: "" },
 ];
 
 const MOCK_PROFILE: LoadedProfile = {
@@ -262,10 +265,73 @@ const MOCK_PROFILE_3: LoadedProfile = {
   temp_dir: "",
 };
 
+// MOCK_PROFILE_4 exercises multi-output: a single sql_transform with one SQL
+// file (`split_orders.sql`) that fans out to three declared outputs via
+// {{output:Shipped_Orders}}, {{output:Pending_Orders}}, {{output:Cancelled_Orders}}
+// placeholders. The UI should render three Download buttons stacked beside
+// the Generate row.
+const MOCK_PROFILE_4: LoadedProfile = {
+  structure: {
+    id: "test4",
+    name: "Order Export (multi-output)",
+    version: "1.0.0",
+    min_app_version: "0.1.0",
+    inputs: [
+      {
+        label: "Orders",
+        type: "csv",
+        required: true,
+        validation: [
+          { label: "Order #", required: true, col_type: "number", digits: 8 },
+          {
+            label: "Status",
+            required: true,
+            col_type: "string",
+            value: ["Shipped", "Pending", "Cancelled"],
+          },
+        ],
+      },
+    ],
+    outputs: [
+      { label: "Shipped_Orders", type: "csv" },
+      { label: "Pending_Orders", type: "csv" },
+      { label: "Cancelled_Orders", type: "csv" },
+    ],
+    steps: [
+      {
+        label: "UploadOrders",
+        type: "file_input",
+        input: [{ label: "Orders", validate: true }],
+      },
+      {
+        label: "SplitOrders",
+        type: "sql_transform",
+        input: ["Orders"],
+        sql: "split_orders.sql",
+        output: ["Shipped_Orders", "Pending_Orders", "Cancelled_Orders"],
+      },
+      { label: "Import", type: "manual_instruction" },
+    ],
+  },
+  instructions: {
+    _header:
+      "# Order Export\n\nSplits the vendor's order export into three files — one per status — using a single SQL transform that writes all three outputs in one batch.",
+    UploadOrders:
+      "## Upload Orders\n\nDrop the vendor's `orders.csv` export. Required columns: `Order #` (8 digits), `Status` (one of `Shipped`, `Pending`, `Cancelled`).",
+    SplitOrders:
+      "## Split by Status\n\nProduces `Shipped_Orders`, `Pending_Orders`, and `Cancelled_Orders` in a single run. Each Download button below saves one of the three files.",
+    Import:
+      "## Import into database\n\nLoad each file into its matching staging table using the `OrderImport` profile.",
+  },
+  sql_files: {},
+  temp_dir: "",
+};
+
 const MOCK_PROFILE_MAP: Record<string, LoadedProfile> = {
   test1: MOCK_PROFILE,
   test2: MOCK_PROFILE_2,
   test3: MOCK_PROFILE_3,
+  test4: MOCK_PROFILE_4,
 };
 
 // Mock notice results returned by handleGenerate when the test3 catalog
@@ -412,7 +478,9 @@ export default function App() {
     // run deliberately fails at the end so the error table is demoable.
     const step = loadedProfile?.structure.steps.find((s) => s.label === stepLabel);
     const transforms = step ? stepTransforms(step) : [];
-    const sqlFile = transforms[transformIdx]?.sql ?? "";
+    const transform = transforms[transformIdx];
+    const sqlFile = transform?.sql ?? "";
+    const outputLabels = transform?.output ?? [];
     const willFail = sqlFile === "audit.sql";
     const mockErrors: SqlError[] = [
       { line: 12, errorType: "Binder", message: 'Referenced column "SKU" not found in FROM clause' },
@@ -420,6 +488,11 @@ export default function App() {
       { errorType: "Runtime", message: "Conversion Error: Could not cast value 'N/A' to DOUBLE" },
     ];
     const mockNotices: Notice[] = MOCK_NOTICES_BY_SQL[sqlFile] ?? [];
+    const mockOutputs: OutputFile[] = outputLabels.map((label) => ({
+      label,
+      path: `/tmp/${label.toLowerCase().replace(/ /g, "_")}_mock.csv`,
+      row_count: 42,
+    }));
 
     setGenerations((prev) => ({
       ...prev,
@@ -434,7 +507,12 @@ export default function App() {
         [key]: reachedEnd
           ? willFail
             ? { status: "error", progress: 100, errors: mockErrors }
-            : { status: "done", progress: 100, notices: mockNotices }
+            : {
+                status: "done",
+                progress: 100,
+                notices: mockNotices,
+                outputs: mockOutputs,
+              }
           : { status: "running", progress: p },
       }));
       if (!reachedEnd) setTimeout(tick, 120);
@@ -442,7 +520,11 @@ export default function App() {
     setTimeout(tick, 120);
   };
 
-  const handleDownload = (_stepLabel: string, _transformIdx: number) => {
+  const handleDownload = (
+    _stepLabel: string,
+    _transformIdx: number,
+    _outputLabel: string,
+  ) => {
     // mock: no-op
   };
 

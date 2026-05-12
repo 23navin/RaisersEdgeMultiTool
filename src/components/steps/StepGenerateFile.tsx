@@ -31,7 +31,7 @@ export type TransformRow = {
   errors: SqlError[];
   notices: Notice[];
   onGenerate: () => void;
-  onDownload: () => void;
+  onDownload: (outputLabel: string) => void;
 };
 
 type Props = {
@@ -146,7 +146,10 @@ function TransformBlock({ t }: { t: TransformRow }) {
         </div>
       </div>
 
-      {/* Generate row */}
+      {/* Generate row. With one output, a single Download button sits inline
+          on the right (existing layout). With multiple outputs, the buttons
+          stack as a column in the same right slot, one per output, each
+          labeled with the output name so users can save them individually. */}
       <div className="flex items-center gap-[8px]">
         <Button
           type="button"
@@ -165,15 +168,32 @@ function TransformBlock({ t }: { t: TransformRow }) {
           />
         </div>
 
-        <Button
-          type="button"
-          onClick={t.onDownload}
-          disabled={downloadDisabled}
-          className={`${baseBtn} ${downloadBtnStyle}`}
-        >
-          <DownloadIcon size={13} />
-          Download
-        </Button>
+        {t.outputs.length <= 1 ? (
+          <Button
+            type="button"
+            onClick={() => t.onDownload(t.outputs[0]?.label ?? "")}
+            disabled={downloadDisabled || t.outputs.length === 0}
+            className={`${baseBtn} ${downloadBtnStyle}`}
+          >
+            <DownloadIcon size={13} />
+            Download
+          </Button>
+        ) : (
+          <div className="flex flex-col gap-[4px] items-stretch">
+            {t.outputs.map((o) => (
+              <Button
+                key={o.label}
+                type="button"
+                onClick={() => t.onDownload(o.label)}
+                disabled={downloadDisabled}
+                className={`${baseBtn} ${downloadBtnStyle} justify-start`}
+              >
+                <DownloadIcon size={13} />
+                {o.label}
+              </Button>
+            ))}
+          </div>
+        )}
       </div>
 
       {t.generateStatus === "error" && t.errors.length > 0 && (

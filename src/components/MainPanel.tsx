@@ -19,7 +19,7 @@ type MainPanelProps = {
   onValidate: (inputLabel: string) => void;
   onClearFile: (inputLabel: string) => void;
   onGenerate: (stepLabel: string, transformIdx: number) => void;
-  onDownload: (stepLabel: string, transformIdx: number) => void;
+  onDownload: (stepLabel: string, transformIdx: number, outputLabel: string) => void;
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -216,7 +216,8 @@ function StepSection({
           errors: gen?.errors ?? [],
           notices: gen?.notices ?? [],
           onGenerate: () => onGenerate(step.label, idx),
-          onDownload: () => onDownload(step.label, idx),
+          onDownload: (outputLabel: string) =>
+            onDownload(step.label, idx, outputLabel),
         };
       });
       return (

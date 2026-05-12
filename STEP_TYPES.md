@@ -220,6 +220,40 @@ Inside the SQL file:
   `read_xlsx('{{input_file}}')`.
 - Quote column names containing spaces or special characters:
   `"Item #"`.
+- `{{output:LabelName}}` is replaced with the temp-dir path for the declared
+  output named `LabelName`. Use this when a single transform writes multiple
+  files — the SQL author writes one `COPY` per output and the runtime
+  executes them as a batch.
+
+### Single vs multi output
+
+A transform's `output:` array is the list of files it produces. Two modes
+based on whether the SQL contains `{{output:Label}}` placeholders:
+
+**Single-output (legacy shortcut).** SQL is one bare `SELECT`. The runtime
+wraps it as `COPY (<your select>) TO '<path>'` and writes the lone output.
+Requires exactly one entry in `output:`.
+
+```sql
+SELECT ... FROM read_csv_auto('{{input_file}}');
+```
+
+**Multi-output.** SQL contains one `COPY` statement per output, each
+targeting a `{{output:LabelName}}` placeholder that matches an entry in
+`output:`. Runs via DuckDB `execute_batch`, so any DuckDB-valid sequence of
+statements (CTEs, `CREATE TEMP TABLE`, intermediate `SELECT`s, then multiple
+`COPY`s) works.
+
+```sql
+COPY (SELECT ... FROM read_csv_auto('{{input_file}}'))
+  TO '{{output:Inventory_Import}}' (HEADER, DELIMITER ',');
+
+COPY (SELECT ... FROM read_csv_auto('{{input_file}}'))
+  TO '{{output:Pricing_Update}}' (HEADER, DELIMITER ',');
+```
+
+The UI renders one Download button per output beneath the Generate row, each
+labeled with the output's name.
 
 ### Markdown
 ```markdown

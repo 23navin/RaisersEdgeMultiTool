@@ -76,9 +76,9 @@ pub fn validate_file(
 #[tauri::command]
 pub fn run_profile(
     file_path: String,
-    sql_file: String,        // filename e.g. "primary_transform.sql"
-    zip_path: String,        // temp dir path — profile already extracted
-    output_label: String,    // used for output filename prefix
+    sql_file: String,             // filename e.g. "primary_transform.sql"
+    zip_path: String,             // temp dir path — profile already extracted
+    output_labels: Vec<String>,   // every output declared on this transform
 ) -> Result<TransformResult, String> {
     let loaded = profile::load_from_dir(Path::new(&zip_path))
         .map_err(|e| e.to_string())?;
@@ -101,7 +101,7 @@ pub fn run_profile(
         })
         .collect();
 
-    db::run_transform(Path::new(&file_path), sql, &output_label, &notices)
+    db::run_transform(Path::new(&file_path), sql, &output_labels, &notices)
         .map_err(|e| e.to_string())
 }
 
