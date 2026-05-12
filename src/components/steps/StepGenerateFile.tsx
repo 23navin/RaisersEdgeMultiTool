@@ -103,40 +103,44 @@ function TransformBlock({ t }: { t: TransformRow }) {
 
   return (
     <div>
-      {/* Pipeline diagram */}
-      <div className="flex items-center justify-center w-full mb-[10px]">
-        <div className="flex flex-col gap-[5px] shrink-0">
-          {t.inputs.map((item) => (
-            <PipeNode
-              key={item.label}
-              icon={FileTextIcon}
-              label={item.label}
-              ready={item.ready}
-            />
-          ))}
-        </div>
-
-        <div className="flex-1 flex items-center min-w-[20px] max-w-[50px] px-[4px]">
-          <ArrowSVG />
+      {/* Pipeline diagram — two equal-width sides flank the database icon
+          so the icon stays at the cell's horizontal center even when the
+          input and output pill columns have different widths. */}
+      <div className="flex items-center w-full mb-[10px]">
+        <div className="flex-1 flex items-center justify-end min-w-0">
+          <div className="flex flex-col gap-[5px] shrink-0">
+            {t.inputs.map((item) => (
+              <PipeNode
+                key={item.label}
+                icon={FileTextIcon}
+                label={item.label}
+                ready={item.ready}
+              />
+            ))}
+          </div>
+          <div className="flex items-center min-w-[20px] max-w-[50px] flex-1 px-[4px]">
+            <ArrowSVG />
+          </div>
         </div>
 
         <div className="shrink-0 px-[4px]">
           <DatabaseIcon size={22} className="text-neutral-400" />
         </div>
 
-        <div className="flex-1 flex items-center min-w-[20px] max-w-[50px] px-[4px]">
-          <ArrowSVG />
-        </div>
-
-        <div className="flex flex-col gap-[5px] shrink-0">
-          {t.outputs.map((item) => (
-            <PipeNode
-              key={item.label}
-              icon={TableIcon}
-              label={item.label}
-              ready={item.ready}
-            />
-          ))}
+        <div className="flex-1 flex items-center justify-start min-w-0">
+          <div className="flex items-center min-w-[20px] max-w-[50px] flex-1 px-[4px]">
+            <ArrowSVG />
+          </div>
+          <div className="flex flex-col gap-[5px] shrink-0">
+            {t.outputs.map((item) => (
+              <PipeNode
+                key={item.label}
+                icon={TableIcon}
+                label={item.label}
+                ready={item.ready}
+              />
+            ))}
+          </div>
         </div>
       </div>
 
