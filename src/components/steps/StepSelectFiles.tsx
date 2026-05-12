@@ -55,12 +55,24 @@ export function StepSelectFiles({
 
   const validateDisabled = fileStatus === "none";
 
+  const baseBtn =
+    "rounded-[10px] h-[32px] px-[14px] text-[13px] font-medium border-0 shadow-none active:translate-y-0";
+  const activeBtn = "bg-[#1a1a1a] hover:bg-[#2a2a2a] text-white";
+  const doneBtn =
+    "bg-[#e0ddd8] hover:bg-[#e0ddd8] text-neutral-500 disabled:opacity-100";
+  const notReadyBtn =
+    "bg-neutral-200 hover:bg-neutral-200 text-neutral-400 disabled:opacity-100";
+
+  const uploadBtnStyle = fileStatus === "none" ? activeBtn : doneBtn;
+
   const validateVisual =
     fileStatus === "valid"
-      ? { bg: "bg-[#bbf7d0] hover:bg-[#a7ebbf]", text: "text-[#15803d]", Icon: CheckIcon }
+      ? { className: "bg-[#bbf7d0] hover:bg-[#bbf7d0] text-[#15803d] disabled:opacity-100", Icon: CheckIcon }
       : fileStatus === "invalid"
-      ? { bg: "bg-[#fecaca] hover:bg-[#f9b9b9]", text: "text-[#b91c1c]", Icon: XIcon }
-      : { bg: "bg-[#e0ddd8] hover:bg-[#d4d0c9]", text: "text-neutral-900", Icon: ListChecksIcon };
+      ? { className: "bg-[#fecaca] hover:bg-[#fecaca] text-[#b91c1c] disabled:opacity-100", Icon: XIcon }
+      : fileStatus === "pending"
+      ? { className: activeBtn, Icon: ListChecksIcon }
+      : { className: notReadyBtn, Icon: ListChecksIcon };
 
   // Mock-phase: clicking Upload fakes a file selection. The real dialog
   // is wired in a later step.
@@ -86,7 +98,7 @@ export function StepSelectFiles({
           <Button
             type="button"
             onClick={handleUploadClick}
-            className="bg-[#e0ddd8] hover:bg-[#d4d0c9] text-neutral-900 rounded-[10px] h-[32px] px-[14px] text-[13px] font-medium border-0 shadow-none active:translate-y-0"
+            className={`${baseBtn} ${uploadBtnStyle}`}
           >
             <UploadIcon size={13} />
             Upload
@@ -109,10 +121,7 @@ export function StepSelectFiles({
             type="button"
             onClick={onValidate}
             disabled={validateDisabled}
-            className={
-              `${validateVisual.bg} ${validateVisual.text} ` +
-              "rounded-[10px] h-[32px] px-[14px] text-[13px] font-medium border-0 shadow-none active:translate-y-0"
-            }
+            className={`${baseBtn} ${validateVisual.className}`}
           >
             <validateVisual.Icon size={13} />
             Validate

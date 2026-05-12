@@ -93,11 +93,15 @@ export default function App() {
     setFilePath(path);
     setFileName(name);
     setFileStatus("pending");
+    setGenerateStatus("idle");
+    setGenerateProgress(0);
   };
 
   const handleValidate = () => {
     // mock: pretend the file is valid
     setFileStatus("valid");
+    setGenerateStatus("idle");
+    setGenerateProgress(0);
   };
 
   const handleGenerate = () => {

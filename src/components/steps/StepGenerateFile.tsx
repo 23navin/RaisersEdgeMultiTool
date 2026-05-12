@@ -27,7 +27,7 @@ type Props = {
 
 function PipeNode({ icon: Icon, label }: { icon: LucideIcon; label: string }) {
   return (
-    <div className="inline-flex items-center gap-[5px] px-[10px] py-[4px] rounded-md bg-white border border-neutral-200 text-neutral-500 text-[11px] whitespace-nowrap shadow-sm">
+    <div className="inline-flex items-center gap-[5px] px-[10px] py-[4px] rounded-md text-neutral-500 text-[11px] whitespace-nowrap">
       <Icon size={12} />
       <span className="overflow-hidden text-ellipsis">{label}</span>
     </div>
@@ -62,17 +62,35 @@ export function StepGenerateFile({
   const fillColor =
     generateStatus === "done" ? "bg-green-500" : "bg-neutral-400";
 
+  const baseBtn =
+    "rounded-[10px] h-[32px] px-[14px] text-[13px] font-medium border-0 shadow-none active:translate-y-0";
+  const activeBtn = "bg-[#1a1a1a] hover:bg-[#2a2a2a] text-white";
+  const doneBtn =
+    "bg-[#e0ddd8] hover:bg-[#e0ddd8] text-neutral-500 disabled:opacity-100";
+  const notReadyBtn =
+    "bg-neutral-200 hover:bg-neutral-200 text-neutral-400 disabled:opacity-100";
+
+  const generateBtnStyle =
+    generateStatus === "done"
+      ? doneBtn
+      : canGenerate
+      ? activeBtn
+      : notReadyBtn;
+
+  const downloadBtnStyle =
+    generateStatus === "done" ? activeBtn : notReadyBtn;
+
   return (
     <div className="bg-neutral-100 rounded-xl px-[12px] py-[10px]">
       {/* Pipeline diagram */}
-      <div className="flex items-center w-full mb-[10px]">
+      <div className="flex items-center justify-center w-full mb-[10px]">
         <div className="flex flex-col gap-[5px] shrink-0">
           {inputs.map((label) => (
             <PipeNode key={label} icon={FileTextIcon} label={label} />
           ))}
         </div>
 
-        <div className="flex-1 flex items-center min-w-[20px] px-[4px]">
+        <div className="flex-1 flex items-center min-w-[20px] max-w-[50px] px-[4px]">
           <ArrowSVG />
         </div>
 
@@ -80,7 +98,7 @@ export function StepGenerateFile({
           <DatabaseIcon size={22} className="text-neutral-400" />
         </div>
 
-        <div className="flex-1 flex items-center min-w-[20px] px-[4px]">
+        <div className="flex-1 flex items-center min-w-[20px] max-w-[50px] px-[4px]">
           <ArrowSVG />
         </div>
 
@@ -97,7 +115,7 @@ export function StepGenerateFile({
           type="button"
           onClick={onGenerate}
           disabled={generateDisabled}
-          className="bg-[#1a1a1a] hover:bg-[#2a2a2a] text-white rounded-[10px] h-[32px] px-[14px] text-[13px] font-medium border-0 shadow-none active:translate-y-0"
+          className={`${baseBtn} ${generateBtnStyle}`}
         >
           <PlayIcon size={13} />
           Generate
@@ -114,7 +132,7 @@ export function StepGenerateFile({
           type="button"
           onClick={onDownload}
           disabled={downloadDisabled}
-          className="bg-[#e0ddd8] hover:bg-[#d4d0c9] text-neutral-900 rounded-[10px] h-[32px] px-[14px] text-[13px] font-medium border-0 shadow-none active:translate-y-0"
+          className={`${baseBtn} ${downloadBtnStyle}`}
         >
           <DownloadIcon size={13} />
           Download
