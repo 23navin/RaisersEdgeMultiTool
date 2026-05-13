@@ -37,7 +37,11 @@ function TabItem({ icon: Icon, label, active }: TabItemProps) {
   );
 }
 
-export function Titlebar() {
+type TitlebarProps = {
+  onOpenSettings: () => void;
+};
+
+export function Titlebar({ onOpenSettings }: TitlebarProps) {
   return (
     <div
       data-tauri-drag-region
@@ -74,6 +78,7 @@ export function Titlebar() {
         <button
           type="button"
           aria-label="Settings"
+          onClick={onOpenSettings}
           className="w-[26px] h-[26px] rounded-[7px] inline-flex items-center justify-center text-neutral-500 border-0 bg-transparent hover:bg-black/5"
         >
           <SettingsIcon size={18} />

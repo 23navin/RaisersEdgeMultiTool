@@ -105,14 +105,14 @@ function FileRow({
   return (
     <div>
       <div className="flex items-center gap-[8px]">
-        <span className="text-[12px] font-medium text-neutral-900 whitespace-nowrap min-w-[80px]">
+        <span className="shrink-0 text-[12px] font-medium text-neutral-900 whitespace-nowrap min-w-[80px]">
           {inputLabel}
         </span>
 
         <Button
           type="button"
           onClick={handleUploadClick}
-          className={`${baseBtn} ${uploadBtnStyle}`}
+          className={`shrink-0 ${baseBtn} ${uploadBtnStyle}`}
         >
           <UploadIcon size={13} />
           Upload
@@ -120,7 +120,7 @@ function FileRow({
 
         <div
           className={
-            "flex-1 h-[28px] flex items-center gap-[6px] pl-[9px] pr-[4px] border font-mono text-[12px] bg-white " +
+            "flex-1 min-w-[40px] h-[28px] flex items-center gap-[6px] pl-[9px] pr-[4px] border font-mono text-[12px] bg-white " +
             (fileName
               ? "border-neutral-300 text-neutral-900"
               : "border-neutral-200 text-neutral-400")
@@ -145,7 +145,7 @@ function FileRow({
           type="button"
           onClick={() => onValidate(inputLabel)}
           disabled={validateDisabled}
-          className={`${baseBtn} ${validateVisual.className}`}
+          className={`shrink-0 ${baseBtn} ${validateVisual.className}`}
         >
           <validateVisual.Icon size={13} />
           Validate

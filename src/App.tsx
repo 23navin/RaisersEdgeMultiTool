@@ -19,6 +19,7 @@ import type {
 import { Titlebar } from "./components/Titlebar";
 import { Sidebar } from "./components/Sidebar";
 import { MainPanel } from "./components/MainPanel";
+import { SettingsPanel } from "./components/SettingsPanel";
 import { refLabel, stepTransforms } from "./lib/profile-utils";
 
 export type FileStatus = "none" | "pending" | "valid" | "invalid";
@@ -62,6 +63,7 @@ export default function App() {
   const [loadedProfile, setLoadedProfile] = useState<LoadedProfile | null>(null);
   const [files, setFiles] = useState<Record<string, FileEntry>>({});
   const [generations, setGenerations] = useState<Record<string, GenEntry>>({});
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Increments on every load_profile call so late-arriving responses for a
   // profile the user has already navigated away from get discarded.
@@ -293,9 +295,9 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen bg-neutral-100 text-neutral-900">
-      <Titlebar />
+      <Titlebar onOpenSettings={() => setSettingsOpen(true)} />
       <div className="flex-1 p-4 pt-0 overflow-hidden">
-        <div className="flex h-full bg-white rounded-xl border border-neutral-200 shadow-md overflow-hidden">
+        <div className="relative flex h-full bg-white rounded-xl border border-neutral-200 shadow-md overflow-hidden">
           <Sidebar
             profiles={profiles}
             selectedProfile={selectedProfile}
@@ -314,6 +316,10 @@ export default function App() {
             onClearFile={handleClearFile}
             onGenerate={handleGenerate}
             onDownload={handleDownload}
+          />
+          <SettingsPanel
+            open={settingsOpen}
+            onClose={() => setSettingsOpen(false)}
           />
         </div>
       </div>
