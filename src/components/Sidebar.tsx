@@ -25,8 +25,10 @@ import type { LoadedProfile, ProfileSummary } from "../types";
 
 type SidebarProps = {
   profiles: ProfileSummary[];
+  // Holds the zip_path of the selected profile (unique across builtin + user),
+  // not the id — ids can collide between sources.
   selectedProfile: string | null;
-  onSelectProfile: (id: string) => void;
+  onSelectProfile: (zipPath: string) => void;
   loadedProfile: LoadedProfile | null;
   stepsDone: Record<string, boolean>;
   onReset: () => void;
@@ -51,7 +53,7 @@ export function Sidebar({
 }: SidebarProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const selected = profiles.find((p) => p.id === selectedProfile);
+  const selected = profiles.find((p) => p.zip_path === selectedProfile);
   const query = search.trim().toLowerCase();
 
   return (
@@ -75,7 +77,7 @@ export function Sidebar({
             </span>
             <ChevronsUpDownIcon className="size-4 shrink-0 opacity-50" />
           </PopoverTrigger>
-          <PopoverContent className="w-[250px] p-0" align="start">
+          <PopoverContent className="w-[300px] p-0" align="start">
             <Command>
               <CommandInput
                 placeholder="Search profiles…"
@@ -91,26 +93,35 @@ export function Sidebar({
                       query.length > 0 && p.id.toLowerCase().includes(query);
                     return (
                       <CommandItem
-                        key={p.id}
-                        value={p.name}
-                        keywords={[p.id]}
+                        key={p.zip_path}
+                        value={`${p.name}::${p.zip_path}`}
+                        keywords={[p.id, p.source]}
                         onSelect={() => {
-                          onSelectProfile(p.id);
+                          onSelectProfile(p.zip_path);
                           setOpen(false);
                         }}
                         className="text-[13px]"
                       >
-                        <span className="flex-1 truncate">{p.name}</span>
-                        {idMatches && (
+                        <span className="flex-1 min-w-0 flex items-center gap-1.5">
+                          <span className="truncate">{p.name}</span>
+                          {p.source === "user" && (
+                            <span className="truncate uppercase text-neutral-400">
+                              U
+                            </span>
+                          )}
+                          {idMatches && (
                           <span className="text-neutral-400 truncate">
                             {p.id}
                           </span>
                         )}
+                        </span>
                         <CheckIcon
                           size={14}
                           className={cn(
                             "shrink-0",
-                            selectedProfile === p.id ? "opacity-100" : "opacity-0"
+                            selectedProfile === p.zip_path
+                              ? "opacity-100"
+                              : "opacity-0"
                           )}
                         />
                       </CommandItem>

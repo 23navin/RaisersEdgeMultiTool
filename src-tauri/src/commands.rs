@@ -6,37 +6,40 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use tauri::{AppHandle, Manager};
 use crate::profile::{self, ProfileSummary, LoadedProfile, NoticeQuery};
 use crate::db::{self, ValidationResult, TransformResult, NoticeInput};
 
 // ── list_profiles ─────────────────────────────────────────────────────────────
 // Called by: App.tsx on mount
-// Scans profiles/ folder, returns lightweight summary for each .import file
+// Returns built-in profiles (embedded in the binary) plus any user .import
+// files found in the per-user profiles directory under app_data_dir.
 
 #[tauri::command]
-pub fn list_profiles() -> Result<Vec<ProfileSummary>, String> {
-    #[cfg(debug_assertions)]
-    let profiles_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .ok_or_else(|| "cannot find project root".to_string())?
-        .join("profiles");
-
-    #[cfg(not(debug_assertions))]
-    let profiles_dir = std::env::current_exe()
+pub fn list_profiles(app: AppHandle) -> Result<Vec<ProfileSummary>, String> {
+    let user_dir = app.path()
+        .app_data_dir()
         .map_err(|e| e.to_string())?
-        .parent()
-        .ok_or_else(|| "cannot find exe dir".to_string())?
         .join("profiles");
+    // Best-effort: ensure the dir exists so the user can drop files there
+    // without having to mkdir it themselves. Don't fail listing if it can't.
+    let _ = std::fs::create_dir_all(&user_dir);
 
-    profile::list_profiles(&profiles_dir).map_err(|e| e.to_string())
+    let mut out = profile::list_builtin_profiles().map_err(|e| e.to_string())?;
+    out.extend(profile::list_user_profiles(&user_dir).map_err(|e| e.to_string())?);
+    Ok(out)
 }
 
 // ── load_profile ──────────────────────────────────────────────────────────────
 // Called by: App.tsx when user selects a profile from dropdown
-// Fully parses the bundle — structure, instructions, sql files
+// Fully parses the bundle — structure, instructions, sql files.
+// A `builtin://<filename>` zip_path resolves to an embedded profile.
 
 #[tauri::command]
 pub fn load_profile(zip_path: String) -> Result<LoadedProfile, String> {
+    if let Some(name) = zip_path.strip_prefix("builtin://") {
+        return profile::load_builtin(name).map_err(|e| e.to_string());
+    }
     profile::load_profile(Path::new(&zip_path))
         .map_err(|e| e.to_string())
 }

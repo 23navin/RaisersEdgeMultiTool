@@ -267,14 +267,17 @@ export default function App() {
     setGenerations({});
   };
 
-  const handleSelectProfile = async (id: string | null) => {
+  // `zipPath` is the unique selection key — built-in and user profiles can
+  // share an `id`, so we discriminate by zip_path (which is always unique:
+  // either a real fs path or a "builtin://<filename>" sentinel).
+  const handleSelectProfile = async (zipPath: string | null) => {
     const reqId = ++loadRequestId.current;
-    setSelectedProfile(id);
+    setSelectedProfile(zipPath);
     setFiles({});
     setGenerations({});
     setLoadedProfile(null);
-    if (id == null) return;
-    const summary = profiles.find((p) => p.id === id);
+    if (zipPath == null) return;
+    const summary = profiles.find((p) => p.zip_path === zipPath);
     if (!summary) return;
     try {
       const loaded = await invoke<LoadedProfile>("load_profile", {

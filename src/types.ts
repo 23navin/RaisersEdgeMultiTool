@@ -7,11 +7,14 @@
 // ── Profile listing ───────────────────────────────────────────────────────────
 // Returned by list_profiles — lightweight, just enough for the dropdown
 
+export type ProfileSource = "builtin" | "user";
+
 export type ProfileSummary = {
   id: string;
   name: string;
   version: string;
-  zip_path: string;
+  zip_path: string;        // user: full fs path. builtin: "builtin://<filename>" sentinel.
+  source: ProfileSource;
 };
 
 // ── Structure.yaml types ──────────────────────────────────────────────────────

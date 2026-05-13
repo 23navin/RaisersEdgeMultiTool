@@ -9,10 +9,22 @@
 
 use std::collections::HashMap;
 use std::fs;
-use std::io::Read;
+use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use crate::errors::AppError;
+
+// ── Built-in profiles ────────────────────────────────────────────────────────
+// Embedded at compile time so the binary ships with a usable set of profiles
+// regardless of what's on disk. Add/remove a line per builtin. The .import
+// files must exist at build time (run profiles/build.sh).
+
+const BUILTIN_PROFILES: &[(&str, &[u8])] = &[
+    ("test1.import", include_bytes!("../../profiles/test1.import")),
+    ("test2.import", include_bytes!("../../profiles/test2.import")),
+    ("test3.import", include_bytes!("../../profiles/test3.import")),
+    ("test4.import", include_bytes!("../../profiles/test4.import")),
+];
 
 // ── YAML structs ──────────────────────────────────────────────────────────────
 // These mirror the shape of structure.yaml exactly.
@@ -204,6 +216,51 @@ pub fn load_profile(zip_path: &Path) -> Result<LoadedProfile, AppError> {
     load_from_dir(&temp_dir)
 }
 
+// ── load_builtin ──────────────────────────────────────────────────────────────
+// Mirrors load_profile but reads the zip from embedded bytes instead of disk.
+// `name` is the BUILTIN_PROFILES key (e.g. "test1.import").
+
+pub fn load_builtin(name: &str) -> Result<LoadedProfile, AppError> {
+    let bytes = BUILTIN_PROFILES.iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, b)| *b)
+        .ok_or_else(|| AppError::ParseError(format!("Unknown builtin profile: {}", name)))?;
+
+    let mut archive = zip::ZipArchive::new(Cursor::new(bytes))
+        .map_err(|e| AppError::IoError(format!("Cannot read builtin zip: {}", e)))?;
+
+    let stem = Path::new(name)
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy();
+    let temp_dir = std::env::temp_dir().join(format!("import-tool-{}", stem));
+    fs::create_dir_all(&temp_dir)
+        .map_err(|e| AppError::IoError(format!("Cannot create temp dir: {}", e)))?;
+
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i)
+            .map_err(|e| AppError::IoError(e.to_string()))?;
+
+        let out_path = temp_dir.join(entry.name());
+
+        if entry.is_dir() {
+            fs::create_dir_all(&out_path)
+                .map_err(|e| AppError::IoError(e.to_string()))?;
+        } else {
+            if let Some(parent) = out_path.parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|e| AppError::IoError(e.to_string()))?;
+            }
+            let mut out_file = fs::File::create(&out_path)
+                .map_err(|e| AppError::IoError(e.to_string()))?;
+            std::io::copy(&mut entry, &mut out_file)
+                .map_err(|e| AppError::IoError(e.to_string()))?;
+        }
+    }
+
+    load_from_dir(&temp_dir)
+}
+
 // ── load_from_dir ─────────────────────────────────────────────────────────────
 // Reads a profile from an already-extracted directory.
 // Called by validate_file and run_profile, which receive temp_dir from the
@@ -274,15 +331,69 @@ fn collect_sql_files(
 // Returns lightweight metadata for each — just enough to populate the dropdown.
 // Does NOT fully load each profile (that happens when the user selects one).
 
+#[derive(Debug, Serialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub enum ProfileSource {
+    Builtin,
+    User,
+}
+
 #[derive(Debug, Serialize, Clone)]
 pub struct ProfileSummary {
     pub id: String,
     pub name: String,
     pub version: String,
-    pub zip_path: String,   // full path — passed back to load_profile later
+    pub zip_path: String,   // user: full fs path. builtin: "builtin://<filename>" sentinel.
+    pub source: ProfileSource,
 }
 
-pub fn list_profiles(profiles_dir: &Path) -> Result<Vec<ProfileSummary>, AppError> {
+// Peeks at structure.yaml inside an open zip archive — enough to populate
+// one ProfileSummary without extracting the whole bundle.
+fn read_summary_from_zip<R: Read + std::io::Seek>(
+    archive: &mut zip::ZipArchive<R>,
+    zip_path: String,
+    source: ProfileSource,
+    display: &str,
+) -> Result<ProfileSummary, AppError> {
+    let mut yaml_entry = archive.by_name("structure.yaml")
+        .map_err(|_| AppError::ParseError(
+            format!("{} is missing structure.yaml", display)
+        ))?;
+
+    let mut yaml_content = String::new();
+    yaml_entry.read_to_string(&mut yaml_content)
+        .map_err(|e| AppError::IoError(e.to_string()))?;
+
+    let structure: ProfileStructure = serde_yaml::from_str(&yaml_content)
+        .map_err(|e| AppError::ParseError(format!("Invalid structure.yaml: {}", e)))?;
+
+    Ok(ProfileSummary {
+        id: structure.id,
+        name: structure.name,
+        version: structure.version,
+        zip_path,
+        source,
+    })
+}
+
+pub fn list_builtin_profiles() -> Result<Vec<ProfileSummary>, AppError> {
+    let mut profiles = Vec::new();
+    for (name, bytes) in BUILTIN_PROFILES {
+        let mut archive = zip::ZipArchive::new(Cursor::new(*bytes))
+            .map_err(|e| AppError::IoError(format!("Cannot read builtin {}: {}", name, e)))?;
+        let summary = read_summary_from_zip(
+            &mut archive,
+            format!("builtin://{}", name),
+            ProfileSource::Builtin,
+            name,
+        )?;
+        profiles.push(summary);
+    }
+    profiles.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(profiles)
+}
+
+pub fn list_user_profiles(profiles_dir: &Path) -> Result<Vec<ProfileSummary>, AppError> {
     let mut profiles = Vec::new();
 
     if !profiles_dir.exists() {
@@ -306,24 +417,13 @@ pub fn list_profiles(profiles_dir: &Path) -> Result<Vec<ProfileSummary>, AppErro
         let mut archive = zip::ZipArchive::new(file)
             .map_err(|e| AppError::IoError(e.to_string()))?;
 
-        let mut yaml_entry = archive.by_name("structure.yaml")
-            .map_err(|_| AppError::ParseError(
-                format!("{} is missing structure.yaml", path.display())
-            ))?;
-
-        let mut yaml_content = String::new();
-        yaml_entry.read_to_string(&mut yaml_content)
-            .map_err(|e| AppError::IoError(e.to_string()))?;
-
-        let structure: ProfileStructure = serde_yaml::from_str(&yaml_content)
-            .map_err(|e| AppError::ParseError(format!("Invalid structure.yaml: {}", e)))?;
-
-        profiles.push(ProfileSummary {
-            id: structure.id,
-            name: structure.name,
-            version: structure.version,
-            zip_path: path.to_string_lossy().to_string(),
-        });
+        let summary = read_summary_from_zip(
+            &mut archive,
+            path.to_string_lossy().to_string(),
+            ProfileSource::User,
+            &path.display().to_string(),
+        )?;
+        profiles.push(summary);
     }
 
     profiles.sort_by(|a, b| a.id.cmp(&b.id));
