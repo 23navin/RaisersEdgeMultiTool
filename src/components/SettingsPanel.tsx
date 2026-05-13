@@ -7,7 +7,7 @@
 // Always mounted so it can animate in/out; visibility driven by `open`.
 
 import { useEffect, useState } from "react";
-import { SettingsIcon, XIcon } from "lucide-react";
+import { XIcon } from "lucide-react";
 import { cn } from "../lib/utils";
 
 type Props = {
@@ -15,10 +15,15 @@ type Props = {
   onClose: () => void;
 };
 
-type Section = "general" | "profiles" | "about";
+type Tab = "general" | "import";
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: "general", label: "General" },
+  { id: "import", label: "Import Profiles" },
+];
 
 export function SettingsPanel({ open, onClose }: Props) {
-  const [section, setSection] = useState<Section>("general");
+  const [tab, setTab] = useState<Tab>("general");
 
   // Close on Escape.
   useEffect(() => {
@@ -48,70 +53,52 @@ export function SettingsPanel({ open, onClose }: Props) {
       <div
         aria-hidden={!open}
         className={cn(
-          "absolute inset-[28px] z-50 flex bg-white rounded-[12px] border border-neutral-200 shadow-2xl overflow-hidden origin-center",
+          "absolute inset-[28px] z-50 flex flex-col bg-white rounded-[12px] border border-neutral-200 shadow-2xl overflow-hidden origin-center",
           "transition-[opacity,filter,transform] duration-200 ease-out",
           open
             ? "opacity-100 blur-0 scale-100 pointer-events-auto"
             : "opacity-0 blur-md scale-[1.04] pointer-events-none",
         )}
       >
-      {/* Left — section nav */}
-      <div className="w-[220px] shrink-0 border-r border-neutral-200 bg-neutral-50/60 flex flex-col">
-        <div className="h-[56px] flex items-center gap-[8px] px-[16px] border-b border-neutral-200">
-          <SettingsIcon size={16} className="text-neutral-500" />
-          <span className="text-[14px] font-medium text-neutral-800">
-            Settings
-          </span>
-        </div>
-        <nav className="flex flex-col gap-[2px] p-[8px]">
-          <SectionItem
-            label="General"
-            active={section === "general"}
-            onClick={() => setSection("general")}
-          />
-          <SectionItem
-            label="Profiles"
-            active={section === "profiles"}
-            onClick={() => setSection("profiles")}
-          />
-          <SectionItem
-            label="About"
-            active={section === "about"}
-            onClick={() => setSection("about")}
-          />
-        </nav>
-      </div>
+        {/* Close button — absolute so the tab row reads as the primary header */}
+        <button
+          type="button"
+          aria-label="Close settings"
+          onClick={onClose}
+          className="absolute top-[5px] right-[5px] w-[26px] h-[26px] rounded-[6px] inline-flex items-center justify-center text-neutral-500 border-0 bg-transparent hover:bg-black/5 z-10"
+        >
+          <XIcon size={15} />
+        </button>
 
-      {/* Right — section body */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="h-[56px] shrink-0 flex items-center justify-between px-[20px] border-b border-neutral-200">
-          <h2 className="text-[15px] font-semibold text-neutral-900">
-            {section === "general" && "General"}
-            {section === "profiles" && "Profiles"}
-            {section === "about" && "About"}
-          </h2>
-          <button
-            type="button"
-            aria-label="Close settings"
-            onClick={onClose}
-            className="w-[28px] h-[28px] rounded-[7px] inline-flex items-center justify-center text-neutral-500 border-0 bg-transparent hover:bg-black/5"
+        {/* Tab bar */}
+        <div className="shrink-0 border-b border-neutral-200 px-[15px]">
+          <nav
+            role="tablist"
+            aria-label="Settings sections"
+            className="flex gap-[10px] pt-[8px]"
           >
-            <XIcon size={16} />
-          </button>
+            {TABS.map((t) => (
+              <TabButton
+                key={t.id}
+                label={t.label}
+                active={tab === t.id}
+                onClick={() => setTab(t.id)}
+              />
+            ))}
+          </nav>
         </div>
 
-        <div className="flex-1 overflow-auto p-[24px]">
-          {section === "general" && <GeneralSection />}
-          {section === "profiles" && <ProfilesSection />}
-          {section === "about" && <AboutSection />}
+        {/* Tab body */}
+        <div className="flex-1 overflow-auto">
+          {tab === "general" && <GeneralTab />}
+          {tab === "import" && <ImportTab />}
         </div>
-      </div>
       </div>
     </>
   );
 }
 
-function SectionItem({
+function TabButton({
   label,
   active,
   onClick,
@@ -123,131 +110,32 @@ function SectionItem({
   return (
     <button
       type="button"
+      role="tab"
+      aria-selected={active}
       onClick={onClick}
       className={cn(
-        "text-left px-[12px] py-[7px] rounded-[7px] text-[13px] transition-colors border-0",
+        "relative bg-transparent border-0 px-[2px] pb-[7px] text-[14px] tracking-[-0.01em] transition-colors cursor-pointer",
         active
-          ? "bg-white text-neutral-900 shadow-sm font-medium"
-          : "bg-transparent text-neutral-600 hover:bg-black/5",
+          ? "text-neutral"
+          : "text-neutral-400 hover:text-neutral-600",
       )}
     >
       {label}
+      <span
+        aria-hidden
+        className={cn(
+          "absolute left-0 right-0 -bottom-px h-[2px] bg-neutral-900 rounded-full transition-opacity",
+          active ? "opacity-100" : "opacity-0",
+        )}
+      />
     </button>
   );
 }
 
-function Row({
-  label,
-  description,
-  children,
-}: {
-  label: string;
-  description?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-[16px] py-[14px] border-b border-neutral-100 last:border-b-0">
-      <div className="flex flex-col">
-        <span className="text-[13px] font-medium text-neutral-800">{label}</span>
-        {description && (
-          <span className="text-[12px] text-neutral-500 mt-[2px]">
-            {description}
-          </span>
-        )}
-      </div>
-      <div className="shrink-0">{children}</div>
-    </div>
-  );
+function GeneralTab() {
+  return <div className="px-[24px] py-[16px]" />;
 }
 
-function GeneralSection() {
-  return (
-    <div className="max-w-[640px]">
-      <Row
-        label="Theme"
-        description="Match the system appearance or pick a fixed theme."
-      >
-        <select className="text-[13px] px-[10px] py-[5px] rounded-[7px] border border-neutral-200 bg-white">
-          <option>System</option>
-          <option>Light</option>
-          <option>Dark</option>
-        </select>
-      </Row>
-      <Row
-        label="Show notices inline"
-        description="Display validation notices alongside file uploads."
-      >
-        <input type="checkbox" defaultChecked className="h-[16px] w-[16px]" />
-      </Row>
-      <Row
-        label="Confirm before reset"
-        description="Ask before clearing the current workflow."
-      >
-        <input type="checkbox" className="h-[16px] w-[16px]" />
-      </Row>
-    </div>
-  );
-}
-
-function ProfilesSection() {
-  return (
-    <div className="max-w-[640px]">
-      <Row
-        label="User profiles folder"
-        description="Drop .import bundles here to install them."
-      >
-        <button
-          type="button"
-          className="text-[13px] px-[12px] py-[6px] rounded-[7px] border border-neutral-200 bg-white hover:bg-neutral-50"
-        >
-          Open folder
-        </button>
-      </Row>
-      <Row
-        label="Install profile"
-        description="Pick a .import file to copy into your profiles folder."
-      >
-        <button
-          type="button"
-          className="text-[13px] px-[12px] py-[6px] rounded-[7px] border border-neutral-200 bg-white hover:bg-neutral-50"
-        >
-          Choose file…
-        </button>
-      </Row>
-      <Row
-        label="Reload profile list"
-        description="Re-scan the profiles folder."
-      >
-        <button
-          type="button"
-          className="text-[13px] px-[12px] py-[6px] rounded-[7px] border border-neutral-200 bg-white hover:bg-neutral-50"
-        >
-          Reload
-        </button>
-      </Row>
-    </div>
-  );
-}
-
-function AboutSection() {
-  return (
-    <div className="max-w-[640px] flex flex-col gap-[14px]">
-      <div>
-        <div className="text-[15px] font-semibold text-neutral-900">
-          Database Multitool
-        </div>
-        <div className="text-[12px] text-neutral-500 mt-[2px]">
-          Version 0.1.0
-        </div>
-      </div>
-      <p className="text-[13px] text-neutral-600 leading-[1.5]">
-        Transforms vendor-supplied files into the target database&apos;s import
-        format. Profile bundles define each vendor&apos;s rules; drop new
-        <code className="mx-[4px] px-[5px] py-[1px] rounded-[4px] bg-neutral-100 text-[12px]">
-          .import
-        </code>
-        files into the profiles folder to add support without recompiling.
-      </p>
-    </div>
-  );
+function ImportTab() {
+  return <div className="px-[24px] py-[16px]" />;
 }
