@@ -18,10 +18,21 @@ import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { yaml } from "@codemirror/lang-yaml";
 import { sql } from "@codemirror/lang-sql";
 import { markdown } from "@codemirror/lang-markdown";
-import { EditorView, keymap } from "@codemirror/view";
+import {
+  Decoration,
+  EditorView,
+  keymap,
+  type DecorationSet,
+} from "@codemirror/view";
+import {
+  StateEffect,
+  StateField,
+  type EditorState,
+  type Range,
+} from "@codemirror/state";
 import { indentUnit } from "@codemirror/language";
 import { indentWithTab } from "@codemirror/commands";
-import type { ProfileFileEntry, IssueLocation } from "../types";
+import type { ProfileFileEntry, IssueLocation, Severity } from "../types";
 
 // ── Anchor model ─────────────────────────────────────────────────────────────
 
@@ -215,6 +226,100 @@ function targetAt(
   return null;
 }
 
+// ── Issue squiggle decorations ──────────────────────────────────────────────
+// IDE-style wavy underline for problem lines. Locations carry line numbers
+// only (no column ranges), so we underline the trimmed content of each line.
+
+export type EditorIssue = {
+  line: number;        // 1-indexed line in the current file
+  severity: Severity;
+  message: string;     // shown as a native `title` tooltip on hover
+};
+
+const SEVERITY_RANK: Record<Severity, number> = { info: 0, warning: 1, error: 2 };
+
+const setIssuesEffect = StateEffect.define<EditorIssue[]>();
+
+function buildIssueDecorations(
+  state: EditorState,
+  issues: EditorIssue[],
+): DecorationSet {
+  if (issues.length === 0) return Decoration.none;
+
+  // Coalesce multiple issues on the same line: take the worst severity for
+  // the visual, concatenate messages for the tooltip.
+  const byLine = new Map<number, EditorIssue[]>();
+  for (const issue of issues) {
+    const list = byLine.get(issue.line);
+    if (list) list.push(issue);
+    else byLine.set(issue.line, [issue]);
+  }
+
+  const ranges: Range<Decoration>[] = [];
+  for (const [lineNum, group] of byLine) {
+    if (lineNum < 1 || lineNum > state.doc.lines) continue;
+    const line = state.doc.line(lineNum);
+    const text = line.text;
+    const leftPad = text.length - text.trimStart().length;
+    const rightTrim = text.trimEnd().length;
+    if (rightTrim <= leftPad) continue; // blank line
+    const from = line.from + leftPad;
+    const to = line.from + rightTrim;
+
+    const worst = group.reduce((a, b) =>
+      SEVERITY_RANK[b.severity] > SEVERITY_RANK[a.severity] ? b : a,
+    );
+    const title = group.map((i) => i.message).join("\n");
+
+    ranges.push(
+      Decoration.mark({
+        class: `cm-issue cm-issue-${worst.severity}`,
+        attributes: { title },
+      }).range(from, to),
+    );
+  }
+  ranges.sort((a, b) => a.from - b.from);
+  return Decoration.set(ranges);
+}
+
+// Factory: produces a fresh field whose `create()` reads the current issues
+// off the supplied ref. The editor is remounted (via `key`) when the active
+// file changes, so each mount gets a field initialised with the right issues
+// — guaranteeing decorations are present on the first render after a
+// cross-file navigate (no race with `useEffect` dispatch / ref population).
+function makeIssueField(issuesRef: { current: EditorIssue[] }) {
+  return StateField.define<DecorationSet>({
+    create: (state) => buildIssueDecorations(state, issuesRef.current),
+    update(deco, tr) {
+      let next = deco.map(tr.changes);
+      for (const e of tr.effects) {
+        if (e.is(setIssuesEffect)) {
+          next = buildIssueDecorations(tr.state, e.value);
+        }
+      }
+      return next;
+    },
+    provide: (f) => EditorView.decorations.from(f),
+  });
+}
+
+const issueTheme = EditorView.baseTheme({
+  ".cm-issue-error": {
+    textDecoration: "underline wavy #dc2626",
+    textDecorationSkipInk: "none",
+    textUnderlineOffset: "3px",
+  },
+  ".cm-issue-warning": {
+    textDecoration: "underline wavy #d97706",
+    textDecorationSkipInk: "none",
+    textUnderlineOffset: "3px",
+  },
+  ".cm-issue-info": {
+    textDecoration: "underline dotted #2563eb",
+    textUnderlineOffset: "3px",
+  },
+});
+
 // ── React component ─────────────────────────────────────────────────────────
 
 type Props = {
@@ -228,6 +333,8 @@ type Props = {
   // even if the line number itself didn't change. Used by the parent after
   // a cmd-click handoff.
   scrollToLine?: { line: number; nonce: number } | null;
+  // Issues affecting the currently-displayed file. Drives squiggle decorations.
+  issues?: EditorIssue[];
 };
 
 export function CodeMirrorEditor({
@@ -238,6 +345,7 @@ export function CodeMirrorEditor({
   anchors = EMPTY_ANCHORS,
   onNavigate,
   scrollToLine,
+  issues,
 }: Props) {
   const kind = fileKind(path);
   const ref = useRef<ReactCodeMirrorRef>(null);
@@ -248,6 +356,11 @@ export function CodeMirrorEditor({
   const onNavigateRef = useRef(onNavigate);
   useEffect(() => { anchorsRef.current = anchors; }, [anchors]);
   useEffect(() => { onNavigateRef.current = onNavigate; }, [onNavigate]);
+
+  // Mutable mirror of the latest issues so the field factory can seed the
+  // initial decoration set on mount (synchronous, no dispatch round-trip).
+  const issuesRef = useRef<EditorIssue[]>(issues ?? []);
+  issuesRef.current = issues ?? [];
 
   const extensions = useMemo(() => {
     const langExt = kind === "yaml" ? [yaml()]
@@ -276,8 +389,19 @@ export function CodeMirrorEditor({
       EditorView.lineWrapping,
       keymap.of([indentWithTab]),
       clickHandler,
+      makeIssueField(issuesRef),
+      issueTheme,
     ];
   }, [kind]);
+
+  // Push the latest issues into the editor as a state effect whenever the
+  // prop changes. Kept out of `extensions` so the editor isn't rebuilt on
+  // every validate.
+  useEffect(() => {
+    const view = ref.current?.view;
+    if (!view) return;
+    view.dispatch({ effects: setIssuesEffect.of(issues ?? []) });
+  }, [issues]);
 
   // Scroll to a target line after the parent switches us to a new file or
   // jumps to a line within the current file.

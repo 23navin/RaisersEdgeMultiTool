@@ -6,7 +6,7 @@
 // within the body container, so it reads as a floating panel.
 // Always mounted so it can animate in/out; visibility driven by `open`.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AlertCircleIcon,
   FilePlusIcon,
@@ -30,6 +30,7 @@ import {
   buildAnchorMap,
   issueToFileLine,
   type AnchorMap,
+  type EditorIssue,
   type NavTarget,
 } from "./CodeMirrorEditor";
 
@@ -399,9 +400,9 @@ function ImportTab({ panelOpen }: { panelOpen: boolean }) {
     }
   };
 
-  // Ctrl/Cmd-S: validate, then save only if there are no errors. Surfaces
-  // the report so the user can act on issues instead of getting the regular
-  // "save anyway?" confirm dialog from the keyboard shortcut.
+  // Ctrl/Cmd-S: validate, then save only if there are no errors or warnings.
+  // Surfaces the report so the user can act on issues instead of getting the
+  // regular "save anyway?" confirm dialog from the keyboard shortcut.
   const handleValidateAndSave = async () => {
     if (!editor) return;
     if (editor.summary.source === "builtin") return;
@@ -410,7 +411,7 @@ function ImportTab({ panelOpen }: { panelOpen: boolean }) {
     setError(null);
     try {
       const report = await runValidate(editor.files);
-      if (!report || report.error_count > 0) return;
+      if (!report || report.error_count > 0 || report.warning_count > 0) return;
       const mut = await invoke<ProfileMutation>("save_profile", {
         zipPath: editor.summary.zip_path,
         files: editor.files,
@@ -632,6 +633,19 @@ function ProfileEditor({
   const { summary } = editor;
   const readOnly = summary.source === "builtin";
 
+  // Squiggle decorations for whichever file is currently open. Locations
+  // outside the active file are filtered out before reaching CodeMirror.
+  const activeFileIssues = useMemo<EditorIssue[]>(() => {
+    if (!report) return [];
+    const out: EditorIssue[] = [];
+    for (const issue of report.issues) {
+      const target = issueToFileLine(issue.location, anchors);
+      if (!target || target.path !== activePath) continue;
+      out.push({ line: target.line, severity: issue.severity, message: issue.message });
+    }
+    return out;
+  }, [report, anchors, activePath]);
+
   // Two-click delete: first press arms the button (label becomes "Confirm"),
   // second press fires onDelete. Auto-disarms after 3s of idle, on busy, or
   // when the user switches to a different profile.
@@ -688,7 +702,11 @@ function ProfileEditor({
             )}
           >
             <span className="text-[11px] text-amber-600 block">
-              {report ? "unsaved changes" : "unvalidated changes"}
+              {report && (report.error_count > 0 || report.warning_count > 0)
+                ? "validation issues"
+                : report
+                  ? "unsaved changes"
+                  : "unvalidated changes"}
             </span>
           </div>
         </div>
@@ -786,6 +804,7 @@ function ProfileEditor({
               anchors={anchors}
               onNavigate={onNavigate}
               scrollToLine={scrollTarget}
+              issues={activeFileIssues}
             />
           ) : (
             <div className="flex-1 flex items-center justify-center text-[13px] text-neutral-500">
@@ -817,29 +836,6 @@ function ProfileEditor({
   );
 }
 
-function ValidationPill({ report }: { report: ValidationReport | null }) {
-  if (!report) {
-    return <span className="text-[11px] text-neutral-400">not svalidated</span>;
-  }
-  if (report.error_count > 0) {
-    return (
-      <span className="inline-flex items-center gap-[4px] text-[11px] text-red-700 bg-red-50 border border-red-200 px-[7px] py-[2px] rounded-[10px]">
-        <AlertCircleIcon size={12} />
-        {report.error_count} error{report.error_count === 1 ? "" : "s"}
-      </span>
-    );
-  }
-  if (report.warning_count > 0) {
-    return (
-      <span className="inline-flex items-center gap-[4px] text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-[7px] py-[2px] rounded-[10px]">
-        <AlertCircleIcon size={12} />
-        {report.warning_count} warning{report.warning_count === 1 ? "" : "s"}
-      </span>
-    );
-  }
-  return null;
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // IssuesPanel — collapsible footer listing each issue with severity + locator
 // ─────────────────────────────────────────────────────────────────────────────
@@ -861,16 +857,38 @@ function IssuesPanel({
   anchors: AnchorMap;
   busy: boolean;
 }) {
-  const summary = [
-    report.error_count > 0 && `${report.error_count} error${report.error_count === 1 ? "" : "s"}`,
-    report.warning_count > 0 && `${report.warning_count} warning${report.warning_count === 1 ? "" : "s"}`,
-    report.info_count > 0 && `${report.info_count} info`,
-  ].filter(Boolean).join(" · ") || "Profile is valid";
+  const parts: ReactNode[] = [];
+  if (report.error_count > 0) {
+    parts.push(
+      <span key="errors" className="text-red-700">
+        {report.error_count} error{report.error_count === 1 ? "" : "s"}
+      </span>,
+    );
+  }
+  if (report.warning_count > 0) {
+    parts.push(
+      <span key="warnings" className="text-amber-700">
+        {report.warning_count} warning{report.warning_count === 1 ? "" : "s"}
+      </span>,
+    );
+  }
+  if (report.info_count > 0) {
+    parts.push(<span key="info">{report.info_count} info</span>);
+  }
 
   return (
     <div className="shrink-0 border-t border-neutral-200 bg-white max-h-[40%] flex flex-col">
       <div className="px-[16px] py-[6px] flex items-center justify-between border-b border-neutral-100 bg-neutral-50/60">
-        <span className="text-[12px] text-neutral-700">{summary}</span>
+        <span className="text-[12px] text-neutral-700">
+          {parts.length === 0
+            ? "Profile is valid"
+            : parts.map((p, i) => (
+                <span key={i}>
+                  {i > 0 && <span className="text-neutral-400"> · </span>}
+                  {p}
+                </span>
+              ))}
+        </span>
         <div className="flex items-center gap-[6px]">
           {report.fixable_count > 0 && (
             <button
