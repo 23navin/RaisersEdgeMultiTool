@@ -8,7 +8,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  CheckCircle2Icon,
   AlertCircleIcon,
   FilePlusIcon,
   Trash2Icon,
@@ -666,16 +665,16 @@ function ProfileEditor({
        * so when the inner column is just the title it sits in the middle;
        * when "unsaved" expands below the title, the pair stays centered as
        * a unit, which visually nudges the title upward. */}
-      <header className="shrink-0 border-b border-neutral-200 px-[16px] py-[10px] min-h-[58px] flex items-center justify-between gap-[12px]">
+      <header className="shrink-0 border-b border-neutral-200 px-[10px] py-[5px] min-h-[43px] flex items-center justify-between gap-[6px]">
         <div className="flex flex-col min-w-0">
-          <div className="flex items-baseline gap-[8px] min-w-0">
+          <div className="flex items-baseline gap-[4px] min-w-0">
             <span className="text-[14px] font-semibold text-neutral-900 truncate">
               {summary.name}
             </span>
             <span className="text-[11px] text-neutral-500">v{summary.version}</span>
             {readOnly && (
               <span className="text-[10px] uppercase tracking-[0.06em] text-neutral-400 ml-[4px]">
-                built-in · read-only
+                built-in
               </span>
             )}
           </div>
@@ -684,17 +683,16 @@ function ProfileEditor({
             className={cn(
               "overflow-hidden transition-[max-height,opacity,margin-top] duration-200 ease-out",
               !readOnly && dirty
-                ? "max-h-[20px] opacity-100 mt-[1px]"
+                ? "max-h-[20px] opacity-100 mt-[-5px]"
                 : "max-h-0 opacity-0 mt-0",
             )}
           >
             <span className="text-[11px] text-amber-600 block">
-              • unsaved changes
+              {report ? "unsaved changes" : "unvalidated changes"}
             </span>
           </div>
         </div>
         <div className="flex items-center gap-[6px] shrink-0">
-          {!readOnly && <ValidationPill report={report} />}
           <button
             type="button"
             onClick={onDuplicate}
@@ -821,7 +819,7 @@ function ProfileEditor({
 
 function ValidationPill({ report }: { report: ValidationReport | null }) {
   if (!report) {
-    return <span className="text-[11px] text-neutral-400">not validated</span>;
+    return <span className="text-[11px] text-neutral-400">not svalidated</span>;
   }
   if (report.error_count > 0) {
     return (
@@ -839,12 +837,7 @@ function ValidationPill({ report }: { report: ValidationReport | null }) {
       </span>
     );
   }
-  return (
-    <span className="inline-flex items-center gap-[4px] text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-[7px] py-[2px] rounded-[10px]">
-      <CheckCircle2Icon size={12} />
-      Valid
-    </span>
-  );
+  return null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
