@@ -16,9 +16,11 @@ import type {
   TransformResult,
   ValidationError,
 } from "./types";
-import { Titlebar } from "./components/Titlebar";
+import { Titlebar, type TopTab } from "./components/Titlebar";
 import { Sidebar } from "./components/imports/Sidebar";
 import { MainPanel } from "./components/imports/MainPanel";
+import { DataRequestsPage } from "./components/data-request/DataRequestsPage";
+import { ReportsPage } from "./components/reports/ReportsPage";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { refLabel, stepTransforms } from "./lib/profile-utils";
 
@@ -64,6 +66,7 @@ export default function App() {
   const [files, setFiles] = useState<Record<string, FileEntry>>({});
   const [generations, setGenerations] = useState<Record<string, GenEntry>>({});
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<TopTab>("imports");
 
   // Increments on every load_profile call so late-arriving responses for a
   // profile the user has already navigated away from get discarded.
@@ -295,28 +298,38 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen bg-neutral-100 text-neutral-900">
-      <Titlebar onOpenSettings={() => setSettingsOpen(true)} />
+      <Titlebar
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        onOpenSettings={() => setSettingsOpen(true)}
+      />
       <div className="flex-1 p-4 pt-0 overflow-hidden">
         <div className="relative flex h-full bg-white rounded-xl border border-neutral-200 shadow-md overflow-hidden">
-          <Sidebar
-            profiles={profiles}
-            selectedProfile={selectedProfile}
-            onSelectProfile={handleSelectProfile}
-            loadedProfile={loadedProfile}
-            stepsDone={stepsDone}
-            onReset={handleReset}
-          />
-          <MainPanel
-            loadedProfile={loadedProfile}
-            stepsDone={stepsDone}
-            files={files}
-            generations={generations}
-            onFileSelect={handleFileSelect}
-            onValidate={handleValidate}
-            onClearFile={handleClearFile}
-            onGenerate={handleGenerate}
-            onDownload={handleDownload}
-          />
+          {activeTab === "imports" && (
+            <>
+              <Sidebar
+                profiles={profiles}
+                selectedProfile={selectedProfile}
+                onSelectProfile={handleSelectProfile}
+                loadedProfile={loadedProfile}
+                stepsDone={stepsDone}
+                onReset={handleReset}
+              />
+              <MainPanel
+                loadedProfile={loadedProfile}
+                stepsDone={stepsDone}
+                files={files}
+                generations={generations}
+                onFileSelect={handleFileSelect}
+                onValidate={handleValidate}
+                onClearFile={handleClearFile}
+                onGenerate={handleGenerate}
+                onDownload={handleDownload}
+              />
+            </>
+          )}
+          {activeTab === "data-requests" && <DataRequestsPage />}
+          {activeTab === "reports" && <ReportsPage />}
           <SettingsPanel
             open={settingsOpen}
             onClose={() => {

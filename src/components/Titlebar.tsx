@@ -13,21 +13,25 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+export type TopTab = "imports" | "data-requests" | "reports";
+
 type TabItemProps = {
   icon: LucideIcon;
   label: string;
   active?: boolean;
+  onClick?: () => void;
 };
 
-function TabItem({ icon: Icon, label, active }: TabItemProps) {
+function TabItem({ icon: Icon, label, active, onClick }: TabItemProps) {
   return (
     <button
       type="button"
       tabIndex={active ? 0 : -1}
+      onClick={onClick}
       className={
         "h-[26px] px-[13px] rounded-[8px] inline-flex items-center gap-[6px] text-[13px] transition-colors " +
         (active
-          ? "bg-white text-neutral-900 font-medium shadow-sm"
+          ? "bg-white text-neutral-900 shadow-sm"
           : "text-neutral-400 hover:text-neutral-600")
       }
     >
@@ -38,10 +42,12 @@ function TabItem({ icon: Icon, label, active }: TabItemProps) {
 }
 
 type TitlebarProps = {
+  activeTab: TopTab;
+  onTabChange: (tab: TopTab) => void;
   onOpenSettings: () => void;
 };
 
-export function Titlebar({ onOpenSettings }: TitlebarProps) {
+export function Titlebar({ activeTab, onTabChange, onOpenSettings }: TitlebarProps) {
   return (
     <div
       data-tauri-drag-region
@@ -64,9 +70,24 @@ export function Titlebar({ onOpenSettings }: TitlebarProps) {
       {/* Center — tab pill (wrapper is draggable; pill itself is not) */}
       <div data-tauri-drag-region className="flex items-center justify-center flex-1">
         <div className="flex items-center bg-neutral-200/70 rounded-[10px] p-[3px] gap-[1px]">
-          <TabItem icon={FileInputIcon} label="Imports" active />
-          <TabItem icon={SendIcon} label="Data Requests" />
-          <TabItem icon={BarChartIcon} label="Reports" />
+          <TabItem
+            icon={FileInputIcon}
+            label="Imports"
+            active={activeTab === "imports"}
+            onClick={() => onTabChange("imports")}
+          />
+          <TabItem
+            icon={SendIcon}
+            label="Data Requests"
+            active={activeTab === "data-requests"}
+            onClick={() => onTabChange("data-requests")}
+          />
+          <TabItem
+            icon={BarChartIcon}
+            label="Reports"
+            active={activeTab === "reports"}
+            onClick={() => onTabChange("reports")}
+          />
         </div>
       </div>
 
