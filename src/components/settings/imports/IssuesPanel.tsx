@@ -55,7 +55,7 @@ export function IssuesPanel({
   return (
     <div className="shrink-0 border-t border-neutral-200 bg-white max-h-[40%] flex flex-col">
       <div className="px-[16px] py-[6px] flex items-center justify-between border-b border-neutral-100 bg-neutral-50/60">
-        <span className="text-[12px] text-neutral-700">
+        <span className="text-[12px] text-green-800">
           {parts.length === 0
             ? "Profile is valid"
             : parts.map((p, i) => (

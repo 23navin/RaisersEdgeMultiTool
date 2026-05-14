@@ -20,13 +20,13 @@ type Props = {
 export function FileTree({ files, activePath, onSelect }: Props) {
   const groups = buildFileGroups(files);
   return (
-    <nav className="w-[180px] shrink-0 border-r border-neutral-200 overflow-auto py-[6px]">
+    <nav className="w-[180px] shrink-0 border-r border-neutral-200 overflow-auto">
       {groups.map((group, idx) => {
         if (group.length === 0) return null;
         const hasPrev = groups.slice(0, idx).some((g) => g.length > 0);
         return (
           <div key={idx}>
-            {hasPrev && <div className="my-[6px] mx-[10px] border-t border-neutral-200" />}
+            {hasPrev && <div className="border-t border-neutral-200" />}
             {group.map((f) => (
               <FileItem
                 key={f.path}
@@ -78,18 +78,7 @@ function FileItem({
 
 function buildFileGroups(files: ProfileFileEntry[]): ProfileFileEntry[][] {
   const yaml = files.find((f) => f.path === "structure.yaml");
-  const yamlContent = yaml?.content ?? "";
-
-  const noticeRefs = new Set<string>();
-  const blocks = yamlContent.matchAll(
-    /notices:\s*\n((?:[ \t]+-[ \t]+[\w./-]+\s*\n?)+)/g,
-  );
-  for (const block of blocks) {
-    const body = block[1] ?? "";
-    for (const item of body.matchAll(/-[ \t]+([\w./-]+)/g)) {
-      noticeRefs.add(item[1].replace(/^sql\//, ""));
-    }
-  }
+  const noticeRefs = findNoticeRefs(yaml?.content ?? "");
 
   const profileFiles: ProfileFileEntry[] = [];
   const transformFiles: ProfileFileEntry[] = [];
@@ -109,4 +98,34 @@ function buildFileGroups(files: ProfileFileEntry[]): ProfileFileEntry[][] {
   }
 
   return [profileFiles, transformFiles, noticeFiles];
+}
+
+function findNoticeRefs(yamlContent: string): Set<string> {
+  const refs = new Set<string>();
+  const lines = yamlContent.split("\n");
+  let noticesIndent = -1;
+
+  for (const line of lines) {
+    const stripped = line.trimStart();
+    if (stripped === "" || stripped.startsWith("#")) continue;
+    const indent = line.length - stripped.length;
+
+    if (noticesIndent >= 0) {
+      if (indent <= noticesIndent) {
+        noticesIndent = -1;
+      } else {
+        const m = stripped.match(/^sql:\s*([\w./-]+)/);
+        if (m) {
+          const basename = m[1].split("/").pop() ?? m[1];
+          refs.add(basename);
+        }
+      }
+    }
+
+    if (noticesIndent < 0 && /^notices:\s*$/.test(stripped)) {
+      noticesIndent = indent;
+    }
+  }
+
+  return refs;
 }

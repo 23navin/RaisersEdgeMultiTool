@@ -16,7 +16,7 @@ use duckdb::Connection;
 use serde::Serialize;
 
 use crate::profile::{
-    InputDefinition, ProfileFileEntry, ProfileStructure, StepInputRef,
+    InputDefinition, NoticeQuery, ProfileFileEntry, ProfileStructure, StepInputRef,
 };
 
 // ── Public types ─────────────────────────────────────────────────────────────
@@ -304,7 +304,7 @@ pub fn validate_profile(files: &[ProfileFileEntry]) -> ValidationReport {
                                     step.label, n
                                 ),
                                 Some(step_loc()),
-                                false,
+                                true, // scaffoldable
                             ));
                         }
                     }
@@ -956,36 +956,51 @@ pub fn scaffold_missing(
         if step.step_type != "sql_transform" {
             continue;
         }
-        let units: Vec<(&[StepInputRef], &str, &[String])> = if let Some(ts) = &step.transforms {
-            ts.iter()
-                .map(|t| {
-                    (
-                        t.input.as_deref().unwrap_or(&[]),
-                        t.sql.as_str(),
-                        t.output.as_deref().unwrap_or(&[]),
-                    )
-                })
-                .collect()
-        } else {
-            vec![(
-                step.input.as_deref().unwrap_or(&[]),
-                step.sql.as_deref().unwrap_or(""),
-                step.output.as_deref().unwrap_or(&[]),
-            )]
-        };
+        let units: Vec<(&[StepInputRef], &str, &[String], &[NoticeQuery])> =
+            if let Some(ts) = &step.transforms {
+                ts.iter()
+                    .map(|t| {
+                        (
+                            t.input.as_deref().unwrap_or(&[]),
+                            t.sql.as_str(),
+                            t.output.as_deref().unwrap_or(&[]),
+                            t.notices.as_deref().unwrap_or(&[]),
+                        )
+                    })
+                    .collect()
+            } else {
+                vec![(
+                    step.input.as_deref().unwrap_or(&[]),
+                    step.sql.as_deref().unwrap_or(""),
+                    step.output.as_deref().unwrap_or(&[]),
+                    step.notices.as_deref().unwrap_or(&[]),
+                )]
+            };
 
-        for (inputs, sql_name, outputs) in units {
-            if sql_name.is_empty() {
-                continue;
+        for (inputs, sql_name, outputs, notices) in units {
+            if !sql_name.is_empty() {
+                let bundle_path = format!("sql/{}", sql_name);
+                if !by_path.contains_key(&bundle_path) {
+                    by_path.insert(
+                        bundle_path,
+                        build_sql_stub(&step.label, inputs, outputs, &input_lookup),
+                    );
+                }
             }
-            let bundle_path = format!("sql/{}", sql_name);
-            if by_path.contains_key(&bundle_path) {
-                continue;
+
+            for notice in notices {
+                if notice.sql.is_empty() {
+                    continue;
+                }
+                let bundle_path = format!("sql/{}", notice.sql);
+                if by_path.contains_key(&bundle_path) {
+                    continue;
+                }
+                by_path.insert(
+                    bundle_path,
+                    build_notice_stub(&step.label, &notice.label, inputs, &input_lookup),
+                );
             }
-            by_path.insert(
-                bundle_path,
-                build_sql_stub(&step.label, inputs, outputs, &input_lookup),
-            );
         }
     }
 
@@ -1069,6 +1084,46 @@ fn build_sql_stub(
             ));
         }
     }
+
+    buf
+}
+
+fn build_notice_stub(
+    step_label: &str,
+    notice_label: &str,
+    inputs: &[StepInputRef],
+    input_lookup: &HashMap<&str, &InputDefinition>,
+) -> String {
+    let primary_input = inputs.first().map(ref_label).unwrap_or_else(|| "Input".into());
+
+    let projection = input_lookup
+        .get(primary_input.as_str())
+        .and_then(|d| d.validation.as_deref())
+        .filter(|v| !v.is_empty())
+        .map(|cols| {
+            cols.iter()
+                .enumerate()
+                .map(|(i, c)| {
+                    let prefix = if i == 0 { "    " } else { "    -- " };
+                    format!("{}\"{}\"", prefix, c.label)
+                })
+                .collect::<Vec<_>>()
+                .join(",\n")
+        })
+        .unwrap_or_else(|| "    *".to_string());
+
+    let mut buf = String::new();
+    buf.push_str(&format!(
+        "-- TODO: implement the '{}' notice for the {} step.\n",
+        notice_label, step_label,
+    ));
+    buf.push_str(
+        "-- Each row returned becomes a flagged item shown to the user.\n-- Empty result = nothing to surface.\n\n",
+    );
+    buf.push_str(&format!(
+        "SELECT\n{}\n  FROM read_csv_auto('{{{{input:{}}}}}')\n  WHERE FALSE; -- TODO: replace with the condition that flags a row\n",
+        projection, primary_input,
+    ));
 
     buf
 }
