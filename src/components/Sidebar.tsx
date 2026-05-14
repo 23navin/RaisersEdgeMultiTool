@@ -80,7 +80,7 @@ export function Sidebar({
           <PopoverContent className="w-[300px] p-0" align="start">
             <Command>
               <CommandInput
-                placeholder="Search profiles…"
+                placeholder="Search profiles"
                 className="text-[13px]"
                 value={search}
                 onValueChange={setSearch}
@@ -104,16 +104,16 @@ export function Sidebar({
                       >
                         <span className="flex-1 min-w-0 flex items-center gap-1.5">
                           <span className="truncate">{p.name}</span>
-                          {p.source === "user" && (
-                            <span className="truncate uppercase text-neutral-400">
-                              U
-                            </span>
-                          )}
                           {idMatches && (
-                          <span className="text-neutral-400 truncate">
+                          <span className="text-neutral-400 truncate tracking-[-0.02em]">
                             {p.id}
                           </span>
                         )}
+                          {p.source === "builtin" && (
+                            <span className="text-[9px] uppercase tracking-[0.06em] text-neutral-400 shrink-0">
+                              built-in
+                            </span>
+                          )}
                         </span>
                         <CheckIcon
                           size={14}

@@ -319,7 +319,24 @@ export default function App() {
           />
           <SettingsPanel
             open={settingsOpen}
-            onClose={() => setSettingsOpen(false)}
+            onClose={() => {
+              setSettingsOpen(false);
+              // Refresh the main sidebar's profile list — the user may have
+              // created, duplicated, or deleted a profile while the panel
+              // was open. Clear selection if it's no longer on disk.
+              invoke<ProfileSummary[]>("list_profiles")
+                .then((list) => {
+                  setProfiles(list);
+                  if (
+                    selectedProfile &&
+                    !list.some((p) => p.zip_path === selectedProfile)
+                  ) {
+                    setSelectedProfile(null);
+                    setLoadedProfile(null);
+                  }
+                })
+                .catch((e) => console.error("list_profiles failed:", e));
+            }}
           />
         </div>
       </div>
