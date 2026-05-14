@@ -4,9 +4,9 @@
 // section per step from the loaded profile, in document order.
 
 import { CheckIcon } from "lucide-react";
-import type { LoadedProfile, Step } from "../types";
-import type { FileEntry, GenEntry } from "../App";
-import { refLabel, stepTransforms } from "../lib/profile-utils";
+import type { LoadedProfile, Step } from "../../types";
+import type { FileEntry, GenEntry } from "../../App";
+import { refLabel, stepTransforms } from "../../lib/profile-utils";
 import { StepSelectFiles } from "./steps/StepSelectFiles";
 import { StepGenerateFile } from "./steps/StepGenerateFile";
 import { StepImport } from "./steps/StepImport";

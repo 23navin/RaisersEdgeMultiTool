@@ -11,7 +11,7 @@ import {
   RotateCcwIcon,
   ChevronsUpDownIcon,
 } from "lucide-react";
-import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
+import { Popover, PopoverTrigger, PopoverContent } from "../ui/popover";
 import {
   Command,
   CommandInput,
@@ -19,9 +19,9 @@ import {
   CommandEmpty,
   CommandGroup,
   CommandItem,
-} from "./ui/command";
+} from "../ui/command";
 import { cn } from "@/lib/utils";
-import type { LoadedProfile, ProfileSummary } from "../types";
+import type { LoadedProfile, ProfileSummary } from "../../types";
 
 type SidebarProps = {
   profiles: ProfileSummary[];

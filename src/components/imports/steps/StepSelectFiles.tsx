@@ -13,10 +13,10 @@ import {
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { basename } from "@tauri-apps/api/path";
-import { Button } from "../ui/button";
-import { NoticeBlock } from "../NoticeBlock";
-import type { FileStatus } from "../../App";
-import type { Notice, ValidationError } from "../../types";
+import { Button } from "../../ui/button";
+import { NoticeBlock } from "../../shared/NoticeBlock";
+import type { FileStatus } from "../../../App";
+import type { Notice, ValidationError } from "../../../types";
 
 export type FileInputRow = {
   inputLabel: string;

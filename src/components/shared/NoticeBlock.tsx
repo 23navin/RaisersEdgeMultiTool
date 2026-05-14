@@ -5,7 +5,7 @@
 // column-name match.
 
 import { InfoIcon } from "lucide-react";
-import type { Notice } from "../types";
+import type { Notice } from "../../types";
 
 export function NoticeBlock({ notice }: { notice: Notice }) {
   return (

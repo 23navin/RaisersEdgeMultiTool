@@ -32,7 +32,7 @@ import {
 } from "@codemirror/state";
 import { indentUnit } from "@codemirror/language";
 import { indentWithTab } from "@codemirror/commands";
-import type { ProfileFileEntry, IssueLocation, Severity } from "../types";
+import type { ProfileFileEntry, IssueLocation, Severity } from "../../types";
 
 // ── Anchor model ─────────────────────────────────────────────────────────────
 

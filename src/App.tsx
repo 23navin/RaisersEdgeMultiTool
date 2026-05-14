@@ -17,8 +17,8 @@ import type {
   ValidationError,
 } from "./types";
 import { Titlebar } from "./components/Titlebar";
-import { Sidebar } from "./components/Sidebar";
-import { MainPanel } from "./components/MainPanel";
+import { Sidebar } from "./components/imports/Sidebar";
+import { MainPanel } from "./components/imports/MainPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { refLabel, stepTransforms } from "./lib/profile-utils";
 
