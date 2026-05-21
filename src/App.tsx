@@ -16,6 +16,7 @@ import type {
   TransformResult,
   ValidationError,
 } from "./types";
+import { cn } from "./lib/utils";
 import { Titlebar, type TopTab } from "./components/Titlebar";
 import { ImportsPage } from "./components/imports/ImportsPage";
 import { DataRequestsPage } from "./components/data-request/DataRequestsPage";
@@ -303,7 +304,16 @@ export default function App() {
         onOpenSettings={() => setSettingsOpen(true)}
       />
       <div className="flex-1 p-4 pt-0 overflow-hidden">
-        <div className="relative flex h-full bg-white rounded-xl border border-neutral-200 shadow-md overflow-hidden">
+        <div
+          className={cn(
+            "relative flex h-full overflow-hidden",
+            // The Data Requests tab renders its own card-like panels
+            // directly on the page bg, so suppress the shared white
+            // wrapper for that tab.
+            activeTab !== "data-requests" &&
+              "bg-white rounded-xl border border-neutral-200 shadow-md",
+          )}
+        >
           {activeTab === "imports" && (
             <ImportsPage
               profiles={profiles}
