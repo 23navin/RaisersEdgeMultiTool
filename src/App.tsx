@@ -17,8 +17,7 @@ import type {
   ValidationError,
 } from "./types";
 import { Titlebar, type TopTab } from "./components/Titlebar";
-import { Sidebar } from "./components/imports/Sidebar";
-import { MainPanel } from "./components/imports/MainPanel";
+import { ImportsPage } from "./components/imports/ImportsPage";
 import { DataRequestsPage } from "./components/data-request/DataRequestsPage";
 import { ReportsPage } from "./components/reports/ReportsPage";
 import { SettingsPanel } from "./components/SettingsPanel";
@@ -306,27 +305,21 @@ export default function App() {
       <div className="flex-1 p-4 pt-0 overflow-hidden">
         <div className="relative flex h-full bg-white rounded-xl border border-neutral-200 shadow-md overflow-hidden">
           {activeTab === "imports" && (
-            <>
-              <Sidebar
-                profiles={profiles}
-                selectedProfile={selectedProfile}
-                onSelectProfile={handleSelectProfile}
-                loadedProfile={loadedProfile}
-                stepsDone={stepsDone}
-                onReset={handleReset}
-              />
-              <MainPanel
-                loadedProfile={loadedProfile}
-                stepsDone={stepsDone}
-                files={files}
-                generations={generations}
-                onFileSelect={handleFileSelect}
-                onValidate={handleValidate}
-                onClearFile={handleClearFile}
-                onGenerate={handleGenerate}
-                onDownload={handleDownload}
-              />
-            </>
+            <ImportsPage
+              profiles={profiles}
+              selectedProfile={selectedProfile}
+              onSelectProfile={handleSelectProfile}
+              loadedProfile={loadedProfile}
+              stepsDone={stepsDone}
+              files={files}
+              generations={generations}
+              onFileSelect={handleFileSelect}
+              onValidate={handleValidate}
+              onClearFile={handleClearFile}
+              onGenerate={handleGenerate}
+              onDownload={handleDownload}
+              onReset={handleReset}
+            />
           )}
           {activeTab === "data-requests" && <DataRequestsPage />}
           {activeTab === "reports" && <ReportsPage />}
