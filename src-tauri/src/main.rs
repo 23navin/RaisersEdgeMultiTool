@@ -4,6 +4,7 @@
 mod errors;
 mod profile;
 mod db;
+mod validate;
 mod commands;
 
 fn main() {
@@ -15,6 +16,12 @@ fn main() {
             commands::validate_file,
             commands::run_profile,
             commands::save_output,
+            commands::save_profile,
+            commands::new_profile,
+            commands::duplicate_profile,
+            commands::delete_profile,
+            commands::validate_profile,
+            commands::scaffold_missing,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

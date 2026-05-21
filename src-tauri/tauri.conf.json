@@ -13,9 +13,9 @@
     "windows": [
       {
         "title": "Database Multitool",
-        "width": 1200,
-        "height": 800,
-        "minWidth": 900,
+        "width": 900,
+        "height": 900,
+        "minWidth": 800,
         "minHeight": 600,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,

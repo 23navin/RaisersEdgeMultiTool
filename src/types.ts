@@ -138,5 +138,58 @@ export type LoadedProfile = {
   instructions: Record<string, string>; // step label → markdown content
   sql_files: Record<string, string>;    // filename → SQL content
   temp_dir: string;
+  files: ProfileFileEntry[];             // raw editable text files (structure.yaml, instructions.md, sql/*.sql)
+};
+
+// ── Profile editor ───────────────────────────────────────────────────────────
+// One editable file inside a profile bundle. Path is relative to bundle root
+// with forward-slash separators (e.g. "structure.yaml", "sql/primary.sql").
+
+export type ProfileFileEntry = {
+  path: string;
+  content: string;
+};
+
+// Returned by save_profile / new_profile / duplicate_profile — gives the
+// frontend both the refreshed sidebar summary and the new file contents
+// in a single round-trip.
+export type ProfileMutation = {
+  summary: ProfileSummary;
+  loaded: LoadedProfile;
+};
+
+// ── Profile validator ────────────────────────────────────────────────────────
+// Mirrors validate.rs in the backend.
+
+export type Severity = "error" | "warning" | "info";
+
+// Tagged union — `kind` is the discriminator. Some variants carry a label
+// (resolved to a line number on the frontend via the editor's anchor map);
+// others carry a raw line number from a parser; others carry a file path
+// for file-level issues.
+export type IssueLocation =
+  | { kind: "yaml_step"; label: string }
+  | { kind: "yaml_input"; label: string }
+  | { kind: "yaml_output"; label: string }
+  | { kind: "yaml_line"; line: number }
+  | { kind: "md_anchor"; label: string }
+  | { kind: "md_line"; line: number }
+  | { kind: "sql"; path: string; line?: number | null }
+  | { kind: "file"; path: string };
+
+export type ValidationIssue = {
+  severity: Severity;
+  code: string;          // stable identifier (e.g. "yaml.duplicate_step_label")
+  message: string;
+  location?: IssueLocation | null;
+  fixable: boolean;      // true if `scaffold_missing` would address it
+};
+
+export type ValidationReport = {
+  issues: ValidationIssue[];
+  error_count: number;
+  warning_count: number;
+  info_count: number;
+  fixable_count: number;
 };
 

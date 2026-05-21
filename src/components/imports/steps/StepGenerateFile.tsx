@@ -15,10 +15,10 @@ import {
   XIcon,
   type LucideIcon,
 } from "lucide-react";
-import { Button } from "../ui/button";
-import { NoticeBlock } from "../NoticeBlock";
-import type { GenerateStatus } from "../../App";
-import type { Notice, SqlError } from "../../types";
+import { Button } from "../../ui/button";
+import { NoticeBlock } from "../../shared/NoticeBlock";
+import type { GenerateStatus } from "../../../App";
+import type { Notice, SqlError } from "../../../types";
 
 export type PipeItem = { label: string; ready: boolean };
 

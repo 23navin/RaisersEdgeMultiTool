@@ -93,7 +93,7 @@ Every command must be registered in `main.rs` inside `generate_handler![]` or `i
 
 | Command | Called from | Args | Returns |
 |---|---|---|---|
-| `list_profiles` | `App.tsx` on mount | _(none)_ — derives path from `CARGO_MANIFEST_DIR` (dev) or `current_exe` (release) | `ProfileSummary[]` |
+| `list_profiles` | `App.tsx` on mount | _(none from frontend; `AppHandle` injected by Tauri)_ — returns embedded built-ins + `.import` files in `app_data_dir()/profiles/` | `ProfileSummary[]` |
 | `load_profile` | `App.tsx` on profile select | `zipPath` | `LoadedProfile` |
 | `validate_file` | `App.tsx` on validate click | `filePath`, `inputLabel`, `zipPath` | `ValidationResult` |
 | `run_profile` | `App.tsx` on generate click | `filePaths` (map of input label → file path), `sqlFile`, `zipPath`, `outputLabels` | `TransformResult` |
@@ -103,6 +103,13 @@ Every command must be registered in `main.rs` inside `generate_handler![]` or `i
 from `loadedProfile.temp_dir`, not the original `.import` zip. Naming kept for
 backwards compatibility — the backend re-reads `structure.yaml` and SQL files from
 that directory.
+
+### Profile sources
+
+- **Built-ins**: embedded at compile-time via `include_bytes!` in `profile.rs::BUILTIN_PROFILES`. The `.import` files must exist when Rust builds — run `profiles/build.sh` first if you've changed a built-in's source.
+- **User profiles**: `.import` files in `app_data_dir()/profiles/` — resolved via `AppHandle::path()`. macOS: `~/Library/Application Support/com.navin.tauri-import/profiles/`. Auto-created on first `list_profiles`.
+- **`zip_path` shapes**: user profiles use a real fs path; built-ins use the sentinel `builtin://<filename>`. `load_profile` strips that prefix and extracts from in-memory bytes.
+- **Frontend selection keys on `zip_path`, not `id`** — a built-in and a user profile can share an `id`; only `zip_path` is unique.
 
 ---
 
@@ -243,6 +250,7 @@ re-read validation rules and SQL.
 - **State read too early?** → Use the value returned by the setter callback, not the stale state variable
 - **`validate_file` / `run_profile` `zipPath` arg is the extracted temp dir, not the .import zip** → naming is misleading; the backend reads `structure.yaml` and SQL straight from that directory
 - **`{{input_file}}` errors in a multi-input transform** → use `{{input:Label}}` placeholders to disambiguate, one per declared input
+- **Two profiles with the same name in the sidebar?** → built-in and user profile share an `id`; this is expected. Select on `zip_path`, never on `id`
 
 ---
 

@@ -6,9 +6,28 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use serde::Serialize;
 use tauri::{AppHandle, Manager};
-use crate::profile::{self, ProfileSummary, LoadedProfile, NoticeQuery};
+use crate::profile::{self, ProfileSummary, LoadedProfile, NoticeQuery, ProfileFileEntry};
 use crate::db::{self, ValidationResult, TransformResult, NoticeInput};
+use crate::validate::{self, ValidationReport};
+
+// Combined return for create / duplicate / save — the frontend wants both
+// the new sidebar summary and the freshly extracted contents in one round-trip.
+#[derive(Serialize)]
+pub struct ProfileMutation {
+    pub summary: ProfileSummary,
+    pub loaded: LoadedProfile,
+}
+
+fn user_profiles_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = app.path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("profiles");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir)
+}
 
 // ── list_profiles ─────────────────────────────────────────────────────────────
 // Called by: App.tsx on mount
@@ -143,4 +162,72 @@ pub fn save_output(src_path: String, dest_path: String) -> Result<(), String> {
     std::fs::copy(&src_path, &dest_path)
         .map(|_| ())
         .map_err(|e| e.to_string())
+}
+
+// ── save_profile ──────────────────────────────────────────────────────────────
+// Called by: SettingsPanel.tsx Save button.
+// Repacks the supplied files into the user profile's .import zip and returns
+// the refreshed summary + loaded contents.
+
+#[tauri::command]
+pub fn save_profile(
+    zip_path: String,
+    files: Vec<ProfileFileEntry>,
+) -> Result<ProfileMutation, String> {
+    let (summary, loaded) = profile::save_user_profile(&zip_path, &files)
+        .map_err(|e| e.to_string())?;
+    Ok(ProfileMutation { summary, loaded })
+}
+
+// ── new_profile ───────────────────────────────────────────────────────────────
+// Called by: SettingsPanel.tsx 'New profile' button.
+
+#[tauri::command]
+pub fn new_profile(app: AppHandle) -> Result<ProfileMutation, String> {
+    let dir = user_profiles_dir(&app)?;
+    let (summary, loaded) = profile::create_new_profile(&dir)
+        .map_err(|e| e.to_string())?;
+    Ok(ProfileMutation { summary, loaded })
+}
+
+// ── duplicate_profile ─────────────────────────────────────────────────────────
+// Called by: SettingsPanel.tsx when the user opens a built-in (auto-duplicate)
+// or clicks 'Duplicate' on a user profile.
+
+#[tauri::command]
+pub fn duplicate_profile(
+    app: AppHandle,
+    source_zip_path: String,
+) -> Result<ProfileMutation, String> {
+    let dir = user_profiles_dir(&app)?;
+    let (summary, loaded) = profile::duplicate_profile(&source_zip_path, &dir)
+        .map_err(|e| e.to_string())?;
+    Ok(ProfileMutation { summary, loaded })
+}
+
+// ── delete_profile ────────────────────────────────────────────────────────────
+// Called by: SettingsPanel.tsx 'Delete' button. Refuses built-ins.
+
+#[tauri::command]
+pub fn delete_profile(zip_path: String) -> Result<(), String> {
+    profile::delete_user_profile(&zip_path).map_err(|e| e.to_string())
+}
+
+// ── validate_profile ──────────────────────────────────────────────────────────
+// Called by: SettingsPanel.tsx 'Validate' button. Pure function over the
+// in-memory file set — does not touch disk.
+
+#[tauri::command]
+pub fn validate_profile(files: Vec<ProfileFileEntry>) -> Result<ValidationReport, String> {
+    Ok(validate::validate_profile(&files))
+}
+
+// ── scaffold_missing ──────────────────────────────────────────────────────────
+// Called by: SettingsPanel.tsx 'Scaffold missing files' action. Returns the
+// updated file list; the frontend swaps it into the editor and the user
+// presses Save to persist.
+
+#[tauri::command]
+pub fn scaffold_missing(files: Vec<ProfileFileEntry>) -> Result<Vec<ProfileFileEntry>, String> {
+    validate::scaffold_missing(&files).map_err(|e| e.to_string())
 }
