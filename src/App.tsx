@@ -21,7 +21,13 @@ import { ImportsPage } from "./components/imports/ImportsPage";
 import { DataRequestsPage } from "./components/data-request/DataRequestsPage";
 import { ReportsPage } from "./components/reports/ReportsPage";
 import { SettingsPanel } from "./components/SettingsPanel";
+import {
+  PanelTransition,
+  PANEL_TRANSITION_MS,
+} from "./components/PanelTransition";
 import { refLabel, stepTransforms } from "./lib/profile-utils";
+
+const TAB_ORDER: TopTab[] = ["imports", "data-requests", "reports"];
 
 export type FileStatus = "none" | "pending" | "valid" | "invalid";
 export type GenerateStatus = "idle" | "running" | "done" | "error";
@@ -66,6 +72,23 @@ export default function App() {
   const [generations, setGenerations] = useState<Record<string, GenEntry>>({});
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TopTab>("imports");
+  const [exitingTab, setExitingTab] = useState<TopTab | null>(null);
+  const [transitionDir, setTransitionDir] = useState<"left" | "right">("left");
+
+  const handleTabChange = (newTab: TopTab) => {
+    if (newTab === activeTab || exitingTab) return;
+    const oldIdx = TAB_ORDER.indexOf(activeTab);
+    const newIdx = TAB_ORDER.indexOf(newTab);
+    setTransitionDir(newIdx > oldIdx ? "left" : "right");
+    setExitingTab(activeTab);
+    setActiveTab(newTab);
+  };
+
+  useEffect(() => {
+    if (!exitingTab) return;
+    const t = setTimeout(() => setExitingTab(null), PANEL_TRANSITION_MS + 20);
+    return () => clearTimeout(t);
+  }, [exitingTab]);
 
   // Increments on every load_profile call so late-arriving responses for a
   // profile the user has already navigated away from get discarded.
@@ -295,34 +318,55 @@ export default function App() {
     }
   };
 
+  const renderPanel = (tab: TopTab) => {
+    if (tab === "imports") {
+      return (
+        <ImportsPage
+          profiles={profiles}
+          selectedProfile={selectedProfile}
+          onSelectProfile={handleSelectProfile}
+          loadedProfile={loadedProfile}
+          stepsDone={stepsDone}
+          files={files}
+          generations={generations}
+          onFileSelect={handleFileSelect}
+          onValidate={handleValidate}
+          onClearFile={handleClearFile}
+          onGenerate={handleGenerate}
+          onDownload={handleDownload}
+          onReset={handleReset}
+        />
+      );
+    }
+    if (tab === "data-requests") return <DataRequestsPage />;
+    return <ReportsPage />;
+  };
+
   return (
     <div className="flex flex-col h-screen bg-neutral-100 text-neutral-900">
       <Titlebar
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={handleTabChange}
         onOpenSettings={() => setSettingsOpen(true)}
       />
       <div className="flex-1 p-4 pt-0 overflow-hidden">
         <div className="relative h-full">
-          {activeTab === "imports" && (
-            <ImportsPage
-              profiles={profiles}
-              selectedProfile={selectedProfile}
-              onSelectProfile={handleSelectProfile}
-              loadedProfile={loadedProfile}
-              stepsDone={stepsDone}
-              files={files}
-              generations={generations}
-              onFileSelect={handleFileSelect}
-              onValidate={handleValidate}
-              onClearFile={handleClearFile}
-              onGenerate={handleGenerate}
-              onDownload={handleDownload}
-              onReset={handleReset}
-            />
+          {exitingTab && (
+            <PanelTransition
+              key={`exit-${exitingTab}`}
+              state="exit"
+              direction={transitionDir}
+            >
+              {renderPanel(exitingTab)}
+            </PanelTransition>
           )}
-          {activeTab === "data-requests" && <DataRequestsPage />}
-          {activeTab === "reports" && <ReportsPage />}
+          <PanelTransition
+            key={`active-${activeTab}`}
+            state={exitingTab ? "enter" : "idle"}
+            direction={transitionDir}
+          >
+            {renderPanel(activeTab)}
+          </PanelTransition>
           <SettingsPanel
             open={settingsOpen}
             onClose={() => {
