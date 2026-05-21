@@ -4,6 +4,7 @@
 
 import type { LoadedProfile, ProfileSummary } from "../../types";
 import type { FileEntry, GenEntry } from "../../App";
+import { Panel } from "../shared/Panel";
 import { Sidebar } from "./Sidebar";
 import { MainPanel } from "./MainPanel";
 
@@ -39,7 +40,7 @@ export function ImportsPage({
   onReset,
 }: ImportsPageProps) {
   return (
-    <>
+    <Panel className="flex h-full">
       <Sidebar
         profiles={profiles}
         selectedProfile={selectedProfile}
@@ -59,6 +60,6 @@ export function ImportsPage({
         onGenerate={onGenerate}
         onDownload={onDownload}
       />
-    </>
+    </Panel>
   );
 }

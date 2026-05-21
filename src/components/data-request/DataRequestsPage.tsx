@@ -16,6 +16,7 @@
 
 import { useCallback, useRef, useState, type CSSProperties } from "react";
 import { cn } from "../../lib/utils";
+import { Panel } from "../shared/Panel";
 import { Library } from "./Library";
 import { Status } from "./Status";
 
@@ -190,16 +191,13 @@ export function DataRequestsPage() {
     <main
       ref={containerRef}
       className={cn(
-        "flex-1 flex flex-col overflow-hidden",
+        "h-full flex flex-col",
         dragging && "select-none cursor-row-resize",
       )}
     >
-      <div
-        style={libraryStyle}
-        className="flex flex-col min-h-0"
-      >
+      <Panel style={libraryStyle}>
         <Library onTitleDoubleClick={() => handleTitleDoubleClick("library")} />
-      </div>
+      </Panel>
       <div
         role="separator"
         aria-orientation="horizontal"
@@ -208,12 +206,9 @@ export function DataRequestsPage() {
         className="shrink-0 cursor-row-resize"
         style={{ height: `${DIVIDER_HEIGHT}px` }}
       />
-      <div
-        style={statusStyle}
-        className="flex flex-col min-h-0"
-      >
+      <Panel style={statusStyle}>
         <Status onTitleDoubleClick={() => handleTitleDoubleClick("status")} />
-      </div>
+      </Panel>
     </main>
   );
 }

@@ -11,7 +11,7 @@ type StatusProps = {
 
 export function Status({ onTitleDoubleClick }: StatusProps) {
   return (
-    <div className="flex flex-col h-full min-h-0 bg-white rounded-xl border border-neutral-200 shadow-md overflow-hidden">
+    <div className="flex flex-col h-full min-h-0">
       <div
         onDoubleClick={onTitleDoubleClick}
         className="px-[22px] h-[34px] flex items-center border-b border-neutral-200 shrink-0 select-none cursor-default"
