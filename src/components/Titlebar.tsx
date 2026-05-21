@@ -5,6 +5,7 @@
 // traffic lights but hides the rest of the chrome — we leave a ~80px gap
 // on the left so they don't overlap the app name.
 
+import { useRef } from "react";
 import {
   FileInputIcon,
   SendIcon,
@@ -12,6 +13,10 @@ import {
   SettingsIcon,
   type LucideIcon,
 } from "lucide-react";
+
+// Distance (px) the cursor can move between mousedown and click before we
+// treat the gesture as a window drag and suppress the click.
+const DRAG_CLICK_THRESHOLD = 4;
 
 export type TopTab = "imports" | "data-requests" | "reports";
 
@@ -23,11 +28,28 @@ type TabItemProps = {
 };
 
 function TabItem({ icon: Icon, label, active, onClick }: TabItemProps) {
+  const downPos = useRef<{ x: number; y: number } | null>(null);
+
   return (
     <button
       type="button"
       tabIndex={active ? 0 : -1}
-      onClick={onClick}
+      data-tauri-drag-region
+      onMouseDown={(e) => {
+        // Use screen coords — clientX/Y move with the window during a Tauri
+        // drag, so they'd register zero movement even after a long drag.
+        downPos.current = { x: e.screenX, y: e.screenY };
+      }}
+      onClick={(e) => {
+        const start = downPos.current;
+        downPos.current = null;
+        if (start) {
+          const dx = e.screenX - start.x;
+          const dy = e.screenY - start.y;
+          if (Math.hypot(dx, dy) > DRAG_CLICK_THRESHOLD) return;
+        }
+        onClick?.();
+      }}
       className={
         "h-[26px] px-[13px] rounded-[8px] inline-flex items-center gap-[6px] text-[13px] transition-colors " +
         (active
@@ -35,8 +57,8 @@ function TabItem({ icon: Icon, label, active, onClick }: TabItemProps) {
           : "text-neutral-400 hover:text-neutral-600")
       }
     >
-      <Icon size={14} />
-      {label}
+      <Icon size={14} data-tauri-drag-region />
+      <span data-tauri-drag-region>{label}</span>
     </button>
   );
 }
@@ -48,6 +70,8 @@ type TitlebarProps = {
 };
 
 export function Titlebar({ activeTab, onTabChange, onOpenSettings }: TitlebarProps) {
+  const settingsDownPos = useRef<{ x: number; y: number } | null>(null);
+
   return (
     <div
       data-tauri-drag-region
@@ -60,8 +84,14 @@ export function Titlebar({ activeTab, onTabChange, onOpenSettings }: TitlebarPro
         data-tauri-drag-region
         className="min-w-[220px] flex items-center gap-[9px] pl-[90px]"
       >
-        <div className="h-[32px] inline-flex items-center px-[3px]">
-          <span className="text-[18px] font-medium text-neutral-700">
+        <div
+          data-tauri-drag-region
+          className="h-[32px] inline-flex items-center px-[3px]"
+        >
+          <span
+            data-tauri-drag-region
+            className="text-[18px] font-medium text-neutral-700"
+          >
             Database Multitool
           </span>
         </div>
@@ -69,7 +99,10 @@ export function Titlebar({ activeTab, onTabChange, onOpenSettings }: TitlebarPro
 
       {/* Center — tab pill (wrapper is draggable; pill itself is not) */}
       <div data-tauri-drag-region className="flex items-center justify-center flex-1">
-        <div className="flex items-center bg-neutral-200/70 rounded-[10px] p-[3px] gap-[1px]">
+        <div
+          data-tauri-drag-region
+          className="flex items-center bg-neutral-200/70 rounded-[10px] p-[3px] gap-[1px]"
+        >
           <TabItem
             icon={FileInputIcon}
             label="Imports"
@@ -99,10 +132,23 @@ export function Titlebar({ activeTab, onTabChange, onOpenSettings }: TitlebarPro
         <button
           type="button"
           aria-label="Settings"
-          onClick={onOpenSettings}
+          data-tauri-drag-region
+          onMouseDown={(e) => {
+            settingsDownPos.current = { x: e.screenX, y: e.screenY };
+          }}
+          onClick={(e) => {
+            const start = settingsDownPos.current;
+            settingsDownPos.current = null;
+            if (start) {
+              const dx = e.screenX - start.x;
+              const dy = e.screenY - start.y;
+              if (Math.hypot(dx, dy) > DRAG_CLICK_THRESHOLD) return;
+            }
+            onOpenSettings();
+          }}
           className="w-[26px] h-[26px] rounded-[7px] inline-flex items-center justify-center text-neutral-500 border-0 bg-transparent hover:bg-black/5"
         >
-          <SettingsIcon size={18} />
+          <SettingsIcon size={18} data-tauri-drag-region />
         </button>
       </div>
     </div>
