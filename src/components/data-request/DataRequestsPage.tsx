@@ -24,16 +24,29 @@ import { Status } from "./Status";
 // pane still shows its title and is grabbable.
 const MIN_PANE_HEIGHT = 34;
 const DIVIDER_HEIGHT = 8;
-const DEFAULT_LIBRARY_RATIO = 0.6;
+export const DEFAULT_LIBRARY_RATIO = 0.6;
 
 const TRANSITION_MS = 150;
 
-type Mode = "default" | "custom" | "library-max" | "status-max";
+export type Mode = "default" | "custom" | "library-max" | "status-max";
 
-export function DataRequestsPage() {
+// Layout state (`mode` + `customRatio`) is owned by App.tsx and passed in
+// so it survives this page unmounting on tab navigation. Transient
+// interaction state (`dragging`, `animating`) stays local.
+interface DataRequestsPageProps {
+  mode: Mode;
+  setMode: (m: Mode) => void;
+  customRatio: number;
+  setCustomRatio: (r: number) => void;
+}
+
+export function DataRequestsPage({
+  mode,
+  setMode,
+  customRatio,
+  setCustomRatio,
+}: DataRequestsPageProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [mode, setMode] = useState<Mode>("default");
-  const [customRatio, setCustomRatio] = useState<number>(DEFAULT_LIBRARY_RATIO);
   const [dragging, setDragging] = useState(false);
   const [animating, setAnimating] = useState(false);
   const animTimeoutRef = useRef<number | null>(null);

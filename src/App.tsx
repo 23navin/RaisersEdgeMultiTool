@@ -18,7 +18,11 @@ import type {
 } from "./types";
 import { Titlebar, type TopTab } from "./components/Titlebar";
 import { ImportsPage } from "./components/imports/ImportsPage";
-import { DataRequestsPage } from "./components/data-request/DataRequestsPage";
+import {
+  DataRequestsPage,
+  DEFAULT_LIBRARY_RATIO,
+  type Mode as DataReqMode,
+} from "./components/data-request/DataRequestsPage";
 import { ReportsPage } from "./components/reports/ReportsPage";
 import { SettingsPanel } from "./components/SettingsPanel";
 import {
@@ -74,6 +78,11 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TopTab>("imports");
   const [exitingTab, setExitingTab] = useState<TopTab | null>(null);
   const [transitionDir, setTransitionDir] = useState<"left" | "right">("left");
+
+  // Data Requests panel layout — held here so it survives the page
+  // unmounting when the user navigates to another tab and back.
+  const [dataReqMode, setDataReqMode] = useState<DataReqMode>("default");
+  const [dataReqRatio, setDataReqRatio] = useState<number>(DEFAULT_LIBRARY_RATIO);
 
   const handleTabChange = (newTab: TopTab) => {
     if (newTab === activeTab || exitingTab) return;
@@ -338,7 +347,15 @@ export default function App() {
         />
       );
     }
-    if (tab === "data-requests") return <DataRequestsPage />;
+    if (tab === "data-requests")
+      return (
+        <DataRequestsPage
+          mode={dataReqMode}
+          setMode={setDataReqMode}
+          customRatio={dataReqRatio}
+          setCustomRatio={setDataReqRatio}
+        />
+      );
     return <ReportsPage />;
   };
 
