@@ -60,12 +60,11 @@ export function Sidebar({
     <aside className="w-[214px] shrink-0 border-r border-neutral-200 flex flex-col pt-[15px]">
       {/* Profile combobox row */}
       <div className="flex items-center gap-[7px] px-[10px] pb-[10px]">
-        <FileInputIcon size={16} className="text-neutral-400 shrink-0" />
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger
             role="combobox"
             aria-expanded={open}
-            className="h-[30px] w-[170px] flex items-center justify-between gap-1.5 rounded-lg border border-input bg-transparent px-2.5 text-[13px] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 cursor-pointer hover:bg-neutral-50"
+            className="h-[30px] w-[214px] flex items-center justify-between gap-1.5 rounded-md border border-input bg-transparent px-2.5 text-[13px] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 cursor-pointer hover:bg-neutral-50"
           >
             <span
               className={cn(
