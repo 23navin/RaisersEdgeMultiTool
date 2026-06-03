@@ -193,3 +193,15 @@ export type ValidationReport = {
   fixable_count: number;
 };
 
+// ── Raiser's Edge NXT connection ───────────────────────────────────────────────
+// Mirrors sky_auth::ConnectionStatus. Tokens/secret are never sent to the
+// frontend — only what the UI needs to show connection state. Returned by
+// connect_re_nxt and re_nxt_status.
+
+export type ReNxtConnectionStatus = {
+  connected: boolean;
+  environment_id?: string | null;
+  environment_name?: string | null;
+  expires_at?: number | null;   // unix seconds until the access token expires
+};
+

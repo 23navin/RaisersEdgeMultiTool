@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 import { XIcon } from "lucide-react";
 import { cn } from "../lib/utils";
 import { ImportTab } from "./settings/imports/ImportTab";
+import { GeneralTab } from "./settings/general/GeneralTab";
 
 type Props = {
   open: boolean;
@@ -133,8 +134,4 @@ function TabButton({
       />
     </button>
   );
-}
-
-function GeneralTab() {
-  return <div className="px-[24px] py-[16px]" />;
 }
