@@ -4,6 +4,8 @@
 mod errors;
 mod profile;
 mod db;
+mod re_calls;
+mod report;
 mod validate;
 mod commands;
 mod sky_auth;
@@ -16,6 +18,8 @@ fn main() {
             commands::load_profile,
             commands::validate_file,
             commands::run_profile,
+            commands::run_report,
+            commands::run_report_action,
             commands::save_output,
             commands::save_profile,
             commands::new_profile,

@@ -24,6 +24,10 @@ const BUILTIN_PROFILES: &[(&str, &[u8])] = &[
     ("test2.import", include_bytes!("../../profiles/test2.import")),
     ("test3.import", include_bytes!("../../profiles/test3.import")),
     ("test4.import", include_bytes!("../../profiles/test4.import")),
+    // Report-kind built-in. Packed manually (build.sh's verifier doesn't yet
+    // understand kind: report); re-pack with: cd profiles/src/gift_activity &&
+    // zip -r -X ../../gift_activity.import . -x '*.DS_Store'
+    ("gift_activity.import", include_bytes!("../../profiles/gift_activity.import")),
 ];
 
 // ── YAML structs ──────────────────────────────────────────────────────────────
@@ -112,9 +116,116 @@ pub struct ProfileStructure {
     pub name: String,
     pub version: String,
     pub min_app_version: String,
+
+    // Discriminator. Absent or "import" => the import workflow (inputs/outputs/
+    // steps below). "report" => the report sections further down. Kept optional
+    // so every existing import bundle still parses unchanged.
+    #[serde(default)]
+    pub kind: Option<String>,
+
+    // ── Import sections ──────────────────────────────────────────────────────
+    // Defaulted so a report bundle (which omits them) still deserializes. Import
+    // bundles always supply them.
+    #[serde(default)]
     pub inputs: Vec<InputDefinition>,
+    #[serde(default)]
     pub outputs: Vec<OutputDefinition>,
+    #[serde(default)]
     pub steps: Vec<Step>,
+
+    // ── Report sections ──────────────────────────────────────────────────────
+    // All optional; populated only when kind == "report". See REPORT_PROFILES.md.
+    // Deserialize-only for now — nothing executes these yet.
+    #[serde(default)]
+    pub parameters: Vec<Parameter>,
+    #[serde(default)]
+    pub queries: Vec<QueryRef>,
+    // Top-level report transforms. Renamed off `report_transforms` so the YAML
+    // key is `transforms` (distinct from the import Step's nested `transforms`).
+    #[serde(default, rename = "transforms")]
+    pub report_transforms: Vec<ReportTransform>,
+    #[serde(default)]
+    pub visualizations: Vec<Visualization>,
+    #[serde(default)]
+    pub actions: Vec<Action>,
+}
+
+// ── Report profile structs (deserialize-only) ─────────────────────────────────
+// A report profile reuses the bundle/loader machinery but declares five
+// report-specific sections instead of the import step-list:
+//   parameters  → UI inputs
+//   queries     → parameterized RE API calls (hybrid library)
+//   transforms  → DuckDB SQL over query results
+//   visualizations → shared viz components bound to transform outputs
+//   actions     → on-demand write-backs (e.g. create an RE query)
+// Free-form fields (config/default/template/bind) use serde_json::Value so they
+// pass through to the frontend as native JSON. See REPORT_PROFILES.md for the
+// full contract. No execution logic exists yet.
+
+// A UI input control rendered in the Inputs panel.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Parameter {
+    pub id: String,
+    pub label: String,
+    #[serde(rename = "type")]
+    pub param_type: String,        // "date" | "date_range" | "select" | "text" | "number"
+    #[serde(default)]
+    pub required: bool,
+    pub options: Option<Vec<String>>,        // allowed values for "select"
+    pub default: Option<serde_json::Value>,  // shape varies by param_type
+}
+
+// A reference to an RE API call. Hybrid: `call_ref` (YAML `ref`) names a central
+// registry entry; `template` inlines a bundle-local call definition. `bind` maps
+// parameters/literals into the call; `output` names the JSON result that
+// transforms reference via {{query:Label}}.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct QueryRef {
+    pub id: String,
+    #[serde(rename = "ref")]
+    pub call_ref: Option<String>,
+    pub template: Option<serde_json::Value>,
+    #[serde(default)]
+    pub bind: HashMap<String, serde_json::Value>,
+    pub output: String,
+}
+
+// SQL processing over query outputs. `input` lists query output labels (resolved
+// to {{query:Label}} paths); `output` is the in-memory result-set label a
+// visualization binds to.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ReportTransform {
+    pub id: String,
+    #[serde(default)]
+    pub input: Vec<String>,
+    pub sql: String,
+    pub output: String,
+}
+
+// A visualization bound to a transform output, rendered by the shared viz
+// library keyed on `viz_type`.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Visualization {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub viz_type: String,          // "table" | "bar" | "line" | "pie" | "kpi"
+    pub title: Option<String>,
+    pub data: String,              // transform output label feeding it
+    pub config: Option<serde_json::Value>,
+}
+
+// An on-demand write-back. Like QueryRef, resolves through the API library;
+// `input` names the result set whose rows feed the call.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Action {
+    pub id: String,
+    pub label: String,
+    #[serde(rename = "ref")]
+    pub call_ref: Option<String>,
+    pub template: Option<serde_json::Value>,
+    pub input: Option<String>,
+    #[serde(default)]
+    pub bind: HashMap<String, serde_json::Value>,
 }
 
 // ── Parsed profile (what the rest of the app works with) ─────────────────────
@@ -378,6 +489,7 @@ pub struct ProfileSummary {
     pub version: String,
     pub zip_path: String,   // user: full fs path. builtin: "builtin://<filename>" sentinel.
     pub source: ProfileSource,
+    pub kind: Option<String>, // None/"import" => import workflow. "report" => report.
 }
 
 // Peeks at structure.yaml inside an open zip archive — enough to populate
@@ -406,6 +518,7 @@ fn read_summary_from_zip<R: Read + std::io::Seek>(
         version: structure.version,
         zip_path,
         source,
+        kind: structure.kind,
     })
 }
 
@@ -688,6 +801,7 @@ pub fn save_user_profile(
         version: structure.version,
         zip_path: path.to_string_lossy().to_string(),
         source: ProfileSource::User,
+        kind: structure.kind,
     };
     Ok((summary, loaded))
 }
@@ -764,6 +878,7 @@ pub fn create_new_profile(profiles_dir: &Path) -> Result<(ProfileSummary, Loaded
         version: loaded.structure.version.clone(),
         zip_path: zip_path.to_string_lossy().to_string(),
         source: ProfileSource::User,
+        kind: loaded.structure.kind.clone(),
     };
     Ok((summary, loaded))
 }
@@ -834,6 +949,7 @@ pub fn duplicate_profile(
         version: loaded.structure.version.clone(),
         zip_path: zip_path.to_string_lossy().to_string(),
         source: ProfileSource::User,
+        kind: loaded.structure.kind.clone(),
     };
     Ok((summary, loaded))
 }
@@ -886,4 +1002,44 @@ pub fn delete_user_profile(zip_path: &str) -> Result<(), AppError> {
     fs::remove_file(path)
         .map_err(|e| AppError::IoError(format!("Cannot delete profile: {}", e)))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // A report bundle (kind: report) must load through the same loader as import
+    // bundles, with all five report sections populated and the import sections
+    // defaulted to empty.
+    #[test]
+    fn report_bundle_parses() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../profiles/src/gift_activity");
+        let loaded = load_from_dir(&dir).expect("gift_activity should load");
+        let s = &loaded.structure;
+
+        assert_eq!(s.kind.as_deref(), Some("report"));
+        assert_eq!(s.parameters.len(), 1);
+        assert_eq!(s.queries.len(), 1);
+        assert_eq!(s.report_transforms.len(), 1);
+        assert_eq!(s.visualizations.len(), 1);
+        assert_eq!(s.actions.len(), 1);
+
+        // Import sections default to empty for a report bundle.
+        assert!(s.inputs.is_empty() && s.outputs.is_empty() && s.steps.is_empty());
+
+        // Spot-check the hybrid query ref + bind passthrough.
+        assert_eq!(s.queries[0].call_ref.as_deref(), Some("re.query.execute"));
+        assert_eq!(s.queries[0].output, "GiftRows");
+        assert!(s.queries[0].bind.contains_key("filters.gift_date.from"));
+    }
+
+    // Existing import bundles must still parse unchanged after the schema grew.
+    #[test]
+    fn import_bundle_still_parses() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../profiles/src/test1");
+        let loaded = load_from_dir(&dir).expect("test1 should load");
+        assert!(loaded.structure.kind.is_none());
+        assert!(!loaded.structure.steps.is_empty());
+    }
 }

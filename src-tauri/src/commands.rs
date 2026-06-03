@@ -10,6 +10,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Manager};
 use crate::profile::{self, ProfileSummary, LoadedProfile, NoticeQuery, ProfileFileEntry};
 use crate::db::{self, ValidationResult, TransformResult, NoticeInput};
+use crate::report::{self, ReportRunResult, ActionResult};
 use crate::validate::{self, ValidationReport};
 
 // Combined return for create / duplicate / save — the frontend wants both
@@ -151,6 +152,35 @@ fn find_notices_for_sql<'a>(loaded: &'a LoadedProfile, sql_file: &str) -> Vec<&'
         }
     }
     Vec::new()
+}
+
+// ── run_report ────────────────────────────────────────────────────────────────
+// Called by: the Reports tab on Refresh.
+// Runs the report pipeline — mocked RE queries (fixtures) → DuckDB transforms →
+// in-memory result sets keyed by transform output (what visualizations bind to).
+// `zip_path` is the extracted temp dir, like run_profile.
+
+#[tauri::command]
+pub fn run_report(
+    zip_path: String,
+    param_values: HashMap<String, serde_json::Value>,
+) -> Result<ReportRunResult, String> {
+    let loaded = profile::load_from_dir(Path::new(&zip_path)).map_err(|e| e.to_string())?;
+    report::run_report(&loaded, &param_values).map_err(|e| e.to_string())
+}
+
+// ── run_report_action ───────────────────────────────────────────────────────────
+// Called by: the Reports tab when the user clicks an action button (e.g. "Create
+// Query in RE"). Re-runs the pipeline and performs the action (mocked write-back).
+
+#[tauri::command]
+pub fn run_report_action(
+    zip_path: String,
+    action_id: String,
+    param_values: HashMap<String, serde_json::Value>,
+) -> Result<ActionResult, String> {
+    let loaded = profile::load_from_dir(Path::new(&zip_path)).map_err(|e| e.to_string())?;
+    report::run_report_action(&loaded, &action_id, &param_values).map_err(|e| e.to_string())
 }
 
 // ── save_output ───────────────────────────────────────────────────────────────

@@ -8,10 +8,14 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import type {
+  ActionResult,
   LoadedProfile,
   Notice,
   OutputFile,
+  ProfileStructure,
   ProfileSummary,
+  Parameter,
+  ReportRunResult,
   SqlError,
   TransformResult,
   ValidationError,
@@ -23,7 +27,11 @@ import {
   DEFAULT_LIBRARY_RATIO,
   type Mode as DataReqMode,
 } from "./components/data-request/DataRequestsPage";
-import { ReportsPage } from "./components/reports/ReportsPage";
+import {
+  ReportsPage,
+  type ReportStatus,
+  type ActionState,
+} from "./components/reports/ReportsPage";
 import { SettingsPanel } from "./components/SettingsPanel";
 import {
   PanelTransition,
@@ -60,6 +68,38 @@ function asString(e: unknown): string {
   return typeof e === "string" ? e : String(e);
 }
 
+function isoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+// Resolve a parameter's declared default into a concrete control value.
+function resolveParamDefault(p: Parameter): unknown {
+  const d = p.default as
+    | { preset?: string; from?: string; to?: string }
+    | string
+    | number
+    | undefined;
+  if (p.type === "date_range") {
+    const obj = (d ?? {}) as { preset?: string; from?: string; to?: string };
+    if (obj.preset === "last_30_days") {
+      const to = new Date();
+      const from = new Date();
+      from.setDate(from.getDate() - 30);
+      return { from: isoDate(from), to: isoDate(to) };
+    }
+    if (obj.from || obj.to) return { from: obj.from, to: obj.to };
+    return {};
+  }
+  if (d != null && typeof d !== "object") return String(d);
+  return "";
+}
+
+function initialParamValues(structure: ProfileStructure): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const p of structure.parameters) out[p.id] = resolveParamDefault(p);
+  return out;
+}
+
 // Shape returned by the validate_file backend command.
 type ValidationResult = {
   ok: boolean;
@@ -83,6 +123,22 @@ export default function App() {
   // unmounting when the user navigates to another tab and back.
   const [dataReqMode, setDataReqMode] = useState<DataReqMode>("default");
   const [dataReqRatio, setDataReqRatio] = useState<number>(DEFAULT_LIBRARY_RATIO);
+
+  // ── Reports state ─────────────────────────────────────────────────────────
+  const [selectedReport, setSelectedReport] = useState<string | null>(null);
+  const [loadedReport, setLoadedReport] = useState<LoadedProfile | null>(null);
+  const [reportParams, setReportParams] = useState<Record<string, unknown>>({});
+  const [reportRun, setReportRun] = useState<ReportRunResult | null>(null);
+  const [reportStatus, setReportStatus] = useState<ReportStatus>("idle");
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [reportStale, setReportStale] = useState(false);
+  const [actionStates, setActionStates] = useState<Record<string, ActionState>>({});
+  const reportLoadId = useRef(0);
+
+  // Built-in + user profiles split by kind. Reports go to the Reports tab;
+  // everything else stays in Imports.
+  const reportProfiles = profiles.filter((p) => p.kind === "report");
+  const importProfiles = profiles.filter((p) => p.kind !== "report");
 
   const handleTabChange = (newTab: TopTab) => {
     if (newTab === activeTab || exitingTab) return;
@@ -327,11 +383,88 @@ export default function App() {
     }
   };
 
+  // ── Report handlers ───────────────────────────────────────────────────────
+
+  const handleSelectReport = async (zipPath: string) => {
+    const reqId = ++reportLoadId.current;
+    setSelectedReport(zipPath);
+    setLoadedReport(null);
+    setReportRun(null);
+    setReportStatus("idle");
+    setReportError(null);
+    setReportStale(false);
+    setActionStates({});
+    setReportParams({});
+    try {
+      const loaded = await invoke<LoadedProfile>("load_profile", { zipPath });
+      if (reportLoadId.current !== reqId) return;
+      setLoadedReport(loaded);
+      setReportParams(initialParamValues(loaded.structure));
+    } catch (e) {
+      if (reportLoadId.current !== reqId) return;
+      console.error("load_profile (report) failed:", e);
+      setSelectedReport(null);
+    }
+  };
+
+  const handleParamChange = (id: string, value: unknown) => {
+    setReportParams((prev) => ({ ...prev, [id]: value }));
+    // Existing results no longer reflect the inputs until the next refresh.
+    setReportStale(true);
+  };
+
+  const handleRefresh = async () => {
+    if (!loadedReport) return;
+    setReportStatus("running");
+    setReportError(null);
+    try {
+      const result = await invoke<ReportRunResult>("run_report", {
+        zipPath: loadedReport.temp_dir,
+        paramValues: reportParams,
+      });
+      setReportRun(result);
+      setReportStatus("done");
+      setReportStale(false);
+    } catch (e) {
+      console.error("run_report failed:", e);
+      setReportStatus("error");
+      setReportError(asString(e));
+    }
+  };
+
+  const handleRunAction = async (actionId: string) => {
+    if (!loadedReport) return;
+    setActionStates((prev) => ({
+      ...prev,
+      [actionId]: { status: "running" },
+    }));
+    try {
+      const result = await invoke<ActionResult>("run_report_action", {
+        zipPath: loadedReport.temp_dir,
+        actionId,
+        paramValues: reportParams,
+      });
+      setActionStates((prev) => ({
+        ...prev,
+        [actionId]: {
+          status: result.ok ? "done" : "error",
+          message: result.message,
+        },
+      }));
+    } catch (e) {
+      console.error("run_report_action failed:", e);
+      setActionStates((prev) => ({
+        ...prev,
+        [actionId]: { status: "error", message: asString(e) },
+      }));
+    }
+  };
+
   const renderPanel = (tab: TopTab) => {
     if (tab === "imports") {
       return (
         <ImportsPage
-          profiles={profiles}
+          profiles={importProfiles}
           selectedProfile={selectedProfile}
           onSelectProfile={handleSelectProfile}
           loadedProfile={loadedProfile}
@@ -356,7 +489,23 @@ export default function App() {
           setCustomRatio={setDataReqRatio}
         />
       );
-    return <ReportsPage />;
+    return (
+      <ReportsPage
+        reports={reportProfiles}
+        selectedReport={selectedReport}
+        onSelectReport={handleSelectReport}
+        loadedReport={loadedReport}
+        paramValues={reportParams}
+        onParamChange={handleParamChange}
+        run={reportRun}
+        status={reportStatus}
+        error={reportError}
+        stale={reportStale}
+        onRefresh={handleRefresh}
+        actionStates={actionStates}
+        onRunAction={handleRunAction}
+      />
+    );
   };
 
   return (

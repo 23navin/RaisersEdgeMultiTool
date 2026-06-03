@@ -15,6 +15,7 @@ export type ProfileSummary = {
   version: string;
   zip_path: string;        // user: full fs path. builtin: "builtin://<filename>" sentinel.
   source: ProfileSource;
+  kind?: string | null;    // undefined/"import" => import workflow. "report" => report.
 };
 
 // ── Structure.yaml types ──────────────────────────────────────────────────────
@@ -125,9 +126,104 @@ export type ProfileStructure = {
   name: string;
   version: string;
   min_app_version: string;
+  kind?: string;           // undefined/"import" => import workflow. "report" => report sections.
+  // Import sections — always present for import profiles, empty arrays for reports.
   inputs: InputDefinition[];
   outputs: OutputDefinition[];
   steps: Step[];
+  // Report sections — populated only when kind === "report". See REPORT_PROFILES.md.
+  parameters: Parameter[];
+  queries: QueryRef[];
+  transforms: ReportTransform[];
+  visualizations: Visualization[];
+  actions: Action[];
+};
+
+// ── Report profile types ──────────────────────────────────────────────────────
+// Mirror the report-specific structs in profile.rs. Free-form fields
+// (default/config/template/bind values) are arbitrary JSON. Deserialize-only on
+// the backend for now — nothing executes these yet.
+
+// A UI input control rendered in the Inputs panel.
+export type Parameter = {
+  id: string;
+  label: string;
+  type: string;            // "date" | "date_range" | "select" | "text" | "number"
+  required?: boolean;
+  options?: string[];      // allowed values for "select"
+  default?: unknown;       // shape varies by type (e.g. { preset: "last_30_days" })
+};
+
+// A reference to an RE API call (hybrid library). `ref` names a central registry
+// entry; `template` inlines a bundle-local definition. `bind` maps params/
+// literals into the call; `output` names the JSON result transforms read via
+// {{query:Label}}.
+export type QueryRef = {
+  id: string;
+  ref?: string;
+  template?: unknown;
+  bind?: Record<string, unknown>;
+  output: string;
+};
+
+// SQL over query outputs. `input` lists query output labels; `output` is the
+// in-memory result-set label a visualization binds to.
+export type ReportTransform = {
+  id: string;
+  input?: string[];
+  sql: string;            // filename inside the bundle's sql/ folder
+  output: string;
+};
+
+// A visualization bound to a transform output, rendered by the shared viz
+// library keyed on `type`.
+export type Visualization = {
+  id: string;
+  type: string;           // "table" | "bar" | "line" | "pie" | "kpi"
+  title?: string;
+  data: string;           // transform output label feeding it
+  config?: unknown;       // viz-specific config (e.g. column definitions)
+};
+
+// An on-demand write-back. Resolves through the API library like QueryRef;
+// `input` names the result set whose rows feed the call.
+export type Action = {
+  id: string;
+  label: string;
+  ref?: string;
+  template?: unknown;
+  input?: string;
+  bind?: Record<string, unknown>;
+};
+
+// A processed result set produced by a report transform and consumed by a
+// visualization. Same shape as Notice (columns + stringified rows).
+export type ResultSet = {
+  columns: string[];
+  rows: string[][];
+};
+
+// One query's resolved request + outcome — surfaced so the UI can show/debug
+// the param→request merge. Mirrors report::QueryDebug.
+export type QueryDebug = {
+  id: string;
+  call_ref?: string | null;
+  resolved_bind: unknown;   // the bind after {{param:...}} substitution
+  row_count: number;
+};
+
+// Returned by run_report. `data` is keyed by transform output label — exactly
+// what a visualization's `data` field binds to. Mirrors report::ReportRunResult.
+export type ReportRunResult = {
+  data: Record<string, ResultSet>;
+  queries: QueryDebug[];
+  generated_at: string;
+};
+
+// Returned by run_report_action. Mirrors report::ActionResult.
+export type ActionResult = {
+  ok: boolean;
+  message: string;
 };
 
 // ── Loaded profile ────────────────────────────────────────────────────────────

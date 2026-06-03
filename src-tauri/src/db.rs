@@ -57,6 +57,16 @@ pub struct TransformResult {
     pub notices: Vec<Notice>,
 }
 
+// In-memory result of a SELECT — every cell stringified so the frontend gets
+// uniform JSON regardless of the underlying DuckDB column type. Used by the
+// report pipeline (report.rs) to feed visualizations directly, with no CSV
+// round-trip. Same shape as Notice (minus the label/description).
+#[derive(Debug, Serialize)]
+pub struct ResultSet {
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<String>>,
+}
+
 // Passed in from commands.rs — already-resolved SQL content for one notice.
 pub struct NoticeInput<'a> {
     pub label: &'a str,
@@ -497,4 +507,60 @@ fn run_notice(
         columns,
         rows,
     }
+}
+
+// ── query_to_result_set ─────────────────────────────────────────────────────────
+// Runs a SELECT and returns its columns + rows as plain strings. Same two-phase
+// approach as run_notice (DESCRIBE to discover columns, then re-issue wrapped in
+// CAST(col AS VARCHAR) so every value reads as a String) — but surfaces failures
+// as AppError instead of embedding an error row, since report transforms must
+// fail loudly. The SQL is expected to be a bare SELECT (placeholders already
+// substituted by the caller).
+
+pub fn query_to_result_set(conn: &Connection, sql: &str) -> Result<ResultSet, AppError> {
+    let trimmed = sql.trim().trim_end_matches(';').trim();
+
+    // Phase 1: discover the column names returned by the query.
+    let describe_sql = format!("DESCRIBE {}", trimmed);
+    let columns: Vec<String> = {
+        let mut stmt = conn
+            .prepare(&describe_sql)
+            .map_err(|e| AppError::SqlError(format!("Transform failed: {}", e)))?;
+        stmt.query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| AppError::SqlError(e.to_string()))?
+            .filter_map(|r| r.ok())
+            .collect()
+    };
+
+    if columns.is_empty() {
+        return Ok(ResultSet { columns, rows: vec![] });
+    }
+
+    // Phase 2: re-issue the query wrapped in a CAST-to-VARCHAR projection so
+    // every cell deserializes as a String.
+    let cast_list = columns
+        .iter()
+        .map(|c| format!("CAST(\"{}\" AS VARCHAR) AS \"{}\"", c, c))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let wrapped = format!("SELECT {} FROM ({}) _rs", cast_list, trimmed);
+
+    let col_count = columns.len();
+    let mut stmt = conn
+        .prepare(&wrapped)
+        .map_err(|e| AppError::SqlError(format!("Transform failed: {}", e)))?;
+    let rows: Vec<Vec<String>> = stmt
+        .query_map([], |row| {
+            let mut data: Vec<String> = Vec::with_capacity(col_count);
+            for i in 0..col_count {
+                let v: Option<String> = row.get(i).unwrap_or(None);
+                data.push(v.unwrap_or_default());
+            }
+            Ok(data)
+        })
+        .map_err(|e| AppError::SqlError(e.to_string()))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(ResultSet { columns, rows })
 }

@@ -1,0 +1,65 @@
+id: gift_activity
+name: "Gift Activity Report"
+kind: report
+version: "1.0"
+min_app_version: "0.2.0"
+
+# ── 1) Parameters ─────────────────────────────────────────────────────────────
+# UI inputs, rendered in the Inputs panel (kept separate from visualizations).
+parameters:
+  - id: gift_dates
+    label: "Gift Date Range"
+    type: date_range            # date | date_range | select | text | number
+    required: true
+    default:
+      preset: last_30_days
+
+# ── 2) Queries ────────────────────────────────────────────────────────────────
+# Parameterized RE API calls. HYBRID: `ref` points at a central registry call;
+# alternatively `template` could inline a bundle-local definition. `bind` maps
+# parameter values / literals into the call (dotted keys address nested request
+# fields). `output` names the JSON result that transforms read via {{query:...}}.
+queries:
+  - id: gift_rows
+    ref: re.query.execute       # central registry entry (hides async job polling)
+    bind:
+      query_id: 12345           # a saved RE query id (or an inline ad-hoc definition)
+      "filters.gift_date.from": "{{param:gift_dates.from}}"
+      "filters.gift_date.to": "{{param:gift_dates.to}}"
+    output: GiftRows
+
+# ── 3) Transforms ─────────────────────────────────────────────────────────────
+# DuckDB SQL over query outputs. `input` lists query output labels (resolved to
+# {{query:Label}} JSON paths in the SQL). `output` is the in-memory result set a
+# visualization binds to.
+transforms:
+  - id: constituent_gifts
+    input:
+      - GiftRows
+    sql: constituent_gifts.sql
+    output: ConstituentGifts
+
+# ── 4) Visualizations ─────────────────────────────────────────────────────────
+# Reference the shared viz library by `type`, bound to a transform output.
+visualizations:
+  - id: gifts_table
+    type: table                 # table | bar | line | pie | kpi
+    title: "Constituents & Gifts"
+    data: ConstituentGifts
+    config:
+      sortable: true
+      columns:
+        - { field: constituent_name, header: "Constituent" }
+        - { field: gift_amount, header: "Amount", format: currency }
+        - { field: gift_date, header: "Date", format: date }
+
+# ── 5) Actions ────────────────────────────────────────────────────────────────
+# On-demand write-backs (not part of Refresh). Resolve through the API library.
+actions:
+  - id: save_re_query
+    label: "Create Query in RE"
+    ref: re.query.create        # creates/saves a query in the RE CRM
+    input: ConstituentGifts     # source rows
+    bind:
+      name: "Report Gifts {{now}}"
+      id_field: gift_id         # which result column supplies the Gift IDs
