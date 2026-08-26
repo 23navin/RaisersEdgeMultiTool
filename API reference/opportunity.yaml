@@ -1,0 +1,2175 @@
+openapi: 3.0.1
+info:
+  title: Opportunity
+  description: 'This API manages opportunity information and related entities such as opportunity fundraisers, opportunity attachments, and opportunity custom fields.'
+  version: '1.0'
+servers:
+  - url: https://api.sky.blackbaud.com/opportunity/v1
+paths:
+  '/opportunities/{opportunity_id}/customfields':
+    get:
+      tags:
+        - Opportunity
+      summary: Opportunity custom field list (Single opportunity)
+      description: Returns a list of custom fields for an opportunity.
+      operationId: ListOpportunityCustomFieldsSingleOpportunity
+      parameters:
+        - name: opportunity_id
+          in: path
+          description: The immutable system record ID of the opportunity to retrieve the custom fields for.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/opportunity#Collection">collection</a> of <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/opportunity#CustomField">custom field</a> entities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_CustomFieldRead_'
+              example:
+                count: 4
+                value:
+                  - id: '2'
+                    category: Principal Investigator (PI)
+                    date: '2010-03-09T00:00:00.0000000+00:00'
+                    date_added: '2010-04-04T19:36:54.4130000+00:00'
+                    date_modified: '2017-04-04T19:36:54.4130000+00:00'
+                    parent_id: '2452'
+                    type: Text
+                    value: Dave Becker
+                  - id: '212'
+                    category: Current Year Portion
+                    date: '2011-04-29T00:00:00.0000000+00:00'
+                    date_added: '2011-04-30T19:36:54.4130000+00:00'
+                    date_modified: '2017-04-04T19:36:54.4130000+00:00'
+                    parent_id: '2452'
+                    type: Currency
+                    value: 99000
+                  - id: '32'
+                    category: Future Year Portion
+                    date: '2011-04-29T00:00:00.0000000+00:00'
+                    date_added: '2011-04-30T19:36:54.4130000+00:00'
+                    date_modified: '2017-04-04T19:36:54.4130000+00:00'
+                    parent_id: '2452'
+                    type: Currency
+                    value: 50000
+                  - id: '22'
+                    category: Moves Management
+                    comment: Strong wealth analysis and promising interest level.
+                    date: '2012-03-09T00:00:00.0000000+00:00'
+                    date_added: '2013-04-04T19:36:54.4130000+00:00'
+                    date_modified: '2017-04-04T19:36:54.4130000+00:00'
+                    parent_id: '2452'
+                    type: CodeTableEntry
+                    value: Qualification
+        '400':
+          description: Returned when the specified opportunity ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to view the custom fields.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified opportunity is not found.
+          content:
+            application/json: { }
+  /opportunities/customfields/categories:
+    get:
+      tags:
+        - Opportunity
+      summary: Opportunity custom field categories
+      description: Returns the list of custom field categories.
+      operationId: ListOpportunityCustomFieldCategories
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/opportunity#Collection">collection</a> of <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/opportunity#CustomFieldCategory">custom field categories</a>.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_CustomFieldCategoryRead_'
+              example:
+                count: 4
+                value:
+                  - name: Principal Investigator (PI)
+                    type: Text
+                  - name: Current Year Portion
+                    type: Currency
+                  - name: Current Year Portion
+                    type: Currency
+                  - name: Moves Management
+                    type: CodeTableEntry
+        '403':
+          description: Returned when the user does not have permission to view the custom field categories.
+          content:
+            application/json: { }
+  /opportunities/customfields/categories/values:
+    get:
+      tags:
+        - Opportunity
+      summary: Opportunity custom field category values
+      description: Returns the list of custom field category values.
+      operationId: ListOpportunityCustomFieldCategoryValues
+      parameters:
+        - name: category_name
+          in: query
+          description: The name of the category to return values for.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/opportunity#Collection">collection</a> of string custom field category values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_String_'
+              example:
+                count: 5
+                value:
+                  - Identification
+                  - Qualification
+                  - Cultivation
+                  - Solicitation
+                  - Stewardship
+        '400':
+          description: Returned when the specified request parameter is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to view the custom field category values.
+          content:
+            application/json: { }
+  /opportunities/customfields:
+    post:
+      tags:
+        - Opportunity
+      summary: Opportunity custom field (Create)
+      description: Creates an opportunity custom field.
+      operationId: CreateOpportunityCustomField
+      requestBody:
+        description: An object that represents the custom field to create.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomFieldAdd'
+            example:
+              category: Moves Management
+              comment: Strong wealth analysis and interest level.
+              date: '2012-03-09T00:00:00.0000000+00:00'
+              parent_id: '2452'
+              value: Qualification
+      responses:
+        '200':
+          description: Returned when the operation successfully creates a custom field. The response body contains the ID of the new custom field.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+              example:
+                id: '1281'
+        '400':
+          description: Returned when the request body is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to create the custom field.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified opportunity is not found.
+          content:
+            application/json: { }
+  '/opportunities/customfields/{custom_field_id}':
+    delete:
+      tags:
+        - Opportunity
+      summary: Opportunity custom field (Delete)
+      description: Deletes a custom field.
+      operationId: DeleteOpportunityCustomField
+      parameters:
+        - name: custom_field_id
+          in: path
+          description: The immutable system record ID of the custom field to delete.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds and the custom field has been deleted.
+          content:
+            application/json: { }
+        '400':
+          description: Returned when the specified custom field ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to delete the custom field.
+          content:
+            application/json: { }
+    patch:
+      tags:
+        - Opportunity
+      summary: Opportunity custom field (Edit)
+      description: Edits an opportunity custom field.
+      operationId: EditOpportunityCustomField
+      parameters:
+        - name: custom_field_id
+          in: path
+          description: The immutable system record ID of the custom field to edit.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: An object that represents the custom field to edit.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomFieldEdit'
+            example:
+              comment: Initial ask successful and cultivating interest.
+              date: '2013-03-09T00:00:00.0000000+00:00'
+              value: Stewardship
+      responses:
+        '200':
+          description: Returned when the operation successfully edits the custom field.
+          content:
+            application/json: { }
+        '400':
+          description: Returned when the specified custom field ID in the request URL or the specified request parameters are not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to edit the custom field.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified custom field is not found.
+          content:
+            application/json: { }
+  /opportunities:
+    get:
+      tags:
+        - Opportunity
+      summary: Opportunity list
+      description: "Returns a paginated list of opportunities.\r\n<p />\r\nThe default sorting behavior is to list opportunities in ascending order based on the <code>id</code>.\r\n<p />\r\nHowever, the <code>last_modified</code> parameter overrides the default sorting behavior to list opportunities in ascending order based on when they were last modified, and the <code>date_added</code> parameter overrides the default sorting behavior to list opportunities in ascending order based on when they were created. The <code>last_modified</code> parameter also adds the <code>sort_token</code> parameter to the <code>next_link</code> URL to ensure that opportunities are stably sorted and that order persists when changes occur while working through a paginated list.\r\n<p />\r\nIf the <code>last_modified</code> and <code>date_added</code> parameters are both specified, the sorting behavior is to list opportunities based on when they were last modified.\r\n<p />"
+      operationId: ListOpportunities
+      parameters:
+        - name: date_added
+          in: query
+          description: 'Represents a filter for opportunities created on or after the specified date. The filter respects time offsets from UTC per the ISO-8601 format: 2016-05-05T17:59:31.1600745-04:00.'
+          schema:
+            type: string
+            format: date-time
+        - name: last_modified
+          in: query
+          description: 'Represents a filter for opportunities modified on or after the specified date. The filter respects time offsets from UTC per the ISO-8601 format: 2016-05-05T17:59:31.1600745-04:00.'
+          schema:
+            type: string
+            format: date-time
+        - name: include_inactive
+          in: query
+          description: Set this parameter to "true" to include inactive opportunities in the response.
+          schema:
+            type: boolean
+        - name: search_text
+          in: query
+          description: Represents a filter for text value fields on each opportunity.
+          schema:
+            type: string
+        - name: sort_token
+          in: query
+          description: Represents a token filter to provide the next stable-sorted list of opportunities. This will be provided on the next_link collection response property when last_modified or sort_token filters are specified on the request.
+          schema:
+            type: string
+        - name: constituent_id
+          in: query
+          description: 'Represents a list of constituent identifiers. Returns opportunities if any of the specified constituent identifiers match any of their constituents. For example, "constituent_id=280&amp;constituent_id=1232" returns opportunities with either "280" or "1232" constituent identifiers.'
+          schema:
+            type: array
+            items:
+              type: string
+        - name: list_id
+          in: query
+          description: 'Defines a list identifier used to filter the set of opportunities to those included in the specified list. If this value is set, other specified filters will be ignored.'
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Represents the number of records to return. The default is 500. The maximum is 5000.
+          schema:
+            maximum: 5000
+            minimum: 0
+            type: integer
+            format: int32
+        - name: offset
+          in: query
+          description: Represents the number of records to skip. For use with pagination.
+          schema:
+            maximum: 2147483647
+            minimum: 0
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/opportunity#Collection">collection</a> of <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/opportunity#Opportunity">opportunity</a> entities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_OpportunityRead_'
+              example:
+                count: 39
+                next_link: https://api.sky.blackbaud.com/opportunity/v1/opportunities?offset=3&limit=3
+                value:
+                  - id: '2'
+                    ask_amount:
+                      value: 10000
+                    ask_date: '2002-07-30T00:00:00.0000000+00:00'
+                    campaign_id: '6'
+                    constituent_id: '306'
+                    date_added: '2000-01-19T14:11:02.4530000+00:00'
+                    date_modified: '2002-07-30T14:28:39.1730000+00:00'
+                    deadline: '2005-05-15T00:00:00.0000000+00:00'
+                    expected_amount:
+                      value: 10000
+                    expected_date: '2004-05-15T00:00:00.0000000+00:00'
+                    funded_amount:
+                      value: 10000
+                    funded_date: '2004-05-15T00:00:00.0000000+00:00'
+                    fundraisers:
+                      - constituent_id: '194'
+                        credit_amount:
+                          value: 10000
+                    fund_id: '12'
+                    inactive: false
+                    linked_gifts:
+                      - '208'
+                    name: Scholarship Proposal
+                    purpose: Research Endowment
+                    status: Strategy
+                    opportunity_likelihood_name: Definitely going to happen
+                    opportunity_likelihood_id: '177'
+                    gift_type: Pledge
+                    gift_type_id: '601'
+                  - id: '3'
+                    ask_amount:
+                      value: 200000
+                    ask_date: '2003-11-24T00:00:00.0000000+00:00'
+                    campaign_id: '6'
+                    constituent_id: '219'
+                    date_added: '2000-03-14T14:10:47.2270000+00:00'
+                    date_modified: '2004-10-11T14:52:54.2770000+00:00'
+                    deadline: '2006-07-30T00:00:00.0000000+00:00'
+                    expected_amount:
+                      value: 200000
+                    expected_date: '2005-06-01T00:00:00.0000000+00:00'
+                    funded_amount:
+                      value: 500500
+                    funded_date: '2005-06-01T00:00:00.0000000+00:00'
+                    fundraisers:
+                      - constituent_id: '188'
+                        credit_amount:
+                          value: 254050
+                    fund_id: '12'
+                    inactive: false
+                    linked_gifts:
+                      - '101'
+                      - '280'
+                      - '489'
+                    name: Scholarship Proposal
+                    purpose: Education - Endowment
+                    status: Stewardship
+                    opportunity_likelihood_name: Might happen
+                    opportunity_likelihood_id: '174'
+                    gift_type: Gift in kind
+                    gift_type_id: '603'
+                  - id: '4'
+                    ask_amount:
+                      value: 100000
+                    ask_date: '2002-11-20T00:00:00.0000000+00:00'
+                    campaign_id: '7'
+                    constituent_id: '255'
+                    date_added: '2000-03-15T15:19:57.9100000+00:00'
+                    date_modified: '2004-10-12T19:45:03.0930000+00:00'
+                    deadline: '2003-12-31T00:00:00.0000000+00:00'
+                    expected_amount:
+                      value: 100000
+                    expected_date: '2003-12-31T00:00:00.0000000+00:00'
+                    funded_amount:
+                      value: 150000
+                    funded_date: '2003-01-22T00:00:00.0000000+00:00'
+                    fundraisers:
+                      - constituent_id: '230'
+                        credit_amount:
+                          value: 150000
+                    fund_id: '5'
+                    name: Planned Giving - Playground
+                    inactive: false
+                    purpose: Major Gift
+                    status: Stewardship
+                    opportunity_likelihood_name: Definitely going to happen
+                    opportunity_likelihood_id: '177'
+                    gift_type: Planned gift
+                    gift_type_id: '602'
+        '400':
+          description: Returned when the specified request parameters are not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to view the opportunities.
+          content:
+            application/json: { }
+    post:
+      tags:
+        - Opportunity
+      summary: Opportunity (Create)
+      description: Creates an opportunity.
+      operationId: CreateOpportunity
+      requestBody:
+        description: An object that represents the opportunity to create.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpportunityAdd'
+            example:
+              ask_amount:
+                value: 10000
+              ask_date: '2002-07-30T00:00:00.0000000+00:00'
+              campaign_id: '6'
+              constituent_id: '306'
+              deadline: '2005-05-15T00:00:00.0000000+00:00'
+              expected_amount:
+                value: 10000
+              expected_date: '2004-05-15T00:00:00.0000000+00:00'
+              fund_id: '12'
+              funded_amount:
+                value: 10000
+              funded_date: '2004-05-15T00:00:00.0000000+00:00'
+              inactive: false
+              name: Scholarship Proposal
+              summary: Initial major gift conversation
+              purpose: Research Endowment
+              reason: Leadership annual giving
+              original_ask_amount:
+                value: 15000
+              original_ask_date: '2002-06-15T00:00:00.0000000+00:00'
+              instrument: Personal visit
+              org_contact_id: '412'
+              date_rated: '2002-06-20T00:00:00.0000000+00:00'
+      responses:
+        '200':
+          description: Returned when the operation successfully creates an opportunity. The response body contains the ID of the new opportunity.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+              example:
+                id: '1281'
+        '400':
+          description: Returned when the request body is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to create the opportunity.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified constituent is not found.
+          content:
+            application/json: { }
+  '/opportunities/{opportunity_id}':
+    get:
+      tags:
+        - Opportunity
+      summary: Opportunity (Get)
+      description: "Returns information about an opportunity.\r\n\r\n<b>Note:</b> This endpoint returns the status property with a latency of about 10 minutes."
+      operationId: GetOpportunity
+      parameters:
+        - name: opportunity_id
+          in: path
+          description: The immutable system record ID of the opportunity to retrieve information for.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the specified <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/opportunity#Opportunity">opportunity</a> entity.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpportunityRead'
+              example:
+                id: '2'
+                ask_amount:
+                  value: 10000
+                ask_date: '2002-07-30T00:00:00.0000000+00:00'
+                campaign_id: '6'
+                constituent_id: '306'
+                date_added: '2000-01-19T14:11:02.4530000+00:00'
+                date_modified: '2002-07-30T14:28:39.1730000+00:00'
+                deadline: '2005-05-15T00:00:00.0000000+00:00'
+                expected_amount:
+                  value: 10000
+                expected_date: '2004-05-15T00:00:00.0000000+00:00'
+                fund_id: '12'
+                funded_amount:
+                  value: 10000
+                funded_date: '2004-05-15T00:00:00.0000000+00:00'
+                fundraisers:
+                  - constituent_id: '2'
+                    credit_amount:
+                      value: 10000
+                inactive: false
+                linked_gifts:
+                  - '101'
+                  - '480'
+                  - '289'
+                name: Scholarship Proposal
+                summary: Initial major gift conversation
+                purpose: Research Endowment
+                lifecycle_stage: Solicitation
+                reason: Leadership annual giving
+                original_ask_amount:
+                  value: 15000
+                original_ask_date: '2002-06-15T00:00:00.0000000+00:00'
+                instrument: Personal visit
+                org_contact_id: '412'
+                org_contact: Pat Morgan
+                date_rated: '2002-06-20T00:00:00.0000000+00:00'
+        '400':
+          description: Returned when the specified opportunity ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to view the opportunity.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified opportunity is not found.
+          content:
+            application/json: { }
+    patch:
+      tags:
+        - Opportunity
+      summary: Opportunity (Edit)
+      description: Edits an opportunity.
+      operationId: EditOpportunity
+      parameters:
+        - name: opportunity_id
+          in: path
+          description: The immutable system record ID of the opportunity to edit.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: An object that represents the properties of the opportunity to edit.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpportunityEdit'
+            example:
+              ask_amount:
+                value: 10000
+              ask_date: '2002-07-30T00:00:00.0000000+00:00'
+              campaign_id: '6'
+              deadline: '2005-05-15T00:00:00.0000000+00:00'
+              expected_amount:
+                value: 10000
+              expected_date: '2004-05-15T00:00:00.0000000+00:00'
+              fund_id: '12'
+              funded_amount:
+                value: 10000
+              funded_date: '2004-05-15T00:00:00.0000000+00:00'
+              name: Scholarship Proposal
+              summary: Initial major gift conversation
+              purpose: Research Endowment
+              reason: Leadership annual giving
+              original_ask_amount:
+                value: 15000
+              original_ask_date: '2002-06-15T00:00:00.0000000+00:00'
+              instrument: Personal visit
+              org_contact_id: '412'
+              date_rated: '2002-06-20T00:00:00.0000000+00:00'
+      responses:
+        '200':
+          description: Returned when the operation successfully edits the opportunity.
+          content:
+            application/json: { }
+        '400':
+          description: Returned when the specified opportunity ID in the request URL body or the specified request parameters are not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to edit the opportunity.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified opportunity is not found.
+          content:
+            application/json: { }
+    delete:
+      tags:
+        - Opportunity
+      summary: Opportunity (Delete)
+      description: Deletes an opportunity.
+      operationId: DeleteOpportunity
+      parameters:
+        - name: opportunity_id
+          in: path
+          description: The immutable system record ID of the opportunity to delete.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation successfully deletes the opportunity.
+          content:
+            application/json: { }
+        '400':
+          description: Returned when the specified opportunity ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to delete the opportunity.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified opportunity is not found.
+          content:
+            application/json: { }
+        '409':
+          description: Returned when the opportunity has dependent records and cannot be deleted.
+          content:
+            application/json: { }
+  /opportunitystatuses:
+    get:
+      tags:
+        - Opportunity
+      summary: Opportunity statuses
+      description: Returns the list of opportunity statuses.
+      operationId: ListOpportunityStatuses
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/opportunity#Collection">collection</a> of string opportunity statuses.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_String_'
+              example:
+                count: 12
+                value:
+                  - Closed
+                  - Cultivation
+                  - Follow-Up
+                  - Identification
+                  - On hold
+                  - Proposal
+                  - Rejected
+                  - Research
+                  - Solicitation
+                  - Solicitation Visit
+                  - Stewardship
+                  - Strategy
+        '403':
+          description: Returned when the user does not have permission to view the opportunity statuses.
+          content:
+            application/json: { }
+  /opportunitypurposes:
+    get:
+      tags:
+        - Opportunity
+      summary: Opportunity purposes
+      description: Returns the list of opportunity purposes.
+      operationId: ListOpportunityPurposes
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/opportunity#Collection">collection</a> of string opportunity purposes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_String_'
+              example:
+                count: 10
+                value:
+                  - Annual Fund
+                  - Discretionary
+                  - Infrastructure
+                  - Major Gift
+                  - Multiple
+                  - One
+                  - Provide Housing
+                  - Provide Relief
+                  - Research Endowment
+                  - Undetermined
+        '403':
+          description: Returned when the user does not have permission to view the opportunity purposes.
+          content:
+            application/json: { }
+  '/opportunities/{opportunity_id}/attachments':
+    get:
+      tags:
+        - Opportunity
+      summary: Opportunity attachment list (Single opportunity)
+      description: Returns a list of attachments for an opportunity.
+      operationId: ListOpportunityAttachmentsSingleOpportunity
+      parameters:
+        - name: opportunity_id
+          in: path
+          description: The immutable system record ID of the opportunity to retrieve attachments for.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/opportunity#Collection">collection</a> of <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/opportunity#OpportunityAttachment">opportunity attachment</a> entities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_AttachmentRead_'
+              example:
+                count: 2
+                value:
+                  - id: '36'
+                    date: '2015-01-25T04:00:00.0000000+00:00'
+                    name: Menu
+                    parent_id: '412'
+                    tags:
+                      - Lunch
+                    type: Link
+                    url: http://www.example.com/lunchmeeting/menu
+                  - id: ba2a9a15-eb23-4333-9a31-79f7a4146beb
+                    content_type: image/jpeg
+                    date: '2015-01-22T04:00:00.0000000+00:00'
+                    file_id: ba2a9a15-eb23-4333-9a31-79f7a4146beb
+                    file_name: ActionEvent_Snapshot.jpg
+                    file_size: 125436
+                    name: Action Event Picture
+                    parent_id: '412'
+                    thumbnail_id: 9fc827d0-c6fe-45fa-aab2-927a622e551c
+                    thumbnail_url: http://prodsarnxdocmn002blkbrdo.blob.core.windows.net/blackbauddocumentsvc/tenants/a486g1de-73f5-4a81-a4b1-ff353509fbde/documents/9fc827d0-c6fe-45fa-aab2-927a622e551c/ActionEvent_Snapshot_thumbnail.jpg?sv=2015-05-17&sr=b&sig=HI0UTKNjiCVB6AtGHBVuCdhgnETbRPYegwb7%2FQyjI%2FU%3D&se=2015-10-15T18%3A25%3A30Z&sp=r
+                    type: Physical
+                    url: http://prodsarnxdocmn002blkbrdo.blob.core.windows.net/blackbauddocumentsvc/tenants/a486g1de-73f5-4a81-a4b1-ff353509fbde/documents/ba2a9a15-eb23-4333-9a31-79f7a4146beb/ActionEvent_Snapshot.jpg?sv=2015-05-17&sr=b&sig=HI0UTKNjiCVB6AtGHBVuCdhgnETbRPYegwb7%2FQyjI%2FU%3D&se=2015-10-15T18%3A25%3A30Z&sp=r
+        '400':
+          description: Returned when the specified ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to view the attachments.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified opportunity is not found.
+          content:
+            application/json: { }
+  /opportunities/attachments:
+    post:
+      tags:
+        - Opportunity
+      summary: Opportunity attachment (Create)
+      description: Creates an opportunity attachment.
+      operationId: CreateOpportunityAttachment
+      requestBody:
+        description: An object that represents the attachment to create.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttachmentAdd'
+            example:
+              date: '2015-01-25T04:00:00.0000000+00:00'
+              name: Menu
+              parent_id: '412'
+              tags:
+                - Lunch
+              type: Link
+              url: http://www.example.com/lunchmeeting/menu
+      responses:
+        '200':
+          description: Returned when the operation successfully creates an attachment. The response body contains the ID of the new attachment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+              example:
+                id: '1281'
+        '400':
+          description: Returned when the request body is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to create the attachment.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified opportunity is not found.
+          content:
+            application/json: { }
+  '/opportunities/attachments/{attachment_id}':
+    delete:
+      tags:
+        - Opportunity
+      summary: Opportunity attachment (Delete)
+      description: Deletes an opportunity attachment.
+      operationId: DeleteOpportunityAttachment
+      parameters:
+        - name: attachment_id
+          in: path
+          description: The immutable system record ID of the attachment to delete.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation successfully deletes the attachment.
+          content:
+            application/json: { }
+        '400':
+          description: Returned when the specified attachment ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to delete the attachment.
+          content:
+            application/json: { }
+    patch:
+      tags:
+        - Opportunity
+      summary: Opportunity attachment (Edit)
+      description: Edits an opportunity attachment.
+      operationId: EditOpportunityAttachment
+      parameters:
+        - name: attachment_id
+          in: path
+          description: The immutable system record ID of the attachment to edit.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: An object that represents updated properties of the attachment to edit.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttachmentEdit'
+            example:
+              date: '2015-01-25T04:00:00.0000000+00:00'
+              name: Menu
+              tags:
+                - Lunch
+              url: http://www.example.com/lunchmeeting/menu
+      responses:
+        '200':
+          description: Returned when the operation successfully edits the attachment.
+          content:
+            application/json: { }
+        '400':
+          description: Returned when the specified attachment ID in the request URL or the specified request parameters are not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to edit the attachment.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified attachment is not found.
+          content:
+            application/json: { }
+  /attachmenttags:
+    get:
+      tags:
+        - Opportunity
+      summary: Attachment tags
+      description: Returns a list of available attachment tags.
+      operationId: ListAttachmentTags
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/constituent#Collection">collection</a> of string attachment tags.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_String_'
+              example:
+                count: 7
+                value:
+                  - Certificate
+                  - Document
+                  - Logo
+                  - PDF
+                  - Photo
+                  - Slideshow
+                  - Spreadsheet
+        '403':
+          description: Returned when the user does not have permission to view the attachment tags.
+          content:
+            application/json: { }
+  /documents:
+    post:
+      tags:
+        - Opportunity
+      summary: Document (Create)
+      description: Creates a document upload location and unique document identifier for physical attachments.
+      operationId: CreateDocument
+      requestBody:
+        description: An object that represents the document to upload.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewDocumentInfo'
+            example:
+              file_name: ActionEvent_Snapshot.jpg
+              upload_thumbnail: true
+      responses:
+        '200':
+          description: Returned when the operation successfully posts a document. The response body contains the <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/opportunity#FileDefinition">properties</a> of the posted document.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileDefinition'
+              example:
+                file_id: ba2a9a15-eb23-4333-9a31-79f7a4146beb
+                file_upload_request:
+                  headers:
+                    - name: x-ms-blob-type
+                      value: BlockBlob
+                    - name: x-ms-version
+                      value: '2015-12-11'
+                  method: PUT
+                  url: http://prodsarnxdocmn002blkbrdo.blob.core.windows.net/blackbauddocumentsvc/tenants/a486g1de-73f5-4a81-a4b1-ff353509fbde/documents/ba2a9a15-eb23-4333-9a31-79f7a4146beb/ActionEvent_Snapshot.jpg?sv=2015-05-17&sr=b&sig=HI0UTKNjiCVB6AtGHBVuCdhgnETbRPYegwb7%2FQyjI%2FU%3D&se=2015-10-15T18%3A25%3A30Z&sp=rw
+                thumbnail_id: 9fc827d0-c6fe-45fa-aab2-927a622e551c
+                thumbnail_upload_request:
+                  headers:
+                    - name: x-ms-blob-type
+                      value: BlockBlob
+                    - name: x-ms-version
+                      value: '2015-12-11'
+                  method: PUT
+                  url: http://prodsarnxdocmn002blkbrdo.blob.core.windows.net/blackbauddocumentsvc/tenants/a486g1de-73f5-4a81-a4b1-ff353509fbde/documents/9fc827d0-c6fe-45fa-aab2-927a622e551c/thumbnail_ActionEvent_Snapshot.jpg?sv=2015-05-17&sr=b&sig=HI0UTKNjiCVB6AtGHBVuCdhgnETbRPYegwb7%2FQyjI%2FU%3D&se=2015-10-15T18%3A25%3A30Z&sp=rw
+        '400':
+          description: Returned when the request body is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to upload the document.
+          content:
+            application/json: { }
+  '/opportunities/{opportunity_id}/statushistories':
+    get:
+      tags:
+        - Opportunity
+      summary: Opportunity Status History (Get)
+      description: "Returns an opportunity's status history.\r\n\r\n<b>Note:</b> This endpoint returns the status with a latency of about 10 minutes."
+      operationId: GetOpportunityStatusHistories
+      parameters:
+        - name: opportunity_id
+          in: path
+          description: The immutable system record ID of the opportunity to retrieve information for.
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Represents the number of records to return. The default is 500. The maximum is 5000.
+          schema:
+            maximum: 5000
+            minimum: 0
+            type: integer
+            format: int32
+        - name: offset
+          in: query
+          description: Represents the number of records to skip. For use with pagination.
+          schema:
+            maximum: 2147483647
+            minimum: 0
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/opportunity#Collection">collection</a> of <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/opportunity#OpportunityStatusHistory">opportunity status history</a> entities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_OpportunityStatusHistory_'
+              example:
+                count: 3
+                value:
+                  - id: '28'
+                    opportunity_id: '1'
+                    status_id: '1142'
+                    status_description: Closed
+                    start_date: '2024-01-01T00:00:00.0000000+00:00'
+                    days_elapsed: 295
+                    comments: No longer engaging this prospect
+                    author_name: Supervisor
+                    author_id: 16faa6e3-54ac-4e8e-b42b-1ecab94fe21a
+                    is_blackbaud_processed: false
+                    is_closed: true
+                  - id: '27'
+                    opportunity_id: '1'
+                    status_id: '1148'
+                    status_description: Research
+                    start_date: '2023-01-01T00:00:00.0000000+00:00'
+                    days_elapsed: 365
+                    comments: Doing some research on this prospect
+                    author_id: Blackbaud Prospect Processing
+                    is_blackbaud_processed: true
+                    is_past_due: true
+                  - id: '20'
+                    opportunity_id: '1'
+                    status_id: '1301'
+                    status_description: Strategy
+                    start_date: '2022-09-15T00:00:00.0000000+00:00'
+                    days_elapsed: 108
+                    author_id: Blackbaud Prospect Processing
+                    is_blackbaud_processed: true
+                    is_past_due: false
+        '400':
+          description: Returned when the specified opportunity ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to view the opportunity.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified opportunity is not found.
+          content:
+            application/json: { }
+  '/opportunities/{opportunity_id}/notes':
+    get:
+      tags:
+        - Opportunity
+      summary: Opportunity notes
+      description: Returns a list of notes for an opportunity.
+      operationId: ListOpportunityNotes
+      parameters:
+        - name: opportunity_id
+          in: path
+          description: The immutable system record ID of the opportunity to retrieve notes for.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a collection of opportunity notes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_NoteRead_'
+              example:
+                count: 1
+                value:
+                  - id: '202'
+                    parent_id: '23'
+                    note_date:
+                      y: 2002
+                      m: 2
+                      d: 19
+                    note_text: The note text
+                    note_type_id: '1'
+                    note_type_name: ProposalNote
+                    summary: A note
+                    author: Me
+                    modified_by_user_id: '2432'
+                    date_modified: '2002-07-30T14:28:39.1730000+00:00'
+        '400':
+          description: Returned when the specified opportunity ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to view the opportunity notes.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified opportunity is not found.
+          content:
+            application/json: { }
+    post:
+      tags:
+        - Opportunity
+      summary: Opportunity note (Create)
+      description: Creates an opportunity note.
+      operationId: CreateOpportunityNote
+      parameters:
+        - name: opportunity_id
+          in: path
+          description: The immutable system record ID of the opportunity that owns the note.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: An object that represents the note to create.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NoteAdd'
+            example:
+              note_text: Call Geoff about the gala
+              note_type: My notes
+              summary: Gala followup
+              note_date:
+                y: 2026
+                m: 6
+                d: 11
+      responses:
+        '200':
+          description: Returned when the operation successfully creates an opportunity note. The response body contains the ID of the new note.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+              example:
+                id: '1281'
+        '400':
+          description: Returned when the request body is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to create the opportunity note.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified opportunity is not found.
+          content:
+            application/json: { }
+  '/opportunities/{opportunity_id}/notes/{note_id}':
+    get:
+      tags:
+        - Opportunity
+      summary: Opportunity note
+      description: Returns information about an opportunity note.
+      operationId: GetOpportunityNote
+      parameters:
+        - name: opportunity_id
+          in: path
+          description: The immutable system record ID of the opportunity that owns the note.
+          required: true
+          schema:
+            type: string
+        - name: note_id
+          in: path
+          description: The immutable system record ID of the note to retrieve.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the specified opportunity note.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoteRead'
+              example:
+                id: '202'
+                parent_id: '23'
+                note_date:
+                  y: 2002
+                  m: 2
+                  d: 19
+                note_text: The note text
+                note_type_id: '1'
+                note_type_name: ProposalNote
+                summary: A note
+                author: Me
+                modified_by_user_id: '2432'
+                date_modified: '2002-07-30T14:28:39.1730000+00:00'
+        '400':
+          description: Returned when the specified note ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to view the opportunity note.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified note is not found.
+          content:
+            application/json: { }
+    patch:
+      tags:
+        - Opportunity
+      summary: Opportunity note (Edit)
+      description: Edits an opportunity note.
+      operationId: EditOpportunityNote
+      parameters:
+        - name: opportunity_id
+          in: path
+          description: The immutable system record ID of the opportunity that owns the note.
+          required: true
+          schema:
+            type: string
+        - name: note_id
+          in: path
+          description: The immutable system record ID of the note to edit.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: An object that represents updated properties of the note to edit.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NoteEdit'
+            example:
+              note_type: Stewardship
+              summary: Updated followup
+              note_date:
+                y: 2026
+                m: 6
+                d: 12
+      responses:
+        '200':
+          description: Returned when the operation successfully edits the opportunity note.
+          content:
+            application/json: { }
+        '400':
+          description: Returned when the specified note ID in the request URL or the request body is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to edit the opportunity note.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified note is not found.
+          content:
+            application/json: { }
+components:
+  schemas:
+    ApiCollection_OpportunityRead_:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: 'The number of items available for retrieval into the collection after applying any request parameters. The <b>limit</b> and <b>offset</b> parameters do not affect the <b>count</b>, but to facilitate paging, they may affect the number of items in the <b>value</b> result set.'
+          format: int32
+        next_link:
+          type: string
+          description: 'For paginated responses, the URI for the next page of results.'
+        value:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpportunityRead'
+          description: The set of items included in the response. This may be a subset of the items in the collection.
+      description: Fetching data all at once quickly becomes unmanageable. The collection entity helps by returning paginated chunks of large data sets. This entity includes helpful metadata and properties to paginate and iterate through the data.
+      x-hidden: true
+      x-base-type: '#/definitions/ApiCollection'
+      x-apim-schema-name: 'ApiCollection[OpportunityRead]'
+    OpportunityRead:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The immutable system record ID of the opportunity.
+        ask_amount:
+          $ref: '#/components/schemas/Currency'
+        ask_date:
+          type: string
+          description: 'The date when the solicitation was made. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>2015-09-18T16:25:00</i>.'
+          format: date-time
+          x-supports-datetime-offset: false
+        campaign_id:
+          type: string
+          description: The immutable system record ID of the campaign associated with the opportunity. The campaign sets the overall objectives for raising money.
+        constituent_id:
+          type: string
+          description: The immutable system record ID of the constituent associated with the opportunity.
+        date_added:
+          type: string
+          description: 'The date when the opportunity was created. Includes an offset from UTC in <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>1969-11-21T10:29:43-04:00</i>.'
+          format: date-time
+          x-supports-datetime-offset: true
+        date_modified:
+          type: string
+          description: 'The date when the opportunity was last modified. Includes an offset from UTC in <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>1969-11-21T10:29:43-04:00</i>.'
+          format: date-time
+          x-supports-datetime-offset: true
+        deadline:
+          type: string
+          description: 'The goal date for the opportunity to result in a gift. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>2015-09-18T16:25:00</i>.'
+          format: date-time
+          x-supports-datetime-offset: false
+        expected_amount:
+          $ref: '#/components/schemas/Currency'
+        expected_date:
+          type: string
+          description: 'The date when the prospect is expected to give in response to the opportunity. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>2015-09-18T16:25:00</i>.'
+          format: date-time
+          x-supports-datetime-offset: false
+        fund_id:
+          type: string
+          description: The immutable system record ID of the fund associated with the opportunity. The fund designates the specific financial purpose of a gift and identifies the financial account for that gift.
+        funded_amount:
+          $ref: '#/components/schemas/Currency'
+        funded_date:
+          type: string
+          description: 'The date when the prospect gave in response to the opportunity. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>2015-09-18T16:25:00</i>.'
+          format: date-time
+          x-supports-datetime-offset: false
+        fundraisers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Fundraiser'
+          description: The set of immutable constituent system record IDs for the fundraisers assigned to the opportunity.
+        inactive:
+          type: boolean
+          description: Indicates whether the opportunity is inactive.
+        linked_gifts:
+          type: array
+          items:
+            type: string
+          description: The  immutable system record IDs of the gifts related to the opportunity.
+        name:
+          type: string
+          description: 'The name that identifies the opportunity throughout the program, such as in lists or on constituent records.'
+        summary:
+          type: string
+          description: The latest summary text for the opportunity.
+        purpose:
+          type: string
+          description: The intended use for any money raised as a result of the opportunity. Available values are the entries in the <a href="https://developer.sky.blackbaud.com/docs/services/58e3b2597c1af25c58b9c4e3/operations/ListOpportunityPurposes"><b>Purposes</b></a> table.
+        status:
+          type: string
+          description: The status that indicates where the opportunity is in the solicitation process. This property can experience a data latency of about 10 minutes on the <a href="https://developer.sky.blackbaud.com/docs/services/58e3b2597c1af25c58b9c4e3/operations/58e3b27ba9db950fa048c8a9">Opportunity (Get) endpoint</a>. Available values are the entries in the <a href="https://developer.sky.blackbaud.com/docs/services/58e3b2597c1af25c58b9c4e3/operations/ListOpportunityStatuses"><b>Proposal Status</b></a> table.
+        lifecycle_stage:
+          type: string
+          description: 'The lifecycle stage mapped to the opportunity''s current status, such as Identification or Solicitation. This property can experience a data latency of about 10 minutes. Returns null if the status is not mapped to a lifecycle stage.'
+        opportunity_likelihood_name:
+          type: string
+          description: Indicates your level of confidence in receiving gifts from the opportunity.
+        opportunity_likelihood_id:
+          type: string
+          description: The opportunity likelihood identifier.
+        gift_type:
+          type: string
+          description: 'Specifies the type of gifts you expect from the opportunity, such as pledges or gifts in kind.'
+        gift_type_id:
+          type: string
+          description: The gift type identifier.
+        reason:
+          type: string
+          description: The reason associated with the opportunity.
+        original_ask_amount:
+          $ref: '#/components/schemas/Currency'
+        original_ask_date:
+          type: string
+          description: The original solicitation date for the opportunity.
+          format: date-time
+          x-supports-datetime-offset: false
+        instrument:
+          type: string
+          description: The instrument associated with the opportunity.
+        org_contact_id:
+          type: string
+          description: The immutable system record ID of the organization contact associated with the opportunity.
+        org_contact:
+          type: string
+          description: The name of the organization contact associated with the opportunity.
+        date_rated:
+          type: string
+          description: The date when the opportunity was rated.
+          format: date-time
+          x-supports-datetime-offset: false
+      description: Opportunities help you plan and track efforts to build relationships with prospects and secure major gifts. They can manage information about fundraising activities and the effectiveness of your efforts.
+      x-display-name: Opportunity
+      x-display-id: Opportunity
+    Currency:
+      type: object
+      properties:
+        value:
+          type: number
+          description: The monetary value.
+          format: double
+      description: 'For consistency, currency is configured at the organization level. This ensures that all monetary amounts are consistent, regardless of where they are entered or viewed.'
+    Fundraiser:
+      type: object
+      properties:
+        constituent_id:
+          type: string
+          description: The immutable system record ID of the constituent associated with the fundraiser.
+        credit_amount:
+          $ref: '#/components/schemas/Currency'
+      description: 'Fundraiser constituents interact with other constituents and prospects on behalf of your organization to cultivate relationships and advance opportunities to secure major gifts. When the target constituent fulfills an opportunity ask, the fundraiser can receive credit to track performance and foster fundraising accomplishments.'
+      x-display-name: Opportunity fundraiser
+      x-display-id: OpportunityFundraiser
+    ApiCollection_CustomFieldRead_:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: 'The number of items available for retrieval into the collection after applying any request parameters. The <b>limit</b> and <b>offset</b> parameters do not affect the <b>count</b>, but to facilitate paging, they may affect the number of items in the <b>value</b> result set.'
+          format: int32
+        next_link:
+          type: string
+          description: 'For paginated responses, the URI for the next page of results.'
+        value:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomFieldRead'
+          description: The set of items included in the response. This may be a subset of the items in the collection.
+      description: Fetching data all at once quickly becomes unmanageable. The collection entity helps by returning paginated chunks of large data sets. This entity includes helpful metadata and properties to paginate and iterate through the data.
+      x-hidden: true
+      x-base-type: '#/definitions/ApiCollection'
+      x-apim-schema-name: 'ApiCollection[CustomFieldRead]'
+    CustomFieldRead:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The immutable system record ID of the custom field.
+        category:
+          type: string
+          description: The custom field category. Available values are the entries in the <b>Custom Field Categories</b> table of the parent object.
+        comment:
+          type: string
+          description: The comment on the custom field.
+        date:
+          type: string
+          description: The date on the custom field. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format:</a><i>1969-11-21T10:29:43</i>.
+          format: date-time
+          x-supports-datetime-offset: false
+        date_added:
+          type: string
+          description: The date when the custom field was created. The date includes an offset from UTC in <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format:</a><i>1969-11-21T10:29:43-04:00</i>.
+          format: date-time
+          x-supports-datetime-offset: true
+        date_modified:
+          type: string
+          description: The date when the custom field was last modified. The date includes an offset from UTC in <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format:</a><i>1969-11-21T10:29:43-04:00</i>.
+          format: date-time
+          x-supports-datetime-offset: true
+        parent_id:
+          type: string
+          description: The parent object's immutable system record ID.
+        type:
+          enum:
+            - Text
+            - Number
+            - Date
+            - Currency
+            - Boolean
+            - CodeTableEntry
+            - ConstituentId
+            - FuzzyDate
+          type: string
+          description: The type of data that the custom field represents. Available values are listed below.
+        value:
+          type: object
+          description: The value of the custom field. The <code>type</code> property determines the format.
+      description: 'While records provide many fields to track information, organizations often require additional details. To track this specialized information, use custom fields.'
+      x-display-name: Custom field
+      x-display-id: CustomField
+      x-additional-info: "<a name=\"CustomFieldTypes\"></a>\r\n<p>&nbsp;</p>\r\n<p>\r\n    Available values for the <b>type</b> of a <b>custom field</b>:\r\n</p>\r\n\r\n<div class=\"table-responsive\">\r\n    <table class=\"table table-striped table-hover\">\r\n        <thead>\r\n            <tr>\r\n                <th class=\"col-xs-3\"><strong>Type</strong></th>\r\n                <th class=\"col-xs-9\"><strong>Description</strong></th>\r\n            </tr>\r\n        </thead>\r\n        <tbody>\r\n            <tr>\r\n                <td>Boolean</td>\r\n                <td>Defines the custom field as a boolean value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>CodeTableEntry</td>\r\n                <td>Defines the custom field as a string value that represents a code table entry description.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>ConstituentId</td>\r\n                <td>Defines the custom field as a constituent identifier value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>Currency</td>\r\n                <td>Defines the custom field as a decimal value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>Date</td>\r\n                <td>\r\n                    Defines the custom field as a date value in <a href=\"https://tools.ietf.org/html/rfc3339\">ISO-8601 format:</a> <i>1969-11-21T10:29:43</i>.\r\n                </td>\r\n            </tr>\r\n            <tr>\r\n                <td>FuzzyDate</td>\r\n                <td>\r\n                    Defines the custom field as a fuzzy date value.\r\n                </td>\r\n            </tr>\r\n            <tr>\r\n                <td>Number</td>\r\n                <td>Defines the custom field as an integer value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>Text</td>\r\n                <td>Defines the custom field as a string value. Character limit: 255.</td>\r\n            </tr>\r\n        </tbody>\r\n    </table>\r\n</div>"
+    ApiCollection_CustomFieldCategoryRead_:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: 'The number of items available for retrieval into the collection after applying any request parameters. The <b>limit</b> and <b>offset</b> parameters do not affect the <b>count</b>, but to facilitate paging, they may affect the number of items in the <b>value</b> result set.'
+          format: int32
+        next_link:
+          type: string
+          description: 'For paginated responses, the URI for the next page of results.'
+        value:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomFieldCategoryRead'
+          description: The set of items included in the response. This may be a subset of the items in the collection.
+      description: Fetching data all at once quickly becomes unmanageable. The collection entity helps by returning paginated chunks of large data sets. This entity includes helpful metadata and properties to paginate and iterate through the data.
+      x-hidden: true
+      x-base-type: '#/definitions/ApiCollection'
+      x-apim-schema-name: 'ApiCollection[CustomFieldCategoryRead]'
+    CustomFieldCategoryRead:
+      type: object
+      properties:
+        name:
+          type: string
+          description: The name of the custom field category.
+        type:
+          enum:
+            - Text
+            - Number
+            - Date
+            - Currency
+            - Boolean
+            - CodeTableEntry
+            - ConstituentId
+            - FuzzyDate
+          type: string
+          description: The type of data that custom fields with this category represent. Available values are listed below.
+        code_table_id:
+          type: string
+          description: The code table identifier when the custom field category DataType is CodeTableEntry.
+        one_per_record:
+          type: boolean
+          description: Flag indicating that only one value for the custom field category is allowed per record.
+      description: The system includes many different types of custom fields. Custom field categories store the metadata to appropriately match how you use a given custom field with an available type.
+      x-display-name: Custom field category
+      x-display-id: CustomFieldCategory
+      x-additional-info: "<a name=\"CustomFieldTypes\"></a>\r\n<p>&nbsp;</p>\r\n<p>\r\n    Available values for the <b>type</b> of a <b>custom field</b>:\r\n</p>\r\n\r\n<div class=\"table-responsive\">\r\n    <table class=\"table table-striped table-hover\">\r\n        <thead>\r\n            <tr>\r\n                <th class=\"col-xs-3\"><strong>Type</strong></th>\r\n                <th class=\"col-xs-9\"><strong>Description</strong></th>\r\n            </tr>\r\n        </thead>\r\n        <tbody>\r\n            <tr>\r\n                <td>Boolean</td>\r\n                <td>Defines the custom field as a boolean value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>CodeTableEntry</td>\r\n                <td>Defines the custom field as a string value that represents a code table entry description.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>ConstituentId</td>\r\n                <td>Defines the custom field as a constituent identifier value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>Currency</td>\r\n                <td>Defines the custom field as a decimal value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>Date</td>\r\n                <td>\r\n                    Defines the custom field as a date value in <a href=\"https://tools.ietf.org/html/rfc3339\">ISO-8601 format:</a> <i>1969-11-21T10:29:43</i>.\r\n                </td>\r\n            </tr>\r\n            <tr>\r\n                <td>FuzzyDate</td>\r\n                <td>\r\n                    Defines the custom field as a fuzzy date value.\r\n                </td>\r\n            </tr>\r\n            <tr>\r\n                <td>Number</td>\r\n                <td>Defines the custom field as an integer value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>Text</td>\r\n                <td>Defines the custom field as a string value. Character limit: 255.</td>\r\n            </tr>\r\n        </tbody>\r\n    </table>\r\n</div>"
+    ApiCollection_String_:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: 'The number of items available for retrieval into the collection after applying any request parameters. The <b>limit</b> and <b>offset</b> parameters do not affect the <b>count</b>, but to facilitate paging, they may affect the number of items in the <b>value</b> result set.'
+          format: int32
+        next_link:
+          type: string
+          description: 'For paginated responses, the URI for the next page of results.'
+        value:
+          type: array
+          items:
+            type: string
+          description: The set of items included in the response. This may be a subset of the items in the collection.
+      description: Fetching data all at once quickly becomes unmanageable. The collection entity helps by returning paginated chunks of large data sets. This entity includes helpful metadata and properties to paginate and iterate through the data.
+      x-hidden: true
+      x-base-type: '#/definitions/ApiCollection'
+      x-apim-schema-name: 'ApiCollection[String]'
+    CustomFieldAdd:
+      required:
+        - category
+      type: object
+      properties:
+        category:
+          type: string
+          description: The custom field category. Available values are the entries in the <b>Custom Field Categories</b> table of the parent object.
+        comment:
+          maxLength: 50
+          minLength: 0
+          type: string
+          description: 'The comment on the custom field. Character limit: 50.'
+        date:
+          type: string
+          description: The date on the custom field. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format:</a><i>1969-11-21T10:29:43</i>.
+          format: date-time
+          x-supports-datetime-offset: false
+        parent_id:
+          type: string
+          description: The parent object's immutable system record ID.
+        value:
+          type: object
+          description: The value of the custom field. The <code>type</code> property determines the format. Character limit depends on data type. Number types only support values greater than 0.
+      description: 'While records provide many fields to track information, organizations often require additional details. To track this specialized information, use custom fields.'
+      x-hidden: true
+      x-display-name: Create custom field
+      x-display-id: CreateCustomField
+      x-additional-info: "<a name=\"CustomFieldTypes\"></a>\r\n<p>&nbsp;</p>\r\n<p>\r\n    Available values for the <b>type</b> of a <b>custom field</b>:\r\n</p>\r\n\r\n<div class=\"table-responsive\">\r\n    <table class=\"table table-striped table-hover\">\r\n        <thead>\r\n            <tr>\r\n                <th class=\"col-xs-3\"><strong>Type</strong></th>\r\n                <th class=\"col-xs-9\"><strong>Description</strong></th>\r\n            </tr>\r\n        </thead>\r\n        <tbody>\r\n            <tr>\r\n                <td>Boolean</td>\r\n                <td>Defines the custom field as a boolean value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>CodeTableEntry</td>\r\n                <td>Defines the custom field as a string value that represents a code table entry description.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>ConstituentId</td>\r\n                <td>Defines the custom field as a constituent identifier value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>Currency</td>\r\n                <td>Defines the custom field as a decimal value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>Date</td>\r\n                <td>\r\n                    Defines the custom field as a date value in <a href=\"https://tools.ietf.org/html/rfc3339\">ISO-8601 format:</a> <i>1969-11-21T10:29:43</i>.\r\n                </td>\r\n            </tr>\r\n            <tr>\r\n                <td>FuzzyDate</td>\r\n                <td>\r\n                    Defines the custom field as a fuzzy date value.\r\n                </td>\r\n            </tr>\r\n            <tr>\r\n                <td>Number</td>\r\n                <td>Defines the custom field as an integer value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>Text</td>\r\n                <td>Defines the custom field as a string value. Character limit: 255.</td>\r\n            </tr>\r\n        </tbody>\r\n    </table>\r\n</div>"
+    PostResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The newly created ID
+      description: Defines the shape of a post response object.
+      x-hidden: true
+    CustomFieldEdit:
+      type: object
+      properties:
+        comment:
+          maxLength: 50
+          minLength: 0
+          type: string
+          description: 'The comment on the custom field. Character limit: 50.'
+        date:
+          type: string
+          description: The date on the custom field. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format:</a><i>1969-11-21T10:29:43</i>.
+          format: date-time
+          x-supports-datetime-offset: false
+        value:
+          type: object
+          description: The value of the custom field. The <code>type</code> property determines the format. Character limit depends on data type.
+      description: 'While records provide many fields to track information, organizations often require additional details. To track this specialized information, use custom fields.'
+      x-hidden: true
+      x-display-name: Edit custom field
+      x-display-id: EditCustomField
+      x-additional-info: "<a name=\"CustomFieldTypes\"></a>\r\n<p>&nbsp;</p>\r\n<p>\r\n    Available values for the <b>type</b> of a <b>custom field</b>:\r\n</p>\r\n\r\n<div class=\"table-responsive\">\r\n    <table class=\"table table-striped table-hover\">\r\n        <thead>\r\n            <tr>\r\n                <th class=\"col-xs-3\"><strong>Type</strong></th>\r\n                <th class=\"col-xs-9\"><strong>Description</strong></th>\r\n            </tr>\r\n        </thead>\r\n        <tbody>\r\n            <tr>\r\n                <td>Boolean</td>\r\n                <td>Defines the custom field as a boolean value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>CodeTableEntry</td>\r\n                <td>Defines the custom field as a string value that represents a code table entry description.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>ConstituentId</td>\r\n                <td>Defines the custom field as a constituent identifier value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>Currency</td>\r\n                <td>Defines the custom field as a decimal value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>Date</td>\r\n                <td>\r\n                    Defines the custom field as a date value in <a href=\"https://tools.ietf.org/html/rfc3339\">ISO-8601 format:</a> <i>1969-11-21T10:29:43</i>.\r\n                </td>\r\n            </tr>\r\n            <tr>\r\n                <td>FuzzyDate</td>\r\n                <td>\r\n                    Defines the custom field as a fuzzy date value.\r\n                </td>\r\n            </tr>\r\n            <tr>\r\n                <td>Number</td>\r\n                <td>Defines the custom field as an integer value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>Text</td>\r\n                <td>Defines the custom field as a string value. Character limit: 255.</td>\r\n            </tr>\r\n        </tbody>\r\n    </table>\r\n</div>"
+    OpportunityAdd:
+      required:
+        - constituent_id
+        - name
+        - purpose
+      type: object
+      properties:
+        ask_amount:
+          $ref: '#/components/schemas/Currency'
+        ask_date:
+          type: string
+          description: 'The date when the solicitation was made. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>2015-09-18T16:25:00</i>.'
+          format: date-time
+          x-supports-datetime-offset: false
+        campaign_id:
+          type: string
+          description: The immutable system record ID of the campaign associated with the opportunity. The campaign sets the overall objectives for raising money.
+        constituent_id:
+          type: string
+          description: The immutable system record ID of the constituent associated with the opportunity.
+        deadline:
+          type: string
+          description: 'The goal date for the opportunity to result in a gift. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>2015-09-18T16:25:00</i>.'
+          format: date-time
+          x-supports-datetime-offset: false
+        expected_amount:
+          $ref: '#/components/schemas/Currency'
+        expected_date:
+          type: string
+          description: 'The date when the prospect is expected to give in response to the opportunity. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>2015-09-18T16:25:00</i>.'
+          format: date-time
+          x-supports-datetime-offset: false
+        fund_id:
+          type: string
+          description: The immutable system record ID of the fund associated with the opportunity. The fund designates the specific financial purpose of a gift and identifies the financial account for that gift.
+        funded_amount:
+          $ref: '#/components/schemas/Currency'
+        funded_date:
+          type: string
+          description: 'The date when the prospect gave in response to the opportunity. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>2015-09-18T16:25:00</i>.'
+          format: date-time
+          x-supports-datetime-offset: false
+        fundraisers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Fundraiser'
+          description: The set of immutable constituent system record IDs for the fundraisers assigned to the opportunity.
+        inactive:
+          type: boolean
+          description: Indicates whether the opportunity is inactive.
+        name:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: 'The name that identifies the opportunity throughout the program, such as in lists or on constituent records. Character limit: 255.'
+        summary:
+          type: string
+          description: The latest summary text for the opportunity.
+        purpose:
+          type: string
+          description: The intended use for any money raised as a result of the opportunity. Available values are the entries in the <a href="https://developer.sky.blackbaud.com/docs/services/58e3b2597c1af25c58b9c4e3/operations/ListOpportunityPurposes"><b>Purposes</b></a> table.
+        status:
+          type: string
+          description: The status that indicates where the opportunity is in the solicitation process. Available values are the entries in the <a href="https://developer.sky.blackbaud.com/docs/services/58e3b2597c1af25c58b9c4e3/operations/ListOpportunityStatuses"><b>Proposal Status</b></a> table.
+        likelihood:
+          type: string
+          description: Indicates your level of confidence in receiving gifts from the opportunity. Available values are the entries in the <a href="https://developer.sky.blackbaud.com/api#api=codetable&amp;operation=GetTableEntriesList">code table</a> with ID 5094.
+        gift_type:
+          type: string
+          description: 'Specifies the type of gifts you expect from the opportunity, such as pledges or gifts in kind. Available values are the entries in the <a href="https://developer.sky.blackbaud.com/api#api=codetable&amp;operation=GetTableEntriesList">code table</a> with ID 19.'
+        reason:
+          type: string
+          description: The reason associated with the opportunity.
+        original_ask_amount:
+          $ref: '#/components/schemas/Currency'
+        original_ask_date:
+          type: string
+          description: The original date when the solicitation was made.
+          format: date-time
+          x-supports-datetime-offset: false
+        instrument:
+          type: string
+          description: The instrument associated with the opportunity.
+        org_contact_id:
+          type: string
+          description: The immutable system record ID of the organization contact associated with the opportunity. Use the read-only org_contact property on opportunity responses to retrieve the friendly display name.
+        date_rated:
+          type: string
+          description: The date when the opportunity was rated.
+          format: date-time
+          x-supports-datetime-offset: false
+      description: Opportunities help you plan and track efforts to build relationships with prospects and secure major gifts. They can manage information about fundraising activities and the effectiveness of your efforts.
+      x-hidden: true
+      x-display-name: Create opportunity
+      x-display-id: CreateOpportunity
+    OpportunityEdit:
+      type: object
+      properties:
+        ask_amount:
+          $ref: '#/components/schemas/Currency'
+        ask_date:
+          type: string
+          description: 'The date when the solicitation was made. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>2015-09-18T16:25:00</i>.'
+          format: date-time
+          x-supports-datetime-offset: false
+        campaign_id:
+          type: string
+          description: The immutable system record ID of the campaign associated with the opportunity. The campaign sets the overall objectives for raising money.
+        deadline:
+          type: string
+          description: 'The goal date for the opportunity to result in a gift. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>2015-09-18T16:25:00</i>.'
+          format: date-time
+          x-supports-datetime-offset: false
+        expected_amount:
+          $ref: '#/components/schemas/Currency'
+        expected_date:
+          type: string
+          description: 'The date when the prospect is expected to give in response to the opportunity. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>2015-09-18T16:25:00</i>.'
+          format: date-time
+          x-supports-datetime-offset: false
+        fund_id:
+          type: string
+          description: The immutable system record ID of the fund associated with the opportunity. The fund designates the specific financial purpose of a gift and identifies the financial account for that gift.
+        funded_amount:
+          $ref: '#/components/schemas/Currency'
+        funded_date:
+          type: string
+          description: 'The date when the prospect gave in response to the opportunity. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>2015-09-18T16:25:00</i>.'
+          format: date-time
+          x-supports-datetime-offset: false
+        fundraisers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Fundraiser'
+          description: The set of immutable constituent system record IDs for the fundraisers assigned to the opportunity.
+        inactive:
+          type: boolean
+          description: Indicates whether the opportunity is inactive.
+        name:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: 'The name that identifies the opportunity throughout the program, such as in lists or on constituent records. Character limit: 255. This property cannot be set to null.'
+        summary:
+          type: string
+          description: The latest summary text for the opportunity.
+        purpose:
+          type: string
+          description: The intended use for any money raised as a result of the opportunity. Available values are the entries in the <a href="https://developer.sky.blackbaud.com/docs/services/58e3b2597c1af25c58b9c4e3/operations/ListOpportunityPurposes"><b>Purposes</b></a> table. This property cannot be set to null.
+        status:
+          type: string
+          description: The status that indicates where the opportunity is in the solicitation process. Available values are the entries in the <a href="https://developer.sky.blackbaud.com/docs/services/58e3b2597c1af25c58b9c4e3/operations/ListOpportunityStatuses"><b>Proposal Status</b></a> table.
+        likelihood:
+          type: string
+          description: Indicates your level of confidence in receiving gifts from the opportunity. Available values are the entries in the <a href="https://developer.sky.blackbaud.com/api#api=codetable&amp;operation=GetTableEntriesList">code table</a> with ID 5094.
+        gift_type:
+          type: string
+          description: 'Specifies the type of gifts you expect from the opportunity, such as pledges or gifts in kind. Available values are the entries in the <a href="https://developer.sky.blackbaud.com/api#api=codetable&amp;operation=GetTableEntriesList">code table</a> with ID 19.'
+        reason:
+          type: string
+          description: The reason associated with the opportunity.
+        original_ask_amount:
+          $ref: '#/components/schemas/Currency'
+        original_ask_date:
+          type: string
+          description: The original date when the solicitation was made.
+          format: date-time
+          x-supports-datetime-offset: false
+        instrument:
+          type: string
+          description: The instrument associated with the opportunity.
+        org_contact_id:
+          type: string
+          description: The immutable system record ID of the organization contact associated with the opportunity. Use the read-only org_contact property on opportunity responses to retrieve the friendly display name.
+        date_rated:
+          type: string
+          description: The date when the opportunity was rated.
+          format: date-time
+          x-supports-datetime-offset: false
+      description: Opportunities help you plan and track efforts to build relationships with prospects and secure major gifts. They can manage information about fundraising activities and the effectiveness of your efforts.
+      x-hidden: true
+      x-display-name: Edit opportunity
+      x-display-id: EditOpportunity
+    ApiCollection_NoteRead_:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: 'The number of items available for retrieval into the collection after applying any request parameters. The <b>limit</b> and <b>offset</b> parameters do not affect the <b>count</b>, but to facilitate paging, they may affect the number of items in the <b>value</b> result set.'
+          format: int32
+        next_link:
+          type: string
+          description: 'For paginated responses, the URI for the next page of results.'
+        value:
+          type: array
+          items:
+            $ref: '#/components/schemas/NoteRead'
+          description: The set of items included in the response. This may be a subset of the items in the collection.
+      description: Fetching data all at once quickly becomes unmanageable. The collection entity helps by returning paginated chunks of large data sets. This entity includes helpful metadata and properties to paginate and iterate through the data.
+      x-hidden: true
+      x-base-type: '#/definitions/ApiCollection'
+      x-apim-schema-name: 'ApiCollection[NoteRead]'
+    NoteRead:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Proposal Note Id
+        parent_id:
+          type: string
+          description: The Id the Proposal the Proposal Note is linked to
+        note_date:
+          $ref: '#/components/schemas/FuzzyDate'
+        note_text:
+          type: string
+          description: The contents of the proposal note.
+        note_type_id:
+          type: string
+          description: Designates the type for the proposal note.
+        note_type_name:
+          type: string
+          description: Designates the name for the proposal note.
+        summary:
+          type: string
+          description: Gets or sets the proposal note summary.
+        author:
+          type: string
+          description: Gets or sets the note author.
+        modified_by_user_id:
+          type: string
+          description: The id of the user who is was last to modify the note.
+        date_modified:
+          type: string
+          description: The UTC time the date was last modified.
+          format: date-time
+          x-supports-datetime-offset: true
+      description: A note
+    FuzzyDate:
+      type: object
+      properties:
+        d:
+          type: integer
+          description: The day in the fuzzy date.
+          format: int32
+        m:
+          type: integer
+          description: The month in the fuzzy date.
+          format: int32
+        y:
+          type: integer
+          description: The year in the fuzzy date.
+          format: int32
+      description: Fuzzy dates provide a versatile date type to create partial dates such as February 9 (with no year indicated).
+      x-display-name: Fuzzy date
+      x-display-id: FuzzyDate
+    NoteAdd:
+      required:
+        - note_text
+        - note_type
+      type: object
+      properties:
+        note_date:
+          $ref: '#/components/schemas/FuzzyDate'
+        note_text:
+          type: string
+          description: The contents of the note.
+        note_type:
+          type: string
+          description: The note type for the note.
+        summary:
+          type: string
+          description: The summary for the note.
+      description: Represents an opportunity note to create.
+      x-hidden: true
+      x-display-name: Create opportunity note
+      x-display-id: CreateOpportunityNote
+    NoteEdit:
+      type: object
+      properties:
+        note_date:
+          $ref: '#/components/schemas/FuzzyDate'
+        note_text:
+          type: string
+          description: The contents of the note.
+        note_type:
+          type: string
+          description: The note type for the note.
+        summary:
+          type: string
+          description: The summary for the note.
+      description: Represents an opportunity note to edit.
+      x-hidden: true
+      x-display-name: Edit opportunity note
+      x-display-id: EditOpportunityNote
+    ApiCollection_AttachmentRead_:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: 'The number of items available for retrieval into the collection after applying any request parameters. The <b>limit</b> and <b>offset</b> parameters do not affect the <b>count</b>, but to facilitate paging, they may affect the number of items in the <b>value</b> result set.'
+          format: int32
+        next_link:
+          type: string
+          description: 'For paginated responses, the URI for the next page of results.'
+        value:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttachmentRead'
+          description: The set of items included in the response. This may be a subset of the items in the collection.
+      description: Fetching data all at once quickly becomes unmanageable. The collection entity helps by returning paginated chunks of large data sets. This entity includes helpful metadata and properties to paginate and iterate through the data.
+      x-hidden: true
+      x-base-type: '#/definitions/ApiCollection'
+      x-apim-schema-name: 'ApiCollection[AttachmentRead]'
+    AttachmentRead:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The immutable system record ID of the attachment.
+        content_type:
+          type: string
+          description: The content type. For physical attachments only.
+        date:
+          type: string
+          description: The date of the attachment. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format:</a><i>1969-11-21T10:29:43-04:00</i>.
+          format: date-time
+          x-supports-datetime-offset: true
+        file_id:
+          type: string
+          description: The identifier of the file.
+        file_name:
+          type: string
+          description: The file name. For physical attachments only.
+        file_size:
+          type: integer
+          description: The file size in bytes. For physical attachments only.
+          format: int64
+        name:
+          type: string
+          description: The name of the attachment.
+        parent_id:
+          type: string
+          description: The parent object's immutable system record ID.
+        tags:
+          type: array
+          items:
+            type: string
+          description: The tags associated with the attachment. Tags supplement the attachment’s name and description and identify it based on how an organization categorizes attachments. Available values are the entries in the <b>Document Tags</b> table.
+        thumbnail_id:
+          maxLength: 36
+          minLength: 0
+          type: string
+          description: The identifier of the thumbnail. For physical attachments that are images only.
+        thumbnail_url:
+          type: string
+          description: The URL for a thumbnail. For physical attachments that are images only. Contains a time-bound signature that limits access to 30 minutes.
+        type:
+          enum:
+            - Link
+            - Physical
+          type: string
+          description: 'The attachment type. Available values are <i>Link</i> and <i>Physical</i>. Physical attachments are uploaded files such as images, PDFs, or Word documents that are saved locally or on the network. They are stored and managed in the system. Link attachments are links to files such as images, blog posts, or YouTube videos that are online or in a cloud storage account. They are stored and managed externally.'
+        url:
+          type: string
+          description: The URL for the attachment. The URL for a physical attachment contains a time-bound signature that limits access to 30 minutes.
+      description: 'Many cultivation activities collect related collateral, such as correspondence and prospect research. Attachments can save this data on the appropriate record to maintain a complete view of those activities.'
+      x-display-name: Attachment
+      x-display-id: Attachment
+    AttachmentAdd:
+      required:
+        - parent_id
+        - type
+      type: object
+      properties:
+        date:
+          type: string
+          description: The date of the attachment. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format:</a><i>1969-11-21T10:29:43-04:00</i>. This property defaults to the current date and time if not supplied.
+          format: date-time
+          x-supports-datetime-offset: true
+        file_id:
+          maxLength: 36
+          minLength: 0
+          type: string
+          description: 'The identifier of the file. Character limit: 36. For physical attachments only.'
+        file_name:
+          type: string
+          description: The name of the file. For physical attachments only.
+        name:
+          maxLength: 150
+          minLength: 0
+          type: string
+          description: 'The name of the attachment. Character limit: 150.'
+        parent_id:
+          type: string
+          description: The parent object's immutable system record ID.
+        tags:
+          type: array
+          items:
+            type: string
+          description: 'The tags associated with the attachment. Tags supplement the attachment’s name and description and identify it based on how an organization categorizes attachments. Available values are the entries in the <b>Document Tags</b> table. Character limit: 100.'
+        thumbnail_id:
+          maxLength: 36
+          minLength: 0
+          type: string
+          description: 'The identifier of the thumbnail. Character limit: 36. For physical attachments only.'
+        type:
+          enum:
+            - Link
+            - Physical
+          type: string
+          description: 'The attachment type. Available values are <i>Link</i> and <i>Physical</i>. Physical attachments are uploaded files such as images, PDFs, or Word documents that are saved locally or on the network. They are stored and managed in the system. Link attachments are links to files such as images, blog posts, or YouTube videos that are online or in a cloud storage account. They are stored and managed externally.'
+        url:
+          type: string
+          description: The URL for the attachment. This is required for link attachments but does not apply to physical attachments.
+      description: 'Many cultivation activities collect related collateral, such as correspondence and prospect research. Attachments can save this data on the appropriate record to maintain a complete view of those activities.'
+      x-hidden: true
+      x-display-name: Add attachment
+      x-display-id: AddAttachment
+    AttachmentEdit:
+      type: object
+      properties:
+        date:
+          type: string
+          description: The date of the attachment. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format:</a><i>1969-11-21T10:29:43-04:00</i>. This property cannot be set to null.
+          format: date-time
+          x-supports-datetime-offset: true
+        name:
+          maxLength: 150
+          minLength: 0
+          type: string
+          description: 'The name of the attachment. Character limit: 150.'
+        tags:
+          type: array
+          items:
+            type: string
+          description: 'The tags associated with the attachment. Tags supplement the attachment’s name and description and identify it based on how an organization categorizes attachments. Available values are the entries in the <b>Document Tags</b> table. Character limit: 100.'
+        url:
+          type: string
+          description: The URL for the attachment. You can only edit the URL for link attachments. This property cannot be set to null.
+      description: 'Many cultivation activities collect related collateral, such as correspondence and prospect research. Attachments can save this data on the appropriate record to maintain a complete view of those activities.'
+      x-hidden: true
+      x-display-name: Edit attachment
+      x-display-id: EditAttachment
+    NewDocumentInfo:
+      type: object
+      properties:
+        file_name:
+          type: string
+          description: The file name. For physical attachments only.
+        upload_thumbnail:
+          type: boolean
+          description: Indicates that a thumbnail needs to be created.
+      description: 'Cultivation activities often result in physical collateral such as images, PDFs, or Word files. The New Document entity allows you to upload these files to maintain a holistic view of target constituents.'
+      x-display-name: New document info
+      x-display-id: NewDocumentInfo
+    FileDefinition:
+      type: object
+      properties:
+        file_id:
+          type: string
+          description: The identifier of the file.
+        file_upload_request:
+          $ref: '#/components/schemas/RequestMetaData'
+        thumbnail_id:
+          type: string
+          description: The identifier of the thumbnail.
+        thumbnail_upload_request:
+          $ref: '#/components/schemas/RequestMetaData'
+      description: Contains metadata for uploading a document and unique document identifier for physical attachments.
+      x-display-name: File definition
+      x-display-id: FileDefinition
+    RequestMetaData:
+      type: object
+      properties:
+        headers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Header'
+          description: The headers to supply when making the request.
+        method:
+          type: string
+          description: The http method to use for the request.
+        url:
+          type: string
+          description: The url to use for the request.
+      description: 'The RequestMetadata entity specifies metadata for requests to upload physical attachments, including the URL for files, headers and the HTTP method to use.'
+      x-display-name: Request meta data
+      x-display-id: RequestMetaData
+    Header:
+      type: object
+      properties:
+        name:
+          type: string
+          description: The name for the header.
+        value:
+          type: string
+          description: The value for the header.
+      description: Request header used for uploading the physical attachment.
+    ApiCollection_OpportunityStatusHistory_:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: 'The number of items available for retrieval into the collection after applying any request parameters. The <b>limit</b> and <b>offset</b> parameters do not affect the <b>count</b>, but to facilitate paging, they may affect the number of items in the <b>value</b> result set.'
+          format: int32
+        next_link:
+          type: string
+          description: 'For paginated responses, the URI for the next page of results.'
+        value:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpportunityStatusHistory'
+          description: The set of items included in the response. This may be a subset of the items in the collection.
+      description: Fetching data all at once quickly becomes unmanageable. The collection entity helps by returning paginated chunks of large data sets. This entity includes helpful metadata and properties to paginate and iterate through the data.
+      x-hidden: true
+      x-base-type: '#/definitions/ApiCollection'
+      x-apim-schema-name: 'ApiCollection[OpportunityStatusHistory]'
+    OpportunityStatusHistory:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The primary identifier for the opportunity status history
+        opportunity_id:
+          type: string
+          description: The opportunity identifier for the opportunity status history
+        status_id:
+          type: string
+          description: The status identifier for the opportunity status history
+        status_description:
+          type: string
+          description: The status description for the opportunity status history
+        start_date:
+          type: string
+          description: The status start date for the opportunity status history
+          format: date-time
+          x-supports-datetime-offset: true
+        days_elapsed:
+          type: integer
+          description: The number of days elapsed in this particular opportunity status
+          format: int32
+        comments:
+          type: string
+          description: The comments for the opportunity status history
+        author_name:
+          type: string
+          description: The author name of the status history record.
+        author_id:
+          type: string
+          description: The author id of the status history record.
+        is_blackbaud_processed:
+          type: boolean
+          description: Whether or not the status history record was created by Blackbaud
+        is_past_due:
+          type: boolean
+          description: Is the status past due.
+        is_closed:
+          type: boolean
+          description: Is the status closed.
+      description: A specific part of an opportunity's status history.
+    ApiCollection:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: 'The number of items available for retrieval into the collection after applying any request parameters. The <b>limit</b> and <b>offset</b> parameters do not affect the <b>count</b>, but to facilitate paging, they may affect the number of items in the <b>value</b> result set.'
+          format: int32
+        next_link:
+          type: string
+          description: 'For paginated responses, the URI for the next page of results.'
+        value:
+          type: array
+          items:
+            type: object
+          description: 'The result set of items after applying any request parameters. To facilitate paging, this may be a subset of all available items.'
+      description: Fetching data all at once quickly becomes unmanageable. The collection entity helps by returning paginated chunks of large data sets. This entity includes helpful metadata and properties to paginate and iterate through the data.
+      x-display-name: Collection
+      x-display-id: Collection
+  securitySchemes:
+    apiKeyHeader:
+      type: apiKey
+      name: Bb-Api-Subscription-Key
+      in: header
+    apiKeyQuery:
+      type: apiKey
+      name: subscription-key
+      in: query
+security:
+  - apiKeyHeader: [ ]
+  - apiKeyQuery: [ ]
+tags:
+  - name: Opportunity

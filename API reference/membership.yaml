@@ -1,0 +1,4835 @@
+openapi: 3.0.1
+info:
+  title: Membership
+  description: This API manages membership information.
+  version: '1.0'
+servers:
+  - url: https://api.sky.blackbaud.com/membership
+paths:
+  '/v1/constituents/{constituent_id}/membership':
+    post:
+      tags:
+        - Constituent
+      summary: Add membership endpoint
+      description: Creates a membership endpoint.
+      operationId: CreateMembership
+      parameters:
+        - name: constituent_id
+          in: path
+          description: The Constituent ID
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: Membership
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MembershipCreate'
+            example:
+              membership_id: '12'
+              dues: 77.09
+              program:
+                legacy_id: '1561'
+                value: Education Programme
+              reason:
+                legacy_id: '1331'
+                value: Moved
+              subcategory:
+                legacy_id: 56
+                value: Animals in the Wild
+              category:
+                legacy_id: 22
+                value: family
+              joined_date: '2024-01-20'
+              lifetime_membership: false
+              expires_on_date: '2025-12-20'
+              print_renewals: true
+              mem_comment: Created Membership for the Young Explorer group.
+              total_members: 1
+              total_children: 0
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the new member junction ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+              example:
+                id: '120'
+        '401':
+          description: Returned when the user does not have permission to execute this operation.
+        '403':
+          description: Returned when the constituent add membership capability is not enabled.
+  /v1/memberships/categories:
+    get:
+      tags:
+        - Membership Categories
+      summary: Get membership category list
+      description: Returns a membership category list.
+      operationId: GetMembershipCategoriesAsync
+      parameters:
+        - name: include_inactive
+          in: query
+          description: Indicates whether to include inactive membership category and subcategory.
+          schema:
+            type: boolean
+        - name: search
+          in: query
+          description: Text to find at least partially in membership.
+          schema:
+            type: string
+        - name: sort_by
+          in: query
+          description: Sort column
+          schema:
+            $ref: '#/components/schemas/MembershipCategorySortFields'
+        - name: sort_direction
+          in: query
+          description: 'Use ''asc'' or ''dsc'' to arrange a grid, list, or repeater in ascending or descending order based on the passed value for sorting.'
+          schema:
+            $ref: '#/components/schemas/SortDirection'
+        - name: limit
+          in: query
+          description: Represents the number of records to return. The default is 500.
+          schema:
+            maximum: 10000.0
+            minimum: 1.0
+            type: integer
+            format: int32
+            default: 500
+        - name: offset
+          in: query
+          description: Represents the number of records to skip. For use with pagination.
+          schema:
+            maximum: 2147483647.0
+            minimum: 0.0
+            type: integer
+            format: int32
+            default: 0
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the membership category list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipCategoryCollection'
+              example:
+                categories:
+                  - membership_category_id: 1
+                    category_name: Category name one
+                    default_expires_date: '2023-12-20'
+                    program_name: Program name one
+                    sequence: 1
+                    inactive: false
+                    lifetime_membership: true
+                    print_renewals: true
+                    default_expires_days: 5
+                    new_mem_expires_value: 2
+                    new_mem_expires_interval: Years
+                    maximum_members: 5
+                    benefit_notes: Benefit notes one
+                    send_benefits_to: PrimaryMember
+                    minimum_dues: 50
+                    maximum_dues: 100
+                    dues_level: '40'
+                  - membership_category_id: 2
+                    category_name: Category name two
+                    program_name: Program name two
+                    sequence: 2
+                    inactive: true
+                    lifetime_membership: false
+                    print_renewals: true
+                    default_expires_days: 5
+                    new_mem_expires_value: 2
+                    new_mem_expires_interval: Years
+                    maximum_members: 2
+                    benefit_notes: Benefit notes two
+                    send_benefits_to: Donor
+                    minimum_dues: 33.33
+                    maximum_dues: 99.99
+                    dues_level: '40'
+                count: 2
+                offset: 1
+                limit: 10
+        '401':
+          description: Returned when the user does not have permission to execute this operation or does not have permission to view the requested constituents membership category list.
+        '403':
+          description: Returned when the constituent membership category capability is not enabled.
+  '/v1/memberships/categories/{membership_category_id}/subcategories':
+    get:
+      tags:
+        - Membership Categories
+      summary: Get membership subcategory list based on category.
+      description: Returns a list of membership subcategories by category ID.
+      operationId: GetMembershipSubCategoriesByCategoryIdAsync
+      parameters:
+        - name: membership_category_id
+          in: path
+          description: The membership category ID.
+          required: true
+          schema:
+            type: string
+        - name: search
+          in: query
+          description: Text to find at least partially in membership.
+          schema:
+            type: string
+        - name: sort_direction
+          in: query
+          description: 'Use ''asc'' or ''dsc'' to arrange a grid, list, or repeater in ascending or descending order based on the passed value for sorting.'
+          schema:
+            $ref: '#/components/schemas/SortDirection'
+        - name: limit
+          in: query
+          description: Represents the number of records to return. The default is 500.
+          schema:
+            maximum: 10000.0
+            minimum: 1.0
+            type: integer
+            format: int32
+            default: 500
+        - name: offset
+          in: query
+          description: Represents the number of records to skip. For use with pagination.
+          schema:
+            maximum: 2147483647.0
+            minimum: 0.0
+            type: integer
+            format: int32
+            default: 0
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the list of membership subcategories
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipSubCategoryCollection'
+              example:
+                sub_categories:
+                  - membership_subcategories_id: '1'
+                    membership_catgory_id: '1'
+                    sequence: 1
+                    membership_sub_category_name: Membership sub category one
+                  - membership_subcategories_id: '2'
+                    membership_catgory_id: '1'
+                    sequence: 2
+                    membership_sub_category_name: Membership sub category two
+                count: 2
+                offset: 1
+                limit: 10
+        '401':
+          description: Returned when the user does not have permission to execute this operation or does not have permission to view the requested constituents membership subcategory list.
+        '403':
+          description: Returned when the constituent membership subcategory capability is not enabled.
+  '/v1/memberships/{member_junction_id}/membershipsummary':
+    get:
+      tags:
+        - Membership
+      summary: Get membership summary based on membership
+      description: Returned membership summary by member junction ID
+      operationId: GetMembershipSummaryByMemberJunctionIdAsync
+      parameters:
+        - name: member_junction_id
+          in: path
+          description: Member junction ID.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains membership summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipSummary'
+              example:
+                custom_membership_id: '123456789'
+                notes: Membership summary
+                standing: Active
+                constituent_id: '1'
+                constituent_name: Doug Hall
+                expires_on_date: '2023-12-20'
+                primary_member_constituent_id: '2'
+                primary_member_constituent_name: George Smith
+                primary: true
+        '401':
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+        '403':
+          description: Returned when the user does not have permission to view memberships.
+        '400':
+          description: Returned when the specified member junction ID in the request URL is not in the appropriate format.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequest400ResponseTypes'
+              example:
+                type: urn:blackbaud:model-validation-error
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Field is required
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+        '404':
+          description: Returned when the specified membership is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+  '/v1/memberships/{member_junction_id}/membershipdetails':
+    get:
+      tags:
+        - Membership
+      summary: Get membership detail based on membership
+      description: Returns membership detail by member junction ID.
+      operationId: GetMembershipDetailByMemberJunctionIdAsync
+      parameters:
+        - name: member_junction_id
+          in: path
+          description: Member junction ID.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains membership details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipDetails'
+              example:
+                dues: 11
+                category_name: Category name
+                program_name: Program name
+                sub_category_name: Sub category name
+                last_renewed_date: '2023-12-06'
+                last_dropped_date: '2022-12-20'
+                next_renewal_date: '2024-12-06'
+                joined_date: '2023-12-26'
+                total_years: 2
+                times_renewed: 1
+                consec_years: 1
+                type: Renewal
+        '401':
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+        '403':
+          description: Returned when the user does not have permission to view memberships.
+        '400':
+          description: Returned when the specified member junction ID in the request URL is not in the appropriate format.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequest400ResponseTypes'
+              example:
+                type: urn:blackbaud:model-validation-error
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Field is required
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+        '404':
+          description: Returned when the specified membership is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+  '/v1/memberships/{member_junction_id}/transactions':
+    get:
+      tags:
+        - Membership Transactions
+      summary: Get membership history list
+      description: Returns the membership history list by member junction ID.
+      operationId: GetMembershipTransactionsByMemberJunctionIdAsync
+      parameters:
+        - name: member_junction_id
+          in: path
+          description: Member junction ID.
+          required: true
+          schema:
+            type: string
+        - name: sort_by
+          in: query
+          description: Order By clause for sorting operations.
+          schema:
+            $ref: '#/components/schemas/MembershipHistorySortFields'
+        - name: sort_direction
+          in: query
+          description: 'Use ''asc'' or ''dsc'' to arrange a grid, list, or repeater in ascending or descending order based on the passed value for sorting.'
+          schema:
+            $ref: '#/components/schemas/SortDirection'
+        - name: limit
+          in: query
+          description: Represents the number of records to return. The default is 500.
+          schema:
+            maximum: 10000.0
+            minimum: 1.0
+            type: integer
+            format: int32
+            default: 500
+        - name: offset
+          in: query
+          description: Represents the number of records to skip. For use with pagination.
+          schema:
+            maximum: 2147483647.0
+            minimum: 0.0
+            type: integer
+            format: int32
+            default: 0
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the membership history list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipHistoryCollection'
+              example:
+                transactions:
+                  - id: '1'
+                    category_name: Category name one
+                    program_name: Program name one
+                    sub_category_name: Sub category name one
+                    reason: Special interest
+                    membership_comment: Membership comment one
+                    activity_date: '2023-12-26'
+                    type: Joined
+                    gifts:
+                      - gift_id: '2021'
+                        applied_amount: 100
+                      - gift_id: '2029'
+                        applied_amount: 33
+                  - id: '2'
+                    category_name: Category name two
+                    program_name: Program name two
+                    sub_category_name: Sub category name two
+                    activity_date: '2023-12-20'
+                    type: Dropped
+                count: 2
+                offset: 0
+                limit: 10
+        '401':
+          description: Returned when the user does not have permission to execute this operation or does not have permission to view the requested constituents membership history list.
+        '403':
+          description: Returned when the constituent membership history capability is not enabled.
+        '400':
+          description: Returned when the specified member junction ID in the request URL is not in the appropriate format.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequest400ResponseTypes'
+              example:
+                type: urn:blackbaud:model-validation-error
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Field is required
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+        '404':
+          description: Returned when the specified membership history is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+  '/v1/memberships/{member_junction_id}/membershipcards':
+    get:
+      tags:
+        - Membership Cards
+      summary: Get membership cards for membership
+      description: Returned membership cards by member junction ID
+      operationId: GetMembershipCardsByMemberJunctionIdAsync
+      parameters:
+        - name: member_junction_id
+          in: path
+          description: Member Junction ID.
+          required: true
+          schema:
+            type: string
+        - name: sort_by
+          in: query
+          description: Order By clause for sorting operations.
+          schema:
+            $ref: '#/components/schemas/MembershipCardSortFields'
+        - name: sort_direction
+          in: query
+          description: 'Use ''asc'' or ''dsc'' to arrange a grid, list, or repeater in ascending or descending order based on the passed value for sorting.'
+          schema:
+            $ref: '#/components/schemas/SortDirection'
+        - name: limit
+          in: query
+          description: Represents the number of records to return. The default is 500.
+          schema:
+            maximum: 10000.0
+            minimum: 1.0
+            type: integer
+            format: int32
+            default: 500
+        - name: offset
+          in: query
+          description: Represents the number of records to skip. For use with pagination.
+          schema:
+            maximum: 2147483647.0
+            minimum: 0.0
+            type: integer
+            format: int32
+            default: 0
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains membership cards.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipCardsCollection'
+              example:
+                membership_cards:
+                  - membership_cards_id: 1
+                    membership_id: 1
+                    joint_member: false
+                    member_name: Mr Test Name
+                    name_on_card: Mr Test Name
+                    relation: Self
+                    primary: true
+                    card_member: true
+                    number_of_cards: 1
+                    card_type: Test
+                    status: Printed
+                    valid_to_date: '2024-11-29T12:00:00.0000000+00:00'
+                    last_printed_on: '2024-11-29T12:00:00.0000000+00:00'
+                    sequence: 1
+                    card_expires: Same Dates
+                    address_to_print: Primary Member
+                    valid_from_date: '2024-01-01T12:00:00.0000000+00:00'
+                    editable: false
+                  - membership_cards_id: 2
+                    membership_id: 2
+                    joint_member: true
+                    joint_member_id: 1
+                    member_name: Mr Test Name Two
+                    name_on_card: Test Name Two
+                    relation: Wife
+                    primary: false
+                    card_member: true
+                    number_of_cards: 2
+                    card_type: Test
+                    status: DoNotPrint
+                    valid_to_date: '2024-11-29T12:00:00.0000000+00:00'
+                    last_printed_on: '2024-11-29T12:00:00.0000000+00:00'
+                    sequence: 2
+                    card_expires: Lifetime
+                    address_to_print: Constituent
+                    valid_from_date: '2024-01-01T12:00:00.0000000+00:00'
+                    editable: true
+                count: 2
+                offset: 0
+                limit: 10
+        '401':
+          description: Returned when the user does not have permission to execute this operation or does not have permission to view the requested constituents membership cards list.
+        '403':
+          description: Returned when the user does not have permission to view memberships.
+        '400':
+          description: Returned when the specified membership junction ID in the request URL is not in the appropriate format.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequest400ResponseTypes'
+              example:
+                type: urn:blackbaud:model-validation-error
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Field is required
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+        '404':
+          description: Returned when the specified membership is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+  '/v1/memberships/{memberjunction_id}/fundraisers':
+    get:
+      tags:
+        - Membership Fundraisers
+      summary: Get membership fundraisers list
+      description: Returns the membership assigned fundraisers list.
+      operationId: GetAssignedFundraisersByMemberJunctionIdAsync
+      parameters:
+        - name: memberjunction_id
+          in: path
+          description: The member junction ID.
+          required: true
+          schema:
+            type: string
+        - name: sort_by
+          in: query
+          description: Order By clause for sorting operations.
+          schema:
+            $ref: '#/components/schemas/MembershipFundraisersSortFields'
+        - name: sort_direction
+          in: query
+          description: 'Use ''asc'' or ''dsc'' to arrange a grid, list, or repeater in ascending or descending order based on the passed value for sorting.'
+          schema:
+            $ref: '#/components/schemas/SortDirection'
+        - name: limit
+          in: query
+          description: Represents the number of records to return. The default is 500.
+          schema:
+            maximum: 10000.0
+            minimum: 1.0
+            type: integer
+            format: int32
+            default: 500
+        - name: offset
+          in: query
+          description: Represents the number of records to skip. For use with pagination.
+          schema:
+            maximum: 2147483647.0
+            minimum: 0.0
+            type: integer
+            format: int32
+            default: 0
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the membership fundraisers list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipFundraiserCollection'
+              example:
+                fundraisers:
+                  - solicitor_id: 1
+                    full_name: Fundraiser name
+                  - solicitor_id: 2
+                    full_name: Fundraiser name two
+                count: 2
+                offset: 1
+                limit: 10
+        '401':
+          description: Returned when the user does not have permission to execute this operation or does not have permission to view the requested constituents membership fundraisers.
+        '403':
+          description: Returned when the constituent membership fundraisers capability is not enabled.
+        '400':
+          description: Returned when the specified joint membership ID in the request URL is not in the appropriate format.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequest400ResponseTypes'
+              example:
+                type: urn:blackbaud:model-validation-error
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Field is required
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+        '404':
+          description: Returned when the specified membership fundraiser is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+  '/v1/memberships/{member_junction_id}/linkedgifts':
+    get:
+      tags:
+        - Membership Gifts
+      summary: Get linked gifts for membership
+      description: Returned linked gifts by joint membership ID
+      operationId: GetLinkedGiftsByMemberJunctionIdAsync
+      parameters:
+        - name: member_junction_id
+          in: path
+          description: Member Junction ID.
+          required: true
+          schema:
+            type: string
+        - name: sort_by
+          in: query
+          description: Order By clause for sorting operations.
+          schema:
+            $ref: '#/components/schemas/LinkedGiftSortFields'
+        - name: sort_direction
+          in: query
+          description: 'Use ''asc'' or ''dsc'' to arrange a grid, list, or repeater in ascending or descending order based on the passed value for sorting.'
+          schema:
+            $ref: '#/components/schemas/SortDirection'
+        - name: limit
+          in: query
+          description: Represents the number of records to return. The default is 500.
+          schema:
+            maximum: 10000.0
+            minimum: 1.0
+            type: integer
+            format: int32
+            default: 500
+        - name: offset
+          in: query
+          description: Represents the number of records to skip. For use with pagination.
+          schema:
+            maximum: 2147483647.0
+            minimum: 0.0
+            type: integer
+            format: int32
+            default: 0
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains linked gifts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LinkedGiftsCollection'
+              example:
+                linked_gifts:
+                  - transaction_gift_id: 101
+                    gift_id: 1
+                    gift_type: Cash
+                    applied_amount: 100
+                    constituent_name: John Smith
+                    gift_date: '2024-11-29'
+                count: 1
+                offset: 0
+                limit: 10
+        '401':
+          description: Returned when the user does not have permission to execute this operation or does not have permission to view the requested constituents linked gifts list.
+        '403':
+          description: Returned when the user does not have permission to view linked gifts.
+        '400':
+          description: Returned when the specified membership junction ID in the request URL is not in the appropriate format.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequest400ResponseTypes'
+              example:
+                type: urn:blackbaud:model-validation-error
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Field is required
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+        '404':
+          description: Returned when the specified linked gifts is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+  '/v1/memberships/{member_junction_id}/membershipgift':
+    get:
+      tags:
+        - Gift Of Membership
+      summary: Get gift of membership
+      description: Returns the gift of membership.
+      operationId: GetGiftOfMembershipByMemberJunctionIdAsync
+      parameters:
+        - name: member_junction_id
+          in: path
+          description: Member junction ID
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the gift of membership.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GiftOfMembership'
+              example:
+                id: '273'
+                special_message: Test message
+                send_notice_to: Both
+                given_by: Mr. Mark
+        '401':
+          description: Returned when the user does not have permission to execute this operation or does not have permission to view the requested constituents gift of membership.
+        '403':
+          description: Returned when the constituent membership capability is not enabled.
+        '400':
+          description: Returned when the specified membership ID in the request URL is not in the appropriate format.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequest400ResponseTypes'
+              example:
+                type: urn:blackbaud:model-validation-error
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Field is required
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+        '404':
+          description: Returned when the specified gift of membership is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+  '/v1/memberships/{member_junction_id}/benefits':
+    get:
+      tags:
+        - Membership Benefits
+      summary: Get membership benefits list
+      description: Returns the membership benefits list.
+      operationId: GetMembershipBenefitsByMemberJunctionIdAsync
+      parameters:
+        - name: member_junction_id
+          in: path
+          description: The member junction ID.
+          required: true
+          schema:
+            type: string
+        - name: sort_direction
+          in: query
+          description: 'Use ''asc'' or ''dsc'' to arrange a grid, list, or repeater in ascending or descending order based on the passed value for sorting.'
+          schema:
+            $ref: '#/components/schemas/SortDirection'
+        - name: limit
+          in: query
+          description: Represents the number of records to return. The default is 500.
+          schema:
+            maximum: 10000.0
+            minimum: 1.0
+            type: integer
+            format: int32
+            default: 500
+        - name: offset
+          in: query
+          description: Represents the number of records to skip. For use with pagination.
+          schema:
+            maximum: 2147483647.0
+            minimum: 0.0
+            type: integer
+            format: int32
+            default: 0
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the membership benefit list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipBenefitCollection'
+              example:
+                benefits:
+                  - benefits_id: 1
+                    benefit: Free Admission
+                    count: 2
+                    unit_cost: 10
+                    total_benefit_value: 11
+                    currency_symbol: $
+                    sent: Sent
+                    comments: Latest Benefit
+                  - benefits_id: 2
+                    benefit: 20% Free Admission
+                    count: 2
+                    unit_cost: 5
+                    total_benefit_value: 10
+                    currency_symbol: $
+                    sent: Sent
+                    comments: Last Benefit
+                total_value: 21
+                send_benefits_to: PrimaryMember
+                waive_benefits: false
+                count: 2
+                offset: 0
+                limit: 10
+        '401':
+          description: Returned when the user does not have permission to execute this operation or does not have permission to view the requested  membership benefit list.
+        '403':
+          description: Returned when the  membership benefit capability is not enabled.
+        '400':
+          description: Returned when the specified member junction ID in the request URL is not in the appropriate format.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequest400ResponseTypes'
+              example:
+                type: urn:blackbaud:model-validation-error
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Field is required
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+        '404':
+          description: Returned when the specified membership is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+  '/v1/memberships/{member_junction_id}/customfields':
+    get:
+      tags:
+        - Membership Custom Fields
+      summary: Get membership custom fields
+      description: Returns the membership custom fields.
+      operationId: GetMembershipCustomFieldsByMemberJunctionIdAsync
+      parameters:
+        - name: member_junction_id
+          in: path
+          description: The member junction ID.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the membership custom fields.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomFieldsCollection'
+              example:
+                custom_fields:
+                  - id: '77'
+                    category: Leadership Positions
+                    comment: Comment!
+                    date: '2025-03-10T12:00:00.0000000+00:00'
+                    parent_id: '1'
+                    type: Text
+                    value: President
+                  - id: '42'
+                    category: Day Passes
+                    comment: Comment!
+                    date: '2025-03-10T12:00:00.0000000+00:00'
+                    parent_id: '1'
+                    type: Number
+                    value: 5
+                count: 2
+        '401':
+          description: Returned when the user does not have permission to execute this operation or does not have permission to view the requested membership custom fields.
+        '403':
+          description: Returned when the membership custom fields capability is not enabled.
+        '400':
+          description: Returned when the specified member junction ID in the request URL is not in the appropriate format.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequest400ResponseTypes'
+              example:
+                type: urn:blackbaud:model-validation-error
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Field is required
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+        '404':
+          description: Returned when the specified membership is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+    post:
+      tags:
+        - Membership Custom Fields
+      summary: Add membership custom fields
+      description: Add membership custom fields.
+      operationId: AddMembershipCustomFieldsAsync
+      parameters:
+        - name: member_junction_id
+          in: path
+          description: The immutable system record ID of the membership record to add custom fields for.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: An object that represents the custom fields to create.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomFieldsCreate'
+            example:
+              custom_fields:
+                - category: Exhibit Interests
+                  comment: Add Custom Field for membership
+                  date: '2024-01-19T06:30:00.0000000+00:00'
+                  parent_id: '47'
+                  value: Contemporary Art
+                - category: Holiday Gift?
+                  comment: Add Custom Field for membership
+                  date: '2024-01-19T06:30:00.0000000+00:00'
+                  parent_id: '47'
+                  value: 'True'
+      responses:
+        '200':
+          description: 'Returned when the operation successfully creates custom fields. The response body contains the IDs of the new custom fields, returned in the same order as the request.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipCustomFieldsCreated'
+              example:
+                custom_field_ids:
+                  - '120'
+                  - '121'
+        '401':
+          description: Returned when the user does not have permission to execute this operation or does not have permission to edit the requested membership.
+        '403':
+          description: Returned when the user does not have permission to create the custom fields.
+        '400':
+          description: Returned when the request body is not in the appropriate format.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequest400ResponseTypes'
+              example:
+                type: urn:blackbaud:model-validation-error
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Field is required
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+        '404':
+          description: Returned when the specified membership is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+  '/v1/constituents/{constituent_id}/v2/membership':
+    post:
+      tags:
+        - Constituent
+      summary: Add membership endpoint
+      description: Creates a membership endpoint.
+      operationId: CreateMembershipV2
+      parameters:
+        - name: constituent_id
+          in: path
+          description: The Constituent ID
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: Membership
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MembershipCreateV2'
+            example:
+              send_benefits_to: PrimaryMember
+              membership_cards:
+                - primary: true
+                  editable: true
+                  card_expires: SameDates
+                  address_to_print: PrimaryMember
+                  valid_from_date: '2024-01-20'
+                  joint_member: false
+                  card_member: true
+                  name_on_card: Robert
+                  no_of_cards: 2
+                  valid_to_date: '2025-12-20'
+                  status: NotPrinted
+                - primary: false
+                  editable: false
+                  constit_add_sal_id: 2
+                  relation_type:
+                    legacy_id: '593'
+                    value: Wife
+                  card_expires: SameDates
+                  address_to_print: PrimaryMember
+                  valid_from_date: '2024-01-20'
+                  relationship_id: 69
+                  joint_member: true
+                  joint_member_id: 266
+                  card_member: true
+                  name_on_card: John Doe
+                  no_of_cards: 1
+                  valid_to_date: '2025-12-20'
+                  last_printed_on_date: '2025-12-20'
+                  card_type:
+                    legacy_id: '156'
+                    value: Child
+                  status: NotPrinted
+              membership_benefits:
+                - benefit:
+                    legacy_id: '157'
+                    value: Child
+                  count: 1
+                  unit_cost: 1
+                  total_benefit_value: 10
+                  sent: '10092023'
+                  comments: 3 children's t-shirts
+              given_by_id: '280'
+              special_message: Happy Birthday!
+              membership_fundraisers:
+                - 185
+                - 186
+                - 187
+                - 189
+              membership_link_gift:
+                gift_id: '3033'
+                applied_amount: 10
+              default_card: false
+              default_benefits: false
+              override_renewal_defaults: false
+              send_notice_to: Donor
+              waive_benefits: false
+              membership_id: '122323'
+              dues: 77.09
+              program:
+                legacy_id: '1561'
+                value: Education Program
+              reason:
+                legacy_id: '628'
+                value: Reason for membership
+              subcategory:
+                legacy_id: 56
+                value: Animals in the Wild
+              category:
+                legacy_id: 22
+                value: family
+              joined_date: '2024-01-20'
+              lifetime_membership: false
+              expires_on_date: '2025-12-20'
+              print_renewals: true
+              mem_comment: Created Membership for the Young Explorer group.
+              total_members: 1
+              total_children: 0
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the new member junction ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+              example:
+                id: '120'
+        '401':
+          description: Returned when the user does not have permission to execute this operation.
+        '403':
+          description: Returned when the constituent add membership capability is not enabled.
+  '/v1/constituents/{constituent_id}/membershipjunctionids':
+    get:
+      tags:
+        - Constituent
+      summary: Get membership junction IDs for a constituent.
+      description: Return membership junction IDs by constituent ID
+      operationId: GetMemberJunctionIdsByConstituentIdAsync
+      parameters:
+        - name: constituent_id
+          in: path
+          description: Constituent ID.
+          required: true
+          schema:
+            type: string
+        - name: sort_direction
+          in: query
+          description: 'Use ''asc'' or ''dsc'' to arrange a grid, list, or repeater in ascending or descending order based on the passed value for sorting.'
+          schema:
+            $ref: '#/components/schemas/SortDirection'
+        - name: limit
+          in: query
+          description: Represents the number of records to return. The default is 500.
+          schema:
+            maximum: 10000.0
+            minimum: 1.0
+            type: integer
+            format: int32
+            default: 500
+        - name: offset
+          in: query
+          description: Represents the number of records to skip. For use with pagination.
+          schema:
+            maximum: 2147483647.0
+            minimum: 0.0
+            type: integer
+            format: int32
+            default: 0
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains membership junction IDs.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipJunctionIdsCollection'
+              example:
+                membership_junction_ids:
+                  - '121'
+                  - '8'
+                  - '9762'
+                count: 3
+                offset: 0
+                limit: 10
+        '401':
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+  '/v1/memberships/categories/{membership_category_id}/renewalnotices':
+    get:
+      tags:
+        - Membership
+      summary: Get membership renewal notice information
+      description: Returns the membership renewal notice information.
+      operationId: GetRenewalNoticeInformationByMembershipCategoryIdAsync
+      parameters:
+        - name: membership_category_id
+          in: path
+          description: Membership category ID
+          required: true
+          schema:
+            type: string
+        - name: sort_by
+          in: query
+          description: Order By clause for sorting operations
+          schema:
+            $ref: '#/components/schemas/RenewalNoticeInformationSortFields'
+        - name: sort_direction
+          in: query
+          description: 'Use ''asc'' or ''dsc'' to arrange a grid, list, or repeater in ascending or descending order based on the passed value for sorting.'
+          schema:
+            $ref: '#/components/schemas/SortDirection'
+        - name: limit
+          in: query
+          description: Represents the number of records to return. The default is 500.
+          schema:
+            maximum: 10000.0
+            minimum: 1.0
+            type: integer
+            format: int32
+            default: 500
+        - name: offset
+          in: query
+          description: Represents the number of records to skip. For use with pagination.
+          schema:
+            maximum: 2147483647.0
+            minimum: 0.0
+            type: integer
+            format: int32
+            default: 0
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the membership renewal notice information.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RenewalNoticeInformationCollection'
+              example:
+                renewal_notices:
+                  - category_renewals_id: 1
+                    letters: General First Notice
+                    comments: Comments
+                    send_renewals_to: PrimaryMember
+                    renewal_number: 1
+                    frequency: Days
+                    renewal_type: ExpiresBefore
+                    for_membership_gifts: true
+                  - category_renewals_id: 1
+                    letters: General Second Notice
+                    comments: Comments
+                    send_renewals_to: Both
+                    renewal_number: 1
+                    frequency: Weeks
+                    renewal_type: ExpiresAfter
+                    for_membership_gifts: true
+                count: 2
+                offset: 0
+                limit: 0
+        '401':
+          description: Returned when the user does not have permission to execute this operation or does not have permission to view the requested membership renewal notice information.
+        '403':
+          description: Returned when the user does not have permission to view renewal notice information.
+        '400':
+          description: Returned when the specified membership category ID in the request URL is not in the appropriate format.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequest400ResponseTypes'
+              example:
+                type: urn:blackbaud:model-validation-error
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Field is required
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+        '404':
+          description: Returned when the specified membership category is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+  '/v1/memberships/{member_junction_id}/membershipcard':
+    post:
+      tags:
+        - Membership Cards
+      summary: Add membership cards
+      description: Add list of membership card
+      operationId: AddMembershipCardsAsync
+      parameters:
+        - name: member_junction_id
+          in: path
+          description: The member junction ID
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: List of membership card
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/MembershipCardCreate'
+            example:
+              - editable: false
+                constit_add_sal_id: 2
+                relation_type:
+                  legacy_id: '593'
+                  value: Wife
+                card_expires: SameDates
+                address_to_print: PrimaryMember
+                valid_from_date: '2024-01-20'
+                relationship_id: 69
+                joint_member: true
+                joint_member_id: 266
+                card_member: true
+                name_on_card: John Doe
+                no_of_cards: 1
+                valid_to_date: '2025-12-20'
+                last_printed_on_date: '2025-12-20'
+                card_type:
+                  legacy_id: '640'
+                  value: Child
+                status: NotPrinted
+              - editable: true
+                relation_type:
+                  legacy_id: '593'
+                  value: Wife
+                card_expires: SameDates
+                address_to_print: PrimaryMember
+                valid_from_date: '2024-01-20'
+                relationship_id: 69
+                joint_member: true
+                joint_member_id: 266
+                card_member: true
+                name_on_card: Robert
+                no_of_cards: 1
+                valid_to_date: '2025-12-20'
+                last_printed_on_date: '2025-12-20'
+                card_type:
+                  legacy_id: '640'
+                  value: Child
+                status: NotPrinted
+      responses:
+        '200':
+          description: Returned when the operation succeeds.
+        '401':
+          description: Returned when the user is not authorized.
+        '403':
+          description: Returned when the constituent does not have the permission to add membership card.
+  '/v1/memberships/{member_junction_id}/updatemembershipgift':
+    patch:
+      tags:
+        - Gift Of Membership
+      summary: Update gift of membership
+      description: Update the gift of membership.
+      operationId: EditGiftOfMembershipByMemberJunctionId
+      parameters:
+        - name: member_junction_id
+          in: path
+          description: Member junction ID
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: Changes to apply to the gift of membership
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateGiftOfMembership'
+            example:
+              special_message: Membership gift message
+              send_notice_to: Both
+              given_by_id: '772'
+              override_renewal_defaults: true
+      responses:
+        '200':
+          description: Returned when the operation succeeds.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateGiftOfMembership'
+              example:
+                special_message: Membership gift message
+                send_notice_to: Both
+                given_by_id: '772'
+                override_renewal_defaults: true
+        '401':
+          description: Returned when the user does not have permission to execute this operation or does not have permission to view the requested gift of membership.
+        '403':
+          description: Returned when the user does not have permission to edit membership.
+        '400':
+          description: Returned when the specified membership ID in the request URL is not in the appropriate format.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequest400ResponseTypes'
+              example:
+                type: urn:blackbaud:model-validation-error
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Field is required
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+        '404':
+          description: Returned when the specified membership is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+  '/v1/memberships/categories/{membership_category_id}/benefits':
+    get:
+      tags:
+        - Membership Benefits
+      summary: Get membership default benefits list
+      description: Returns the membership default benefits list.
+      operationId: GetMembershipDefaultBenefitsByMembershipCategoryIdAsync
+      parameters:
+        - name: membership_category_id
+          in: path
+          description: Membership category ID
+          required: true
+          schema:
+            type: string
+        - name: sort_by
+          in: query
+          description: Order By clause for sorting operations.
+          schema:
+            $ref: '#/components/schemas/MembershipDefaultBenefitsSortFields'
+        - name: sort_direction
+          in: query
+          description: 'Use ''asc'' or ''dsc'' to arrange a grid, list, or repeater in ascending or descending order based on the passed value for sorting.'
+          schema:
+            $ref: '#/components/schemas/SortDirection'
+        - name: limit
+          in: query
+          description: Represents the number of records to return. The default is 500.
+          schema:
+            maximum: 10000.0
+            minimum: 1.0
+            type: integer
+            format: int32
+            default: 500
+        - name: offset
+          in: query
+          description: Represents the number of records to skip. For use with pagination.
+          schema:
+            maximum: 2147483647.0
+            minimum: 0.0
+            type: integer
+            format: int32
+            default: 0
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the membership default benefit list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipBenefitCollection'
+              example:
+                benefits:
+                  - benefits_id: 1
+                    benefit: Free Admission
+                    count: 2
+                    unit_cost: 10
+                    total_benefit_value: 11
+                    currency_symbol: $
+                    sent: Sent
+                    comments: Latest Benefit
+                  - benefits_id: 2
+                    benefit: 20% Free Admission
+                    count: 2
+                    unit_cost: 5
+                    total_benefit_value: 10
+                    currency_symbol: $
+                    sent: Sent
+                    comments: Last Benefit
+                total_value: 21
+                send_benefits_to: PrimaryMember
+                waive_benefits: false
+                count: 2
+                offset: 0
+                limit: 10
+        '401':
+          description: Returned when the user does not have permission to execute this operation or does not have permission to view the requested membership default benefit list.
+        '403':
+          description: Returned when the user does not have permission to view default benefits.
+        '400':
+          description: Returned when the specified membership category ID in the request URL is not in the appropriate format.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequest400ResponseTypes'
+              example:
+                type: urn:blackbaud:model-validation-error
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Field is required
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+        '404':
+          description: Returned when the specified membership category is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+  /v1/memberships/customfields/categories/details:
+    get:
+      tags:
+        - Membership Custom Fields
+      summary: Get membership custom field category details
+      description: Returns list of membership custom field category details.
+      operationId: GetMembershipCustomFieldCategoryDetailsAsync
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the membership custom field category details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomFieldCategoryDetailsCollection'
+              example:
+                custom_field_types:
+                  - name: Purchase Location
+                    type: CodeTableEntry
+                    code_table_id: '1023'
+                    one_per_record: true
+                    sequence: 1
+                  - name: Holiday Gift
+                    type: ConstituentId
+                    code_table_id: '1223'
+                    one_per_record: true
+                    sequence: 2
+                count: 2
+        '401':
+          description: Returned when the user does not have permission to execute this operation or does not have permission to view the requested membership custom field category details.
+        '403':
+          description: Returned when the membership custom fields capability is not enabled.
+  '/v1/memberships/customfields/categories/{category_name}/values':
+    get:
+      tags:
+        - Membership Custom Fields
+      summary: Get membership custom field category values
+      description: Returns list of membership custom field category values.
+      operationId: GetMembershipCustomFieldCategoryValuesAsync
+      parameters:
+        - name: category_name
+          in: path
+          description: Category Name to be get category values
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the membership custom field category values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomFieldCategoryValuesCollection'
+              example:
+                custom_field_category_values:
+                  - South Gate
+                  - Panda Exhibit
+                  - American Civil War
+                  - Anne Frank Exhibit
+                count: 4
+        '401':
+          description: Returned when the user does not have permission to execute this operation or does not have permission to view the requested membership custom field category values.
+        '403':
+          description: Returned when the membership custom fields capability is not enabled.
+        '400':
+          description: Returned when the specified category name in the request URL is not in the appropriate format.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequest400ResponseTypes'
+              example:
+                type: urn:blackbaud:model-validation-error
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Field is required
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+        '404':
+          description: Returned when the specified Category is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+  '/v1/memberships/{member_junction_id}/addlinktogift':
+    post:
+      tags:
+        - Membership Gifts
+      summary: Add a linked gift for membership
+      description: Add link to gift
+      operationId: AddLinkToGiftAsync
+      parameters:
+        - name: member_junction_id
+          in: path
+          description: Member junction ID.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: Details about the gift to link
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LinkGiftCreate'
+            example:
+              gift_id: '1001'
+              applied_amount: 10
+      responses:
+        '200':
+          description: Returned when the operation succeeds.The response body contains the new link gift ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+              example:
+                id: '120'
+        '401':
+          description: Returned when the user is not authorized.
+        '403':
+          description: Returned when the constituent does not have the permission to link a gift to a membership.
+  '/v1/memberships/{member_junction_id}/fundraiser':
+    post:
+      tags:
+        - Membership Fundraisers
+      summary: Add membership fundraiser
+      description: Add list of fundraiser
+      operationId: AddMembershipFundraiserAsync
+      parameters:
+        - name: member_junction_id
+          in: path
+          description: Membership Junction ID
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: List of membership fundraisers to be added
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: integer
+                format: int32
+            example:
+              - 185
+              - 186
+              - 187
+              - 189
+      responses:
+        '200':
+          description: OK
+        '401':
+          description: Returned when the user is not authorized.
+        '403':
+          description: Returned when the constituent does not have the permission to add fundraiser.
+        '404':
+          description: Returned when the specified membership is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+  '/v1/memberships/{member_junction_id}/editmembershipdetails':
+    patch:
+      tags:
+        - Membership
+      summary: Edit membership detail endpoint
+      description: Edit membership detail.
+      operationId: EditMembership
+      parameters:
+        - name: member_junction_id
+          in: path
+          description: Member junction ID.
+          required: true
+          schema:
+            type: string
+        - name: overwrite_benefits
+          in: query
+          description: Flag to overwrite benefits
+          schema:
+            type: boolean
+            default: false
+      requestBody:
+        description: Membership detail
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MembershipEdit'
+            example:
+              membership_id: '122323'
+              dues: 77.09
+              program:
+                legacy_id: '1561'
+                value: Education Program
+              subcategory:
+                legacy_id: 56
+                value: Animals in the Wild
+              category:
+                legacy_id: 22
+                value: family
+              lifetime_membership: false
+              expires_on_date: '2025-12-20'
+              print_renewals: true
+              total_members: 1
+              total_children: 0
+              notes: Annual membership with premium benefits.
+              reason:
+                legacy_id: '100'
+                value: Relocation
+              mem_comment: Example comment for membership edit
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the new member junction ID.
+        '401':
+          description: Returned when the user does not have permission to execute this operation.
+        '403':
+          description: Returned when the constituent edit membership capability is not enabled.
+  '/v1/memberships/{member_junction_id}/customfield/{custom_field_id}':
+    patch:
+      tags:
+        - Membership Custom Fields
+      summary: Edit membership custom field
+      description: Edit membership custom field.
+      operationId: EditMembershipCustomFieldAsync
+      parameters:
+        - name: member_junction_id
+          in: path
+          description: The immutable system record ID of the membership record to update custom fields for.
+          required: true
+          schema:
+            type: string
+        - name: custom_field_id
+          in: path
+          description: Custom Field ID to update custom field.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: An object that represents the custom fields to update.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomFieldUpdate'
+            example:
+              value: Contemporary Art
+              date: '2024-01-19T06:30:00.0000000+00:00'
+              comment: Updating custom field for membership
+      responses:
+        '200':
+          description: Returned when the operation successfully updates custom field.
+        '401':
+          description: Returned when the user does not have permission to execute this operation or does not have permission to edit the requested membership custom field.
+        '403':
+          description: Returned when the user does not have permission to update the custom field.
+        '400':
+          description: Returned when the request body is not in the appropriate format.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequest400ResponseTypes'
+              example:
+                type: urn:blackbaud:model-validation-error
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Field is required
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+        '404':
+          description: Returned when the specified membership is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+    delete:
+      tags:
+        - Membership Custom Fields
+      summary: Delete a membership custom field
+      description: Deletes a membership custom field.
+      operationId: DeleteMembershipCustomFieldAsync
+      parameters:
+        - name: member_junction_id
+          in: path
+          description: The immutable system record ID of the membership record to delete custom field for.
+          required: true
+          schema:
+            type: string
+        - name: custom_field_id
+          in: path
+          description: Custom Field ID to delete.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the membership custom field is successfully deleted.
+        '401':
+          description: Returned when the user does not have permission to execute this operation.
+        '403':
+          description: Returned when the user does not have permission to delete membership custom fields.
+        '400':
+          description: Returned when the specified member junction ID or custom field ID in the request URL is not in the appropriate format.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequest400ResponseTypes'
+              example:
+                type: urn:blackbaud:model-validation-error
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Field is required
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+        '404':
+          description: Returned when the specified membership custom field is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+  '/v1/memberships/gifts/{gift_id}/availableamount':
+    get:
+      tags:
+        - Membership Gifts
+      summary: Get the available gift amount
+      description: Returns the remaining available gift amount
+      operationId: GetAvailableGiftAmount
+      parameters:
+        - name: gift_id
+          in: path
+          description: The legacy system ID of the gift
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the gift available amount
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GiftAvailableAmount'
+              example:
+                gift_amount: 100
+                available_amount: 90
+                currency_symbol: $
+        '401':
+          description: Returned when the user does not have permission to execute this operation or does not have permission to view the requested gift available amount.
+        '403':
+          description: Returned when the user does not have permission to view the gift.
+        '400':
+          description: Returned when the specified gift ID is not in the appropriate format.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequest400ResponseTypes'
+              example:
+                type: urn:blackbaud:model-validation-error
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Field is required
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+        '404':
+          description: Returned when the specified gift is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+  '/v1/memberships/gifts/{gift_id}/membershipjunctionids':
+    get:
+      tags:
+        - Membership Gifts
+      summary: Get membership junction IDs for a gift.
+      description: Return membership junction IDs by gift ID
+      operationId: GetMemberJunctionIdsByGiftIdAsync
+      parameters:
+        - name: gift_id
+          in: path
+          description: Gift ID.
+          required: true
+          schema:
+            type: string
+        - name: sort_direction
+          in: query
+          description: 'Use ''asc'' or ''dsc'' to arrange a grid, list, or repeater in ascending or descending order based on the passed value for sorting.'
+          schema:
+            $ref: '#/components/schemas/SortDirection'
+        - name: limit
+          in: query
+          description: Represents the number of records to return. The default is 500.
+          schema:
+            maximum: 10000.0
+            minimum: 1.0
+            type: integer
+            format: int32
+            default: 500
+        - name: offset
+          in: query
+          description: Represents the number of records to skip. For use with pagination.
+          schema:
+            maximum: 2147483647.0
+            minimum: 0.0
+            type: integer
+            format: int32
+            default: 0
+        - name: constituent_id
+          in: query
+          description: Optional constituent ID to filter results to a specific constituent.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains membership junction IDs.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipJunctionIdsCollection'
+              example:
+                membership_junction_ids:
+                  - '121'
+                  - '8'
+                  - '9762'
+                count: 3
+                offset: 0
+                limit: 10
+        '401':
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+  '/v1/memberships/{member_junction_id}/membershipcards/{membership_card_id}':
+    get:
+      tags:
+        - Membership Cards
+      summary: Get a single membership card
+      description: Returns a single membership card by ID
+      operationId: GetMembershipCardByIdAsync
+      parameters:
+        - name: member_junction_id
+          in: path
+          description: Member Junction ID.
+          required: true
+          schema:
+            type: string
+        - name: membership_card_id
+          in: path
+          description: Membership Card ID.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the membership card.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipCard'
+              example:
+                membership_cards_id: 1
+                membership_id: 1
+                joint_member: false
+                member_name: Robert Hernandez
+                name_on_card: Bob Hernandez
+                relation: Self
+                primary: true
+                card_member: true
+                number_of_cards: 1
+                card_type: Test
+                status: Printed
+                valid_to_date: '2024-11-29T12:00:00.0000000+00:00'
+                last_printed_on: '2024-11-29T12:00:00.0000000+00:00'
+                sequence: 1
+                card_expires: SameDates
+                address_to_print: PrimaryMember
+                valid_from_date: '2024-01-01T12:00:00.0000000+00:00'
+                editable: false
+        '401':
+          description: Returned when the user does not have permission to execute this operation or does not have permission to view the requested membership card.
+        '403':
+          description: Returned when the user does not have permission to view memberships.
+        '400':
+          description: Returned when the specified membership junction ID or membership card ID in the request URL is not in the appropriate format.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequest400ResponseTypes'
+              example:
+                type: urn:blackbaud:model-validation-error
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Field is required
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+        '404':
+          description: Returned when the specified membership card is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+    patch:
+      tags:
+        - Membership Cards
+      summary: Edit a membership card
+      description: "Edits a membership card with the specified changes.\r\n\r\n**Note:** Depending on the type of update, you may need to include additional fields in the request body. For example:\r\n\r\n- To change the **Valid From** or **Valid To** dates, include `card_expires`.\r\n\r\n- To change the **name on the card**, include `card_member` and `editable`."
+      operationId: EditMembershipCardAsync
+      parameters:
+        - name: member_junction_id
+          in: path
+          description: Member Junction ID.
+          required: true
+          schema:
+            type: string
+        - name: membership_card_id
+          in: path
+          description: Membership Card ID.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: The changes to apply to the membership card.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MembershipCardEdit'
+            example:
+              relation_type:
+                legacy_id: '593'
+                value: Wife
+              card_expires: SameDates
+              address_to_print: PrimaryMember
+              valid_from_date: '2024-01-20'
+              name_on_card: Jane Doe
+              no_of_cards: 2
+              valid_to_date: '2025-12-20'
+              card_type:
+                legacy_id: '640'
+                value: Child
+              status: NotPrinted
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the updated membership card.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipCard'
+              example:
+                membership_cards_id: 1
+                membership_id: 1
+                joint_member: false
+                member_name: Robert Hernandez
+                name_on_card: Bob Hernandez
+                relation: Self
+                primary: true
+                card_member: true
+                number_of_cards: 1
+                card_type: Test
+                status: Printed
+                valid_to_date: '2024-11-29T12:00:00.0000000+00:00'
+                last_printed_on: '2024-11-29T12:00:00.0000000+00:00'
+                sequence: 1
+                card_expires: SameDates
+                address_to_print: PrimaryMember
+                valid_from_date: '2024-01-01T12:00:00.0000000+00:00'
+                editable: false
+        '401':
+          description: Returned when the user does not have permission to execute this operation.
+        '403':
+          description: Returned when the user does not have permission to edit memberships.
+        '400':
+          description: Returned when the request body is invalid or contains validation errors.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequest400ResponseTypes'
+              example:
+                type: urn:blackbaud:model-validation-error
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Field is required
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+        '404':
+          description: Returned when the specified membership card is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+    delete:
+      tags:
+        - Membership Cards
+      summary: Delete a membership card
+      description: 'Deletes a membership card. Note: The primary member card cannot be deleted.'
+      operationId: DeleteMembershipCardAsync
+      parameters:
+        - name: member_junction_id
+          in: path
+          description: Member Junction ID.
+          required: true
+          schema:
+            type: string
+        - name: membership_card_id
+          in: path
+          description: Membership Card ID.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the membership card is successfully deleted.
+        '401':
+          description: Returned when the user does not have permission to execute this operation.
+        '403':
+          description: Returned when the user does not have permission to delete memberships.
+        '400':
+          description: Returned when attempting to delete the primary member card.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequest400ResponseTypes'
+              example:
+                type: urn:blackbaud:model-validation-error
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Field is required
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+        '404':
+          description: Returned when the specified membership card is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+  '/v1/memberships/{member_junction_id}/renew':
+    post:
+      tags:
+        - Membership Lifecycle
+      summary: Renew a membership
+      description: 'Renews a membership. Supports renewal at the same level, upgrade, or downgrade.'
+      operationId: CreateMembershipRenewal
+      parameters:
+        - name: member_junction_id
+          in: path
+          description: Member Junction ID.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: Membership renewal request.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MembershipRenew'
+            example:
+              renewal_type: Same
+              dues: 100
+              program:
+                legacy_id: '1561'
+                value: Annual Membership
+              reason:
+                legacy_id: '1331'
+                value: Renewal
+              subcategory:
+                legacy_id: 56
+                value: Individual
+              category:
+                legacy_id: 22
+                value: Gold Member
+              renewal_date: '2025-01-15'
+              lifetime_membership: false
+              expires_on_date: '2026-01-15'
+              print_renewals: true
+              mem_comment: Annual membership renewal
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the member junction ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+              example:
+                id: '120'
+        '401':
+          description: Returned when the user is not authorized.
+        '403':
+          description: Returned when the user does not have permission to renew memberships.
+        '400':
+          description: Returned when the request is invalid or the membership cannot be renewed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequest400ResponseTypes'
+              example:
+                type: urn:blackbaud:model-validation-error
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Field is required
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+        '404':
+          description: Returned when the specified membership is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+  '/v1/memberships/{member_junction_id}/downgrade':
+    post:
+      tags:
+        - Membership Lifecycle
+      summary: Downgrade a membership during cycle
+      description: Downgrades a membership during cycle. Only Active or Lapsed memberships can be downgraded.
+      operationId: CreateMembershipDowngrade
+      parameters:
+        - name: member_junction_id
+          in: path
+          description: Member Junction ID.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: Membership downgrade request.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MembershipDowngrade'
+            example:
+              dues: 75
+              program:
+                legacy_id: '1561'
+                value: Annual Membership
+              reason:
+                legacy_id: '1332'
+                value: Downgrade
+              subcategory:
+                legacy_id: 56
+                value: Individual
+              category:
+                legacy_id: 21
+                value: Silver Member
+              downgrade_date: '2024-01-15'
+              lifetime_membership: false
+              expires_on_date: '2025-01-15'
+              print_renewals: true
+              mem_comment: Membership downgrade during cycle
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the member junction ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+              example:
+                id: '120'
+        '401':
+          description: Returned when the user is not authorized.
+        '403':
+          description: Returned when the user does not have permission to downgrade memberships.
+        '400':
+          description: Returned when the request is invalid or the membership cannot be downgraded.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequest400ResponseTypes'
+              example:
+                type: urn:blackbaud:model-validation-error
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Field is required
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+        '404':
+          description: Returned when the specified membership is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+  '/v1/memberships/{member_junction_id}/upgrade':
+    post:
+      tags:
+        - Membership Lifecycle
+      summary: Upgrade a membership during cycle
+      description: Upgrades a membership during cycle. Only Active or Lapsed memberships can be upgraded.
+      operationId: CreateMembershipUpgrade
+      parameters:
+        - name: member_junction_id
+          in: path
+          description: Member Junction ID.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: Membership upgrade request.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MembershipUpgrade'
+            example:
+              dues: 150
+              program:
+                legacy_id: '1561'
+                value: Annual Membership
+              reason:
+                legacy_id: '1331'
+                value: Upgrade
+              subcategory:
+                legacy_id: 56
+                value: Individual
+              category:
+                legacy_id: 23
+                value: Platinum Member
+              upgrade_date: '2024-01-15'
+              lifetime_membership: false
+              expires_on_date: '2025-01-15'
+              print_renewals: true
+              mem_comment: Membership upgrade during cycle
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the member junction ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+              example:
+                id: '120'
+        '401':
+          description: Returned when the user is not authorized.
+        '403':
+          description: Returned when the user does not have permission to upgrade memberships.
+        '400':
+          description: Returned when the request is invalid or the membership cannot be upgraded.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequest400ResponseTypes'
+              example:
+                type: urn:blackbaud:model-validation-error
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Field is required
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+        '404':
+          description: Returned when the specified membership is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+  '/v1/memberships/{member_junction_id}/rejoin':
+    post:
+      tags:
+        - Membership Lifecycle
+      summary: Rejoin a dropped membership
+      description: Rejoins a dropped membership. Only Dropped memberships can be rejoined.
+      operationId: CreateMembershipRejoin
+      parameters:
+        - name: member_junction_id
+          in: path
+          description: Member Junction ID.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: Membership rejoin request.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MembershipRejoin'
+            example:
+              rejoin_type: Same
+              dues: 100
+              program:
+                legacy_id: '1561'
+                value: Annual Membership
+              reason:
+                legacy_id: '1331'
+                value: Rejoin
+              subcategory:
+                legacy_id: 56
+                value: Individual
+              category:
+                legacy_id: 22
+                value: Gold Member
+              rejoin_date: '2024-01-15'
+              lifetime_membership: false
+              expires_on_date: '2025-01-15'
+              print_renewals: true
+              mem_comment: Membership rejoin after previous drop
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the member junction ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+              example:
+                id: '120'
+        '401':
+          description: Returned when the user is not authorized.
+        '403':
+          description: Returned when the user does not have permission to rejoin memberships.
+        '400':
+          description: Returned when the request is invalid or the membership cannot be rejoined.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequest400ResponseTypes'
+              example:
+                type: urn:blackbaud:model-validation-error
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Field is required
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+        '404':
+          description: Returned when the specified membership is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+  '/v1/memberships/{member_junction_id}/drop':
+    post:
+      tags:
+        - Membership Lifecycle
+      summary: Drop a membership
+      description: Drops a membership. Only Active or Lapsed memberships can be dropped.
+      operationId: CreateMembershipDrop
+      parameters:
+        - name: member_junction_id
+          in: path
+          description: Member Junction ID.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: Membership drop request.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MembershipDrop'
+            example:
+              drop_date: '2024-12-31'
+              reason:
+                legacy_id: '1'
+              mem_comment: Member requested to drop membership
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the member junction ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+              example:
+                id: '120'
+        '401':
+          description: Returned when the user is not authorized.
+        '403':
+          description: Returned when the user does not have permission to drop memberships.
+        '400':
+          description: Returned when the request is invalid or the membership cannot be dropped.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequest400ResponseTypes'
+              example:
+                type: urn:blackbaud:model-validation-error
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Field is required
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+        '404':
+          description: Returned when the specified membership is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+  '/v1/memberships/{member_junction_id}':
+    delete:
+      tags:
+        - Membership
+      summary: Delete a membership
+      description: Deletes a membership.
+      operationId: DeleteMembershipAsync
+      parameters:
+        - name: member_junction_id
+          in: path
+          description: Member Junction ID.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the membership is successfully deleted.
+        '401':
+          description: Returned when the user does not have permission to execute this operation.
+        '403':
+          description: Returned when the user does not have permission to delete memberships.
+        '400':
+          description: Returned when the specified member junction ID in the request URL is not in the appropriate format.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequest400ResponseTypes'
+              example:
+                type: urn:blackbaud:model-validation-error
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Field is required
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+        '404':
+          description: Returned when the specified membership is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+  '/v1/memberships/{member_junction_id}/fundraiser/{fundraiser_id}':
+    delete:
+      tags:
+        - Membership Fundraisers
+      summary: Delete a membership fundraiser
+      description: Deletes a membership fundraiser.
+      operationId: DeleteMembershipFundraiserAsync
+      parameters:
+        - name: member_junction_id
+          in: path
+          description: Membership Junction ID
+          required: true
+          schema:
+            type: string
+        - name: fundraiser_id
+          in: path
+          description: Fundraiser ID to delete
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the membership fundraiser is successfully deleted.
+        '401':
+          description: Returned when the user does not have permission to execute this operation.
+        '403':
+          description: Returned when the user does not have permission to delete membership fundraisers.
+        '400':
+          description: Returned when the specified member junction ID or fundraiser ID in the request URL is not in the appropriate format.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequest400ResponseTypes'
+              example:
+                type: urn:blackbaud:model-validation-error
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Field is required
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+        '404':
+          description: Returned when the specified membership fundraiser is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+  '/v1/memberships/{member_junction_id}/linkedgifts/{gift_id}':
+    patch:
+      tags:
+        - Membership Gifts
+      summary: Edit a linked gift for membership
+      description: Edit the applied amount for a linked gift on a membership.
+      operationId: EditLinkedGiftAsync
+      parameters:
+        - name: member_junction_id
+          in: path
+          description: The member junction ID of the membership.
+          required: true
+          schema:
+            type: string
+        - name: gift_id
+          in: path
+          description: The ID of the gift to edit.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: The updated gift link details.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LinkedGiftEdit'
+            example:
+              applied_amount: 50
+      responses:
+        '200':
+          description: Returned when the operation succeeds.
+        '401':
+          description: Returned when the user is not authorized.
+        '403':
+          description: Returned when the user does not have permission to edit a linked gift.
+        '400':
+          description: Returned when the request is not valid.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequest400ResponseTypes'
+              example:
+                type: urn:blackbaud:model-validation-error
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Field is required
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+        '404':
+          description: Returned when the specified membership or gift is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+    delete:
+      tags:
+        - Membership Gifts
+      summary: Delete a linked gift for membership
+      description: Removes a linked gift from a membership.
+      operationId: DeleteLinkedGiftAsync
+      parameters:
+        - name: member_junction_id
+          in: path
+          description: The member junction ID of the membership.
+          required: true
+          schema:
+            type: string
+        - name: gift_id
+          in: path
+          description: The ID of the gift to unlink.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds.
+        '401':
+          description: Returned when the user is not authorized.
+        '403':
+          description: Returned when the user does not have permission to delete a linked gift.
+        '400':
+          description: Returned when the specified gift ID is not in the appropriate format.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequest400ResponseTypes'
+              example:
+                type: urn:blackbaud:model-validation-error
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Field is required
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+        '404':
+          description: Returned when the specified membership or gift is not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: urn:blackbaud:resource-not-found
+                title: The requested resource could not be found.
+                status: 404
+components:
+  schemas:
+    BadRequest400ResponseTypes:
+      type: object
+      properties:
+        type:
+          type: string
+          description: 'A URI reference [RFC3986] that identifies the problem type. This specification encourages that, when dereferenced, it provide human-readable documentation for the problem type (e.g., using HTML [W3C.REC-html5-20141028]). When this member is not present, its value is assumed to be "about:blank".<br/><br/>Available values:<table><tr><th>type</th><th>detail</th></tr><tr><td>urn:blackbaud:model-validation-error</td><td>A model validation rule was violated, such as a missing required field.</td></tr><tr><td>urn:blackbaud:invalid-value</td><td>''{0}'' is not a valid value for {1}.</td></tr></table>'
+          nullable: true
+        title:
+          type: string
+          description: 'A short, human-readable summary of the problem type. It SHOULD NOT change from occurrence to occurrence of the problem, except for purposes of localization (e.g., using proactive content negotiation; see [RFC7231], Section 3.4).'
+          nullable: true
+        status:
+          type: integer
+          description: 'The HTTP status code ([RFC7231], Section 6) generated by the origin server for this occurrence of the problem.'
+          format: int32
+          nullable: true
+        detail:
+          type: string
+          description: A human-readable explanation specific to this occurrence of the problem.
+          nullable: true
+        instance:
+          type: string
+          description: A URI reference that identifies the specific occurrence of the problem. It may or may not yield further information if dereferenced.
+          nullable: true
+        trace_id:
+          type: string
+          description: A request ID that can be provided to Blackbaud Support that may help with further troubleshooting.
+        span_id:
+          type: string
+          description: A request ID that can be provided to Blackbaud Support that may help with further troubleshooting.
+      additionalProperties: { }
+      description: A machine-readable format for specifying errors in HTTP API responses based on https://tools.ietf.org/html/rfc7807.
+      x-bb-error-types:
+        - urn:blackbaud:model-validation-error
+        - urn:blackbaud:invalid-value
+    Category:
+      type: object
+      properties:
+        legacy_id:
+          maximum: 2147483647.0
+          minimum: 1.0
+          type: integer
+          description: The system genrated ID.
+          format: int32
+          nullable: true
+        value:
+          type: string
+          description: The value of the code table entry.
+          nullable: true
+      additionalProperties: false
+      description: Category drop down data
+    CodeTableEntry:
+      type: object
+      properties:
+        legacy_id:
+          type: string
+          description: The legacy ID of the code table entry.
+          nullable: true
+        value:
+          type: string
+          description: The value of the code table entry.
+          nullable: true
+      additionalProperties: false
+      description: A predefined entry in a code table.
+    CustomField:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The immutable system record ID of the custom field.
+          nullable: true
+        category:
+          type: string
+          description: The custom field category. Available values are the entries in the <b>Custom Field Categories</b> table of the parent object.
+          nullable: true
+        comment:
+          type: string
+          description: The comment on the custom field.
+          nullable: true
+        date:
+          type: string
+          description: The date on the custom field. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format:</a><i>1969-11-21T10:29:43</i>.
+          format: date-time
+          nullable: true
+        date_added:
+          type: string
+          description: The date when the custom field was created. The date includes an offset from UTC in <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format:</a><i>1969-11-21T10:29:43-04:00</i>.
+          format: date-time
+          nullable: true
+        date_modified:
+          type: string
+          description: The date when the custom field was last modified. The date includes an offset from UTC in <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format:</a><i>1969-11-21T10:29:43-04:00</i>.
+          format: date-time
+          nullable: true
+        parent_id:
+          type: string
+          description: The parent object's immutable system record ID.
+          nullable: true
+        type:
+          $ref: '#/components/schemas/CustomFieldType'
+        value:
+          description: The value of the custom field. The ```type``` property determines the format.
+          nullable: true
+      additionalProperties: false
+      description: custom fields for membership
+    CustomFieldCategoryDetails:
+      type: object
+      properties:
+        name:
+          type: string
+          description: The category name.
+          nullable: true
+        type:
+          $ref: '#/components/schemas/CustomFieldType'
+        code_table_id:
+          type: string
+          description: The code table identifier for the category.
+          nullable: true
+        one_per_record:
+          type: boolean
+          description: The flag indicating that only one value for the category is allowed per record.
+          nullable: true
+        sequence:
+          type: integer
+          description: The sequence
+          format: int32
+          nullable: true
+      additionalProperties: false
+      description: Membership custom field category Model
+    CustomFieldCategoryDetailsCollection:
+      type: object
+      properties:
+        custom_field_types:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomFieldCategoryDetails'
+          description: List of custom fields.
+          nullable: true
+        count:
+          type: integer
+          description: The total count of items.
+          format: int32
+      additionalProperties: false
+      description: Defines a collection of Custom Fields.
+    CustomFieldCategoryValuesCollection:
+      type: object
+      properties:
+        custom_field_category_values:
+          type: array
+          items:
+            type: string
+          description: List of custom fields.
+          nullable: true
+        count:
+          type: integer
+          description: The total count of items.
+          format: int32
+      additionalProperties: false
+      description: Defines a collection of Custom Fields.
+    CustomFieldCreate:
+      required:
+        - category
+        - parent_id
+        - value
+      type: object
+      properties:
+        category:
+          minLength: 1
+          type: string
+          description: The custom field category. Available values are the entries in the custom field categories table of the parent object.
+        comment:
+          maxLength: 50
+          minLength: 0
+          type: string
+          description: 'The comment on the custom field. Character limit: 50.'
+          nullable: true
+        date:
+          type: string
+          description: 'The date on the custom field. Uses ISO-8601 format: 1969-11-21T10:29:43.'
+          format: date-time
+          nullable: true
+        parent_id:
+          minLength: 1
+          type: string
+          description: The parent object's immutable system record ID.
+        value:
+          minLength: 1
+          type: string
+          description: The value of the custom field. The type property determines the format. Character limit depends on data type. Number types only support values greater than 0.
+      additionalProperties: false
+      description: Represents the custom fields data to be added
+    CustomFieldType:
+      title: CustomFieldType
+      enum:
+        - Text
+        - Number
+        - Date
+        - Currency
+        - Boolean
+        - CodeTableEntry
+        - ConstituentId
+        - FuzzyDate
+      type: string
+      description: Defines the possible values for the data type of a custom field
+    CustomFieldUpdate:
+      required:
+        - value
+      type: object
+      properties:
+        value:
+          minLength: 1
+          type: string
+          description: The value of the custom field. The type property determines the format. Character limit depends on data type.
+        date:
+          type: string
+          description: The custom field date.
+          format: date-time
+          nullable: true
+        comment:
+          maxLength: 50
+          type: string
+          description: 'The comment on the custom field. Character limit: 50.'
+          nullable: true
+      additionalProperties: false
+      description: 'While records provide many fields to track information, organizations often require additional details. To track this specialized information, use custom fields.'
+    CustomFieldsCollection:
+      type: object
+      properties:
+        custom_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomField'
+          description: List of custom fields.
+          nullable: true
+        count:
+          type: integer
+          description: The total count of items.
+          format: int32
+      additionalProperties: false
+      description: Defines a collection of Custom Fields.
+    CustomFieldsCreate:
+      required:
+        - custom_fields
+      type: object
+      properties:
+        custom_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomFieldCreate'
+          description: List of custom fields to be added.
+      additionalProperties: false
+      description: Represents the custom fields collection data to be added
+    GiftAvailableAmount:
+      type: object
+      properties:
+        gift_amount:
+          type: number
+          description: Gift amount
+          format: double
+        available_amount:
+          type: number
+          description: Gift available amount
+          format: double
+        currency_symbol:
+          type: string
+          description: Non Nullable field currency symbol
+          nullable: true
+      additionalProperties: false
+      description: Gift available amount
+    GiftOfMembership:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The immutable system record ID of the gift of membership.
+          nullable: true
+        special_message:
+          type: string
+          description: Special message from membership.
+          nullable: true
+        send_notice_to:
+          $ref: '#/components/schemas/RenewalNoticeType'
+        given_by:
+          type: string
+          description: Membership given by name.
+          nullable: true
+        given_by_id:
+          type: string
+          description: Membership given by ID.
+          nullable: true
+      additionalProperties: false
+      description: Record for gift of membership.
+    GiftType:
+      title: GiftType
+      enum:
+        - None
+        - Amendment
+        - Cash
+        - GiftInKind
+        - GeneralLedgerReversal
+        - MatchingGiftPledge
+        - MatchingGiftPayment
+        - MatchingGiftWriteOff
+        - Other
+        - PlannedGift
+        - Pledge
+        - PledgePayment
+        - PledgeWriteOff
+        - RecurringGift
+        - RecurringGiftPayment
+        - Stock
+        - SoldStock
+        - Adjustment
+        - Covenant
+        - CovenantPayment
+        - CovenantWriteOff
+      type: string
+      description: Possible gift types
+    LinkGiftCreate:
+      required:
+        - gift_id
+      type: object
+      properties:
+        gift_id:
+          minLength: 1
+          type: string
+          description: Unique ID of gift
+        applied_amount:
+          maximum: 9999999999.99
+          minimum: 0.0
+          type: number
+          description: Amount applied from gift to membership.
+          format: double
+      additionalProperties: false
+      description: Create memberships link to gift
+    LinkedGift:
+      type: object
+      properties:
+        transaction_gift_id:
+          type: integer
+          description: Immutable record ID of the transaction gift link between the gift and the membership.
+          format: int32
+        gift_id:
+          type: integer
+          description: Immutable record ID of the gift record linked to membership.
+          format: int32
+        gift_type:
+          $ref: '#/components/schemas/GiftType'
+        applied_amount:
+          type: number
+          description: Amount applied from gift to membership.
+          format: double
+        constituent_name:
+          type: string
+          description: Name of the constituent associated with the linked gift.
+          nullable: true
+        gift_date:
+          type: string
+          description: Gift date for the linked gift.
+          format: date
+      additionalProperties: false
+      description: Linked gift for a membership record
+    LinkedGiftEdit:
+      required:
+        - applied_amount
+      type: object
+      properties:
+        applied_amount:
+          maximum: 9999999999.99
+          minimum: 0.0
+          type: number
+          description: The amount to apply from the gift to the membership.
+          format: double
+      additionalProperties: false
+      description: Edit a single linked gift on a membership.
+    LinkedGiftSortFields:
+      title: LinkedGiftSortFields
+      enum:
+        - GiftDate
+        - GiftType
+        - AppliedAmount
+      type: string
+      description: Linked Gift Sort Fields
+    LinkedGiftsCollection:
+      required:
+        - limit
+        - offset
+      type: object
+      properties:
+        linked_gifts:
+          type: array
+          items:
+            $ref: '#/components/schemas/LinkedGift'
+          description: List of linked gifts.
+          nullable: true
+        count:
+          type: integer
+          description: The total count of items.
+          format: int32
+        offset:
+          type: integer
+          description: The offset value used for pagination or positioning within a collection.
+          format: int32
+        limit:
+          type: integer
+          description: The limit representing the maximum number of items to retrieve or display.
+          format: int32
+      additionalProperties: false
+      description: Defines a collection of LinkedGift.
+      x-bb-suppressions:
+        - list_operation_pagination_style
+    MembershipAddFormCardCreate:
+      required:
+        - name_on_card
+      type: object
+      properties:
+        primary:
+          type: boolean
+          description: Whether a card is a primary card
+        editable:
+          type: boolean
+          description: Membership Card's editable field
+        constit_add_sal_id:
+          type: integer
+          description: Membership card's constituent salutation ID
+          format: int32
+          nullable: true
+        relation_type:
+          $ref: '#/components/schemas/CodeTableEntry'
+        card_expires:
+          $ref: '#/components/schemas/MembershipCardExpires'
+        address_to_print:
+          $ref: '#/components/schemas/MembershipCardsAddressToPrint'
+        valid_from_date:
+          type: string
+          description: Membership card's valid from date
+          format: date
+          nullable: true
+        relationship_id:
+          type: integer
+          description: Membership card's relationship ID
+          format: int32
+          nullable: true
+        joint_member:
+          type: boolean
+          description: Whether the member is a joint member or not
+        joint_member_id:
+          type: integer
+          description: Joint member ID
+          format: int32
+          nullable: true
+        card_member:
+          type: boolean
+          description: Whether a card member is checked
+        name_on_card:
+          maxLength: 255
+          minLength: 1
+          type: string
+          description: Name of member on card
+        no_of_cards:
+          type: integer
+          description: Number of cards
+          format: int32
+        valid_to_date:
+          type: string
+          description: Membership card's valid To date
+          format: date
+          nullable: true
+        last_printed_on_date:
+          type: string
+          description: Last printed on date
+          format: date
+          nullable: true
+        card_type:
+          $ref: '#/components/schemas/CodeTableEntry'
+        status:
+          $ref: '#/components/schemas/MembershipCardsStatus'
+      additionalProperties: false
+      description: Create memberships and cards
+    MembershipBenefit:
+      type: object
+      properties:
+        benefits_id:
+          type: integer
+          description: Benefits ID
+          format: int32
+        benefit:
+          type: string
+          description: Benefits Description
+          nullable: true
+        count:
+          type: integer
+          description: Nullable field  Count
+          format: int32
+          nullable: true
+        unit_cost:
+          type: number
+          description: Unit cost
+          format: double
+        total_benefit_value:
+          type: number
+          description: Total benefit value
+          format: double
+        currency_symbol:
+          type: string
+          description: Non Nullable field currency symbol
+          nullable: true
+        sent:
+          type: string
+          description: Nullable field sent with length 8 varchar
+          nullable: true
+        comments:
+          type: string
+          description: Nullable field comments with length 255 varchar
+          nullable: true
+      additionalProperties: false
+      description: Membership benefits
+    MembershipBenefitCollection:
+      required:
+        - limit
+        - offset
+      type: object
+      properties:
+        benefits:
+          type: array
+          items:
+            $ref: '#/components/schemas/MembershipBenefit'
+          description: The collection of membership Benefits.
+          nullable: true
+        total_value:
+          type: number
+          description: The sum of all benefit values across the membership.
+          format: double
+        send_benefits_to:
+          type: string
+          description: 'Indicates who receives the benefits: PrimaryMember or Donor'
+          nullable: true
+        waive_benefits:
+          type: boolean
+          description: Indicates whether benefits are waived for this membership transaction
+        count:
+          type: integer
+          description: The total count of items.
+          format: int32
+        offset:
+          type: integer
+          description: The offset value used for pagination or positioning within a collection.
+          format: int32
+        limit:
+          type: integer
+          description: The limit representing the maximum number of items to retrieve or display.
+          format: int32
+      additionalProperties: false
+      description: Membership benefit collection to be returned
+      x-bb-suppressions:
+        - list_operation_pagination_style
+    MembershipBenefitCreate:
+      type: object
+      properties:
+        benefit:
+          $ref: '#/components/schemas/CodeTableEntry'
+        count:
+          type: integer
+          description: Benefit Count
+          format: int32
+          nullable: true
+        unit_cost:
+          type: number
+          description: Unit cost
+          format: double
+        total_benefit_value:
+          type: number
+          description: Total benefit value
+          format: double
+          nullable: true
+        sent:
+          maxLength: 8
+          type: string
+          description: The date was sent or fulfilled
+          nullable: true
+        comments:
+          maxLength: 255
+          type: string
+          description: User text associated with the record.
+          nullable: true
+      additionalProperties: false
+      description: Create memberships and Benefit
+    MembershipBenefitsSendTo:
+      title: MembershipBenefitsSendTo
+      enum:
+        - PrimaryMember
+        - Donor
+      type: string
+      description: Membership benefits send to
+    MembershipCard:
+      type: object
+      properties:
+        membership_cards_id:
+          type: integer
+          description: Membership Cards ID
+          format: int32
+        membership_id:
+          type: integer
+          description: Membership ID
+          format: int32
+        joint_member:
+          type: boolean
+          description: Whether the member is a joint member or not
+        joint_member_id:
+          type: integer
+          description: Joint Member ID
+          format: int32
+          nullable: true
+        member_name:
+          type: string
+          description: Member's Display Name
+          nullable: true
+        name_on_card:
+          type: string
+          description: Name Of Member On Card
+          nullable: true
+        relation:
+          type: string
+          description: Relation with primary member
+          nullable: true
+        primary:
+          type: boolean
+          description: Whether a Primary Member
+        card_member:
+          type: boolean
+          description: Whether the member have a card
+        number_of_cards:
+          type: integer
+          description: Number Of Cards
+          format: int32
+        card_type:
+          type: string
+          description: Type Of Membership Card
+          nullable: true
+        status:
+          type: string
+          description: 'Status Of Membership Card. The available values are "Printed", "NotPrinted", "DoNotPrint", and "Lost".'
+          nullable: true
+        valid_to_date:
+          type: string
+          description: Membership Card's Valid To Date
+          format: date-time
+          nullable: true
+        last_printed_on:
+          type: string
+          description: Last Printed Date
+          format: date-time
+          nullable: true
+        sequence:
+          type: integer
+          description: Sequence of membership cards
+          format: int32
+        card_expires:
+          type: string
+          description: 'Card expiration setting. The available values are "SameDates", "OneWeekAfter", "TwoWeeksAfter", "OneMonthAfter", "TwoMonthsAfter", "ThreeMonthsAfter", "OneDayAfter", "TwoDaysAfter", "ThreeDaysAfter", "SpecificDates", and "Lifetime".'
+          nullable: true
+        address_to_print:
+          type: string
+          description: 'Address to print option. The available values are "PrimaryMember", "None", and "Constituent".'
+          nullable: true
+        valid_from_date:
+          type: string
+          description: Valid from date for the membership card
+          format: date-time
+          nullable: true
+        editable:
+          type: boolean
+          description: Whether the name on the card is editable
+      additionalProperties: false
+      description: Membership Card Response Model
+    MembershipCardCreate:
+      required:
+        - name_on_card
+      type: object
+      properties:
+        editable:
+          type: boolean
+          description: Membership Card's editable field
+        constit_add_sal_id:
+          type: integer
+          description: Membership card's constituent salutation ID
+          format: int32
+          nullable: true
+        relation_type:
+          $ref: '#/components/schemas/CodeTableEntry'
+        card_expires:
+          $ref: '#/components/schemas/MembershipCardExpires'
+        address_to_print:
+          $ref: '#/components/schemas/MembershipCardsAddressToPrint'
+        valid_from_date:
+          type: string
+          description: Membership card's valid from date
+          format: date
+          nullable: true
+        relationship_id:
+          type: integer
+          description: Membership card's relationship ID
+          format: int32
+          nullable: true
+        joint_member:
+          type: boolean
+          description: Whether the member is a joint member or not
+        joint_member_id:
+          type: integer
+          description: Joint member ID
+          format: int32
+          nullable: true
+        card_member:
+          type: boolean
+          description: Whether a card member is checked
+        name_on_card:
+          maxLength: 255
+          minLength: 1
+          type: string
+          description: Name of member on card
+        no_of_cards:
+          type: integer
+          description: Number of cards
+          format: int32
+        valid_to_date:
+          type: string
+          description: Membership card's valid To date
+          format: date
+          nullable: true
+        last_printed_on_date:
+          type: string
+          description: Last printed on date
+          format: date
+          nullable: true
+        card_type:
+          $ref: '#/components/schemas/CodeTableEntry'
+        status:
+          $ref: '#/components/schemas/MembershipCardsStatus'
+      additionalProperties: false
+      description: Create memberships and cards
+    MembershipCardEdit:
+      type: object
+      properties:
+        constit_add_sal_id:
+          type: integer
+          description: Membership card's constituent salutation ID
+          format: int32
+          nullable: true
+        relation_type:
+          $ref: '#/components/schemas/CodeTableEntry'
+        card_expires:
+          $ref: '#/components/schemas/MembershipCardExpires'
+        address_to_print:
+          $ref: '#/components/schemas/MembershipCardsAddressToPrint'
+        valid_from_date:
+          type: string
+          description: Membership card's valid from date
+          format: date
+          nullable: true
+        relationship_id:
+          type: integer
+          description: Membership card's relationship ID
+          format: int32
+          nullable: true
+        joint_member:
+          type: boolean
+          description: Whether the member is a joint member or not
+          nullable: true
+        joint_member_id:
+          type: integer
+          description: Joint member ID
+          format: int32
+          nullable: true
+        card_member:
+          type: boolean
+          description: Whether a card member is checked
+          nullable: true
+        name_on_card:
+          maxLength: 255
+          type: string
+          description: Name of member on card
+          nullable: true
+        no_of_cards:
+          type: integer
+          description: Number of cards
+          format: int32
+          nullable: true
+        valid_to_date:
+          type: string
+          description: Membership card's valid To date
+          format: date
+          nullable: true
+        last_printed_on_date:
+          type: string
+          description: Last printed on date
+          format: date
+          nullable: true
+        card_type:
+          $ref: '#/components/schemas/CodeTableEntry'
+        status:
+          $ref: '#/components/schemas/MembershipCardsStatus'
+        editable:
+          type: boolean
+          description: Flag indicating whether or not the member's name on the card is editable
+          nullable: true
+      additionalProperties: false
+      description: Edit membership card request model for JSON Merge Patch operations
+    MembershipCardExpires:
+      title: MembershipCardExpires
+      enum:
+        - SameDates
+        - OneWeekAfter
+        - TwoWeeksAfter
+        - OneMonthAfter
+        - TwoMonthsAfter
+        - ThreeMonthsAfter
+        - OneDayAfter
+        - TwoDaysAfter
+        - ThreeDaysAfter
+        - SpecificDates
+        - Lifetime
+      type: string
+      description: Membership card expires
+    MembershipCardSortFields:
+      title: MembershipCardSortFields
+      enum:
+        - MemberName
+        - ExpiryDate
+        - Relation
+        - Sequence
+      type: string
+      description: Membership Card Sort Fields
+    MembershipCardsAddressToPrint:
+      title: MembershipCardsAddressToPrint
+      enum:
+        - PrimaryMember
+        - None
+        - Constituent
+      type: string
+      description: Address To Print
+    MembershipCardsCollection:
+      required:
+        - limit
+        - offset
+      type: object
+      properties:
+        membership_cards:
+          type: array
+          items:
+            $ref: '#/components/schemas/MembershipCard'
+          description: The membership card list.
+          nullable: true
+        count:
+          type: integer
+          description: The total count of items.
+          format: int32
+        offset:
+          type: integer
+          description: The offset value used for pagination or positioning within a collection.
+          format: int32
+        limit:
+          type: integer
+          description: The limit representing the maximum number of items to retrieve or display.
+          format: int32
+      additionalProperties: false
+      description: Defines a collection of membership cards.
+      x-bb-suppressions:
+        - list_operation_pagination_style
+    MembershipCardsStatus:
+      title: MembershipCardsStatus
+      enum:
+        - Printed
+        - NotPrinted
+        - DoNotPrint
+        - Lost
+      type: string
+      description: Membership Card Status
+    MembershipCategory:
+      type: object
+      properties:
+        membership_category_id:
+          type: integer
+          description: The immutable system record ID of the membership category.
+          format: int32
+        category_name:
+          type: string
+          description: The name of the membership category.
+          nullable: true
+        default_expires_date:
+          type: string
+          description: The default expiration date for a new membership category.
+          format: date
+          nullable: true
+        program_name:
+          type: string
+          description: The membership program name. category.
+          nullable: true
+        sequence:
+          type: integer
+          description: The sequence number of the membership category.
+          format: int32
+          nullable: true
+        inactive:
+          type: boolean
+          description: This computed field indicates that the membership category is active or not.
+        lifetime_membership:
+          type: boolean
+          description: Indicates whether the membership category comes with a lifetime membership.
+        print_renewals:
+          type: boolean
+          description: Indicates whether to print renewals.
+        default_expires_days:
+          type: integer
+          description: The default number of days after which a new membership category expires.
+          format: int32
+          nullable: true
+        new_mem_expires_value:
+          type: integer
+          description: The new membership category expires value.
+          format: int32
+          nullable: true
+        new_mem_expires_interval:
+          $ref: '#/components/schemas/NewMembershipExpiresInterval'
+        maximum_members:
+          type: integer
+          description: The maximum number of members allowed for this category
+          format: int32
+          nullable: true
+        benefit_notes:
+          type: string
+          description: Benefit notes of a membership category.
+          nullable: true
+        send_benefits_to:
+          $ref: '#/components/schemas/MembershipBenefitsSendTo'
+        minimum_dues:
+          type: number
+          description: The minimum amount required to qualify for this membership category.
+          format: double
+          nullable: true
+        maximum_dues:
+          type: number
+          description: The maximum amount expected for this membership category.
+          format: double
+          nullable: true
+        dues_level:
+          type: string
+          description: "Membership dues is used to establish dues which are required to qualify for that membership category. It help control how much a constituent is expected to pay and under what conditions. \nFor e.g. - Dues level is - Individual with minimum dues as $25 and maximum dues as $50"
+          nullable: true
+        renew_mem_expires_value:
+          type: integer
+          description: The expires value for renewed memberships.
+          format: int32
+          nullable: true
+        renew_mem_expires_interval:
+          $ref: '#/components/schemas/NewMembershipExpiresInterval'
+        rejoined_mem_expires_value:
+          type: integer
+          description: The expires value for rejoined memberships.
+          format: int32
+          nullable: true
+        rejoined_mem_expires_interval:
+          $ref: '#/components/schemas/NewMembershipExpiresInterval'
+      additionalProperties: false
+      description: Membership category collection
+    MembershipCategoryCollection:
+      required:
+        - limit
+        - offset
+      type: object
+      properties:
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/MembershipCategory'
+          description: The collection of membership category.
+          nullable: true
+        count:
+          type: integer
+          description: The total count of items.
+          format: int32
+        offset:
+          type: integer
+          description: The offset value used for pagination or positioning within a collection.
+          format: int32
+        limit:
+          type: integer
+          description: The limit representing the maximum number of items to retrieve or display.
+          format: int32
+      additionalProperties: false
+      description: Defines a collection of membership category.
+      x-bb-suppressions:
+        - list_operation_pagination_style
+    MembershipCategorySortFields:
+      title: MembershipCategorySortFields
+      enum:
+        - CategoryName
+        - ProgramName
+      type: string
+      description: Membership categories sort column enum
+    MembershipCreate:
+      required:
+        - category
+        - joined_date
+        - lifetime_membership
+        - print_renewals
+        - total_children
+        - total_members
+      type: object
+      properties:
+        membership_id:
+          maxLength: 20
+          type: string
+          description: The membership identifier associated with the membership.
+          nullable: true
+        dues:
+          maximum: 9999999999999.99
+          minimum: 0.0
+          type: number
+          description: The dues for the membership transaction.
+          format: double
+          nullable: true
+        program:
+          $ref: '#/components/schemas/CodeTableEntry'
+        reason:
+          $ref: '#/components/schemas/CodeTableEntry'
+        subcategory:
+          $ref: '#/components/schemas/SubCategory'
+        category:
+          $ref: '#/components/schemas/Category'
+        joined_date:
+          type: string
+          description: 'The create, renewal, rejoin, or drop date of the transaction.'
+          format: date
+        lifetime_membership:
+          type: boolean
+          description: Gets or sets value to lifetime membership.
+        expires_on_date:
+          type: string
+          description: Gets or sets the date on which the membership expires.
+          format: date
+          nullable: true
+        print_renewals:
+          type: boolean
+          description: Gets or sets value to print renewals.
+        mem_comment:
+          maxLength: 255
+          type: string
+          description: Gets or sets value of comment.
+          nullable: true
+        member_sequence:
+          type: integer
+          description: Order in which this member appears
+          format: int32
+          nullable: true
+        membership_transaction_sequence:
+          type: integer
+          description: Order in which this membership appears.
+          format: int32
+          nullable: true
+        total_members:
+          maximum: 9999.0
+          minimum: 1.0
+          type: integer
+          description: Gets or sets the value of total members allowed in this membership
+          format: int32
+          default: 1
+        total_children:
+          maximum: 9999.0
+          minimum: 0.0
+          type: integer
+          description: Gets or sets the value of total children allowed in this membership
+          format: int32
+          default: 0
+      additionalProperties: false
+      description: Membership create request model
+    MembershipCreateV2:
+      required:
+        - category
+        - joined_date
+        - lifetime_membership
+        - print_renewals
+        - total_children
+        - total_members
+      type: object
+      properties:
+        send_benefits_to:
+          $ref: '#/components/schemas/MembershipBenefitsSendTo'
+        benefits_notes:
+          type: string
+          description: Benefits notes
+          nullable: true
+        membership_cards:
+          type: array
+          items:
+            $ref: '#/components/schemas/MembershipAddFormCardCreate'
+          description: List of member and cards
+          nullable: true
+        membership_benefits:
+          type: array
+          items:
+            $ref: '#/components/schemas/MembershipBenefitCreate'
+          description: List of membership benefits
+          nullable: true
+        given_by_id:
+          type: string
+          description: The ID of the constituent giving this membership as a gift.
+          nullable: true
+        special_message:
+          type: string
+          description: Special message
+          nullable: true
+        membership_fundraisers:
+          type: array
+          items:
+            type: integer
+            format: int32
+          description: List of membership fundraisers
+          nullable: true
+        membership_link_gift:
+          $ref: '#/components/schemas/LinkGiftCreate'
+        default_card:
+          type: boolean
+          description: Field to find out wheather the card is default or not
+          default: false
+        default_benefits:
+          type: boolean
+          description: Field to find out wheather the benefits is default or not
+          default: false
+        override_renewal_defaults:
+          type: boolean
+          description: Field to find out wheather to override renewal is defaults or not
+        send_notice_to:
+          $ref: '#/components/schemas/RenewalNoticeType'
+        waive_benefits:
+          type: boolean
+          description: Waive Benefits
+        membership_id:
+          maxLength: 20
+          type: string
+          description: The membership identifier associated with the membership.
+          nullable: true
+        dues:
+          maximum: 9999999999999.99
+          minimum: 0.0
+          type: number
+          description: The dues for the membership transaction.
+          format: double
+          nullable: true
+        program:
+          $ref: '#/components/schemas/CodeTableEntry'
+        reason:
+          $ref: '#/components/schemas/CodeTableEntry'
+        subcategory:
+          $ref: '#/components/schemas/SubCategory'
+        category:
+          $ref: '#/components/schemas/Category'
+        joined_date:
+          type: string
+          description: 'The create, renewal, rejoin, or drop date of the transaction.'
+          format: date
+        lifetime_membership:
+          type: boolean
+          description: Gets or sets value to lifetime membership.
+        expires_on_date:
+          type: string
+          description: Gets or sets the date on which the membership expires.
+          format: date
+          nullable: true
+        print_renewals:
+          type: boolean
+          description: Gets or sets value to print renewals.
+        mem_comment:
+          maxLength: 255
+          type: string
+          description: Gets or sets value of comment.
+          nullable: true
+        member_sequence:
+          type: integer
+          description: Order in which this member appears
+          format: int32
+          nullable: true
+        membership_transaction_sequence:
+          type: integer
+          description: Order in which this membership appears.
+          format: int32
+          nullable: true
+        total_members:
+          maximum: 9999.0
+          minimum: 1.0
+          type: integer
+          description: Gets or sets the value of total members allowed in this membership
+          format: int32
+          default: 1
+        total_children:
+          maximum: 9999.0
+          minimum: 0.0
+          type: integer
+          description: Gets or sets the value of total children allowed in this membership
+          format: int32
+          default: 0
+      additionalProperties: false
+      description: Membership create request model
+    MembershipCustomFieldsCreated:
+      type: object
+      properties:
+        custom_field_ids:
+          type: array
+          items:
+            type: string
+          description: The custom field ID property.
+          nullable: true
+      additionalProperties: false
+      description: Membership custom fields response model
+    MembershipDefaultBenefitsSortFields:
+      title: MembershipDefaultBenefitsSortFields
+      enum:
+        - Sequence
+      type: string
+      description: Membership Default Benefit Sort Fields
+    MembershipDetails:
+      type: object
+      properties:
+        dues:
+          type: number
+          description: The dues amount.
+          format: double
+          nullable: true
+        category_name:
+          type: string
+          description: The membership category name.
+          nullable: true
+        program_name:
+          type: string
+          description: The membership program name.
+          nullable: true
+        sub_category_name:
+          type: string
+          description: The membership subcategory name.
+          nullable: true
+        last_renewed_date:
+          type: string
+          description: The date the membership was last renewed.
+          format: date
+          nullable: true
+        last_dropped_date:
+          type: string
+          description: The date the membership was last dropped.
+          format: date
+          nullable: true
+        next_renewal_date:
+          type: string
+          description: The date the membership next renewal.
+          format: date
+          nullable: true
+        joined_date:
+          type: string
+          description: The date the membership began.
+          format: date
+        total_years:
+          type: integer
+          description: The total number of years of membership
+          format: int32
+          nullable: true
+        times_renewed:
+          type: integer
+          description: The number of times the membership was renewed.
+          format: int32
+          nullable: true
+        consec_years:
+          type: integer
+          description: The number of consecutive membership years.
+          format: int32
+          nullable: true
+        constituent_id:
+          type: string
+          description: The constituent ID associated with the membership.
+          nullable: true
+        notes:
+          type: string
+          description: Membership notes.
+          nullable: true
+        type:
+          $ref: '#/components/schemas/MembershipType'
+      additionalProperties: false
+      description: This contains stored membership details.
+    MembershipDowngrade:
+      required:
+        - category
+        - downgrade_date
+      type: object
+      properties:
+        dues:
+          maximum: 9999999999.99
+          minimum: 0.0
+          type: number
+          description: The dues for the membership downgrade transaction.
+          format: double
+          nullable: true
+        program:
+          $ref: '#/components/schemas/CodeTableEntry'
+        reason:
+          $ref: '#/components/schemas/CodeTableEntry'
+        subcategory:
+          $ref: '#/components/schemas/SubCategory'
+        category:
+          $ref: '#/components/schemas/Category'
+        downgrade_date:
+          type: string
+          description: The downgrade date of the transaction.
+          format: date
+        lifetime_membership:
+          type: boolean
+          description: Gets or sets value to lifetime membership.
+        expires_on_date:
+          type: string
+          description: Gets or sets the date on which the membership expires.
+          format: date
+          nullable: true
+        print_renewals:
+          type: boolean
+          description: Gets or sets value to print renewals.
+          nullable: true
+        mem_comment:
+          maxLength: 255
+          type: string
+          description: Gets or sets value of comment.
+          nullable: true
+      additionalProperties: false
+      description: Membership downgrade request model for during-cycle downgrades
+    MembershipDrop:
+      required:
+        - drop_date
+        - reason
+      type: object
+      properties:
+        drop_date:
+          type: string
+          description: The drop date of the transaction.
+          format: date
+        reason:
+          $ref: '#/components/schemas/CodeTableEntry'
+        mem_comment:
+          maxLength: 255
+          type: string
+          description: Gets or sets value of comment.
+          nullable: true
+      additionalProperties: false
+      description: Membership drop request model
+    MembershipEdit:
+      type: object
+      properties:
+        membership_id:
+          maxLength: 20
+          type: string
+          description: The membership identifier associated with the membership.
+          nullable: true
+        dues:
+          maximum: 9999999999999.99
+          minimum: 0.0
+          type: number
+          description: The dues for the membership transaction.
+          format: double
+          nullable: true
+        program:
+          $ref: '#/components/schemas/CodeTableEntry'
+        subcategory:
+          $ref: '#/components/schemas/SubCategory'
+        category:
+          $ref: '#/components/schemas/Category'
+        activity_date:
+          type: string
+          description: 'The create, renewal, rejoin, or drop date of the transaction.'
+          format: date
+          nullable: true
+        joined_date:
+          type: string
+          description: The date the constituent joined the membership.
+          format: date
+          nullable: true
+        lifetime_membership:
+          type: boolean
+          description: Gets or sets value to lifetime membership.
+        expires_on_date:
+          type: string
+          description: Gets or sets the date on which the membership expires.
+          format: date
+          nullable: true
+        print_renewals:
+          type: boolean
+          description: Gets or sets value to print renewals.
+        total_members:
+          maximum: 9999.0
+          minimum: 1.0
+          type: integer
+          description: Gets or sets the value of total members allowed in this membership
+          format: int32
+          default: 1
+          nullable: true
+        total_children:
+          maximum: 9999.0
+          minimum: 0.0
+          type: integer
+          description: Gets or sets the value of total children allowed in this membership
+          format: int32
+          default: 0
+          nullable: true
+        notes:
+          type: string
+          description: Gets or sets the membership notes.
+          nullable: true
+        reason:
+          $ref: '#/components/schemas/CodeTableEntry'
+        mem_comment:
+          maxLength: 255
+          type: string
+          description: Gets or sets value of comment.
+          nullable: true
+      additionalProperties: false
+      description: Membership update request model
+    MembershipExpirationRange:
+      title: MembershipExpirationRange
+      enum:
+        - ExpiresBefore
+        - ExpiresAfter
+      type: string
+      description: Membership expires
+    MembershipFundraiser:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The immutable system record ID of the fundraiser.
+          nullable: true
+        solicitor_id:
+          type: integer
+          description: Fundraisers ID.
+          format: int32
+        full_name:
+          type: string
+          description: Nullable field Fundraisers full name.
+          nullable: true
+      additionalProperties: false
+      description: Membership Fundraiser
+    MembershipFundraiserCollection:
+      required:
+        - limit
+        - offset
+      type: object
+      properties:
+        fundraisers:
+          type: array
+          items:
+            $ref: '#/components/schemas/MembershipFundraiser'
+          description: The collection of membership fundraiser.
+          nullable: true
+        count:
+          type: integer
+          description: The total count of items.
+          format: int32
+        offset:
+          type: integer
+          description: The offset value used for pagination or positioning within a collection.
+          format: int32
+        limit:
+          type: integer
+          description: The limit representing the maximum number of items to retrieve or display.
+          format: int32
+      additionalProperties: false
+      description: Defines a collection of membership fundraiser.
+      x-bb-suppressions:
+        - list_operation_pagination_style
+    MembershipFundraisersSortFields:
+      title: MembershipFundraisersSortFields
+      enum:
+        - FullName
+      type: string
+      description: Membership fundraisers Sort Fields
+    MembershipHistory:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The immutable system record ID of the membership history.
+          nullable: true
+        category_name:
+          type: string
+          description: The membership category name.
+          nullable: true
+        program_name:
+          type: string
+          description: The membership program name.
+          nullable: true
+        sub_category_name:
+          type: string
+          description: The membership subcategory name.
+          nullable: true
+        reason:
+          type: string
+          description: The selected reason for membership.
+          nullable: true
+        membership_comment:
+          type: string
+          description: The membership comment for membership.
+          nullable: true
+        activity_date:
+          type: string
+          description: The membership activity date.
+          format: date
+        type:
+          $ref: '#/components/schemas/MembershipType'
+        gifts:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransactionGift'
+          description: The list of gifts associated with membership.
+          nullable: true
+      additionalProperties: false
+      description: Membership history contains all transaction related to membership.
+    MembershipHistoryCollection:
+      required:
+        - limit
+        - offset
+      type: object
+      properties:
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/MembershipHistory'
+          description: The membership history list.
+          nullable: true
+        count:
+          type: integer
+          description: The total count of items.
+          format: int32
+        offset:
+          type: integer
+          description: The offset value used for pagination or positioning within a collection.
+          format: int32
+        limit:
+          type: integer
+          description: The limit representing the maximum number of items to retrieve or display.
+          format: int32
+      additionalProperties: false
+      description: Defines a collection of membership history.
+      x-bb-suppressions:
+        - list_operation_pagination_style
+    MembershipHistorySortFields:
+      title: MembershipHistorySortFields
+      enum:
+        - ActivityDate
+      type: string
+      description: Membership Card Sort Fields
+    MembershipJunctionIdsCollection:
+      required:
+        - limit
+        - offset
+      type: object
+      properties:
+        membership_junction_ids:
+          type: array
+          items:
+            type: string
+          description: The collection of membership junction IDs.
+          nullable: true
+        count:
+          type: integer
+          description: The total count of items.
+          format: int32
+        offset:
+          type: integer
+          description: The offset value used for pagination or positioning within a collection.
+          format: int32
+        limit:
+          type: integer
+          description: The limit representing the maximum number of items to retrieve or display.
+          format: int32
+      additionalProperties: false
+      description: Collection of IDs.
+      x-bb-suppressions:
+        - list_operation_pagination_style
+    MembershipRejoin:
+      required:
+        - dues
+        - rejoin_type
+      type: object
+      properties:
+        rejoin_type:
+          $ref: '#/components/schemas/RejoinType'
+        dues:
+          maximum: 9999999999.99
+          minimum: 0.0
+          type: number
+          description: The dues for the membership rejoin transaction.
+          format: double
+        program:
+          $ref: '#/components/schemas/CodeTableEntry'
+        reason:
+          $ref: '#/components/schemas/CodeTableEntry'
+        subcategory:
+          $ref: '#/components/schemas/SubCategory'
+        category:
+          $ref: '#/components/schemas/Category'
+        rejoin_date:
+          type: string
+          description: "The rejoin date of the transaction. If not provided and the business rule\n\"Default 'Rejoined on' date to previous 'Expires' date\" is enabled,\nthis will default to the previous transaction's expires date."
+          format: date
+          nullable: true
+        lifetime_membership:
+          type: boolean
+          description: Gets or sets value to lifetime membership.
+        expires_on_date:
+          type: string
+          description: "Gets or sets the date on which the membership expires.\nIf not provided and the membership category has expiration defaults configured,\nthis will be calculated automatically based on the category settings."
+          format: date
+          nullable: true
+        print_renewals:
+          type: boolean
+          description: Gets or sets value to print renewals.
+          nullable: true
+        mem_comment:
+          maxLength: 255
+          type: string
+          description: Gets or sets value of comment.
+          nullable: true
+      additionalProperties: false
+      description: Membership rejoin request model
+    MembershipRenew:
+      required:
+        - renewal_date
+        - renewal_type
+      type: object
+      properties:
+        renewal_type:
+          $ref: '#/components/schemas/RenewalType'
+        dues:
+          maximum: 9999999999999.99
+          minimum: 0.0
+          type: number
+          description: The dues for the membership renewal transaction.
+          format: double
+          nullable: true
+        program:
+          $ref: '#/components/schemas/CodeTableEntry'
+        reason:
+          $ref: '#/components/schemas/CodeTableEntry'
+        subcategory:
+          $ref: '#/components/schemas/SubCategory'
+        category:
+          $ref: '#/components/schemas/Category'
+        renewal_date:
+          type: string
+          description: The renewal date of the transaction.
+          format: date
+        lifetime_membership:
+          type: boolean
+          description: Gets or sets value to lifetime membership.
+        expires_on_date:
+          type: string
+          description: Gets or sets the date on which the membership expires.
+          format: date
+          nullable: true
+        print_renewals:
+          type: boolean
+          description: Gets or sets value to print renewals.
+          nullable: true
+        mem_comment:
+          maxLength: 255
+          type: string
+          description: Gets or sets value of comment.
+          nullable: true
+      additionalProperties: false
+      description: Membership renew request model
+    MembershipStanding:
+      title: MembershipStanding
+      enum:
+        - New
+        - Active
+        - Lapsed
+        - Dropped
+      type: string
+      description: Membership status
+    MembershipSubCategory:
+      type: object
+      properties:
+        membership_subcategories_id:
+          type: string
+          description: The immutable system record ID of the membership subcategory.
+          nullable: true
+        membership_catgory_id:
+          type: string
+          description: The immutable system record ID of the membership category.
+          nullable: true
+        sequence:
+          type: integer
+          description: The sequence of membership sub category.
+          format: int32
+          nullable: true
+        membership_sub_category_name:
+          type: string
+          description: The name of membership sub category.
+          nullable: true
+      additionalProperties: false
+      description: The sequence of the membership subcategory.
+    MembershipSubCategoryCollection:
+      required:
+        - limit
+        - offset
+      type: object
+      properties:
+        sub_categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/MembershipSubCategory'
+          description: The list of membership subcategories.
+          nullable: true
+        count:
+          type: integer
+          description: The total count of items.
+          format: int32
+        offset:
+          type: integer
+          description: The offset value used for pagination or positioning within a collection.
+          format: int32
+        limit:
+          type: integer
+          description: The limit representing the maximum number of items to retrieve or display.
+          format: int32
+      additionalProperties: false
+      description: Defines a collection of membership subcategory.
+      x-bb-suppressions:
+        - list_operation_pagination_style
+    MembershipSummary:
+      type: object
+      properties:
+        custom_membership_id:
+          type: string
+          description: The user defined ID of the membership.
+          nullable: true
+        notes:
+          type: string
+          description: The membership notes.
+          nullable: true
+        standing:
+          $ref: '#/components/schemas/MembershipStanding'
+        constituent_id:
+          type: string
+          description: The constituent ID associated with the membership.
+          nullable: true
+        constituent_name:
+          type: string
+          description: The constituent name associated with the membership.
+          nullable: true
+        expires_on_date:
+          type: string
+          description: The date when the membership expires.
+          format: date
+          nullable: true
+        primary_member_constituent_id:
+          type: string
+          description: Primary member constituent ID
+          nullable: true
+        primary_member_constituent_name:
+          type: string
+          description: Primary member constituent name
+          nullable: true
+          readOnly: true
+        primary:
+          type: boolean
+          description: Primary member or not
+      additionalProperties: false
+      description: This defines the current status of a membership.
+    MembershipType:
+      title: MembershipType
+      enum:
+        - Joined
+        - Renewal
+        - Rejoined
+        - Upgrade
+        - Downgrade
+        - Dropped
+      type: string
+      description: Membership types
+    MembershipUpgrade:
+      required:
+        - category
+        - upgrade_date
+      type: object
+      properties:
+        dues:
+          maximum: 9999999999.99
+          minimum: 0.0
+          type: number
+          description: The dues for the membership upgrade transaction.
+          format: double
+          nullable: true
+        program:
+          $ref: '#/components/schemas/CodeTableEntry'
+        reason:
+          $ref: '#/components/schemas/CodeTableEntry'
+        subcategory:
+          $ref: '#/components/schemas/SubCategory'
+        category:
+          $ref: '#/components/schemas/Category'
+        upgrade_date:
+          type: string
+          description: The upgrade date of the transaction.
+          format: date
+        lifetime_membership:
+          type: boolean
+          description: Gets or sets value to lifetime membership.
+        expires_on_date:
+          type: string
+          description: Gets or sets the date on which the membership expires.
+          format: date
+          nullable: true
+        print_renewals:
+          type: boolean
+          description: Gets or sets value to print renewals.
+          nullable: true
+        mem_comment:
+          maxLength: 255
+          type: string
+          description: Gets or sets value of comment.
+          nullable: true
+      additionalProperties: false
+      description: Membership upgrade request model for during-cycle upgrades
+    NewMembershipExpiresInterval:
+      title: NewMembershipExpiresInterval
+      enum:
+        - Days
+        - Weeks
+        - Months
+        - Years
+      type: string
+      description: New Membership expires interval
+    PostResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The ID field property.
+          nullable: true
+      additionalProperties: false
+      description: Post Api response model
+    ProblemDetails:
+      type: object
+      properties:
+        type:
+          type: string
+          description: 'A URI reference [RFC3986] that identifies the problem type. This specification encourages that, when dereferenced, it provide human-readable documentation for the problem type (e.g., using HTML [W3C.REC-html5-20141028]). When this member is not present, its value is assumed to be "about:blank".'
+          nullable: true
+        title:
+          type: string
+          description: 'A short, human-readable summary of the problem type. It SHOULD NOT change from occurrence to occurrence of the problem, except for purposes of localization (e.g., using proactive content negotiation; see [RFC7231], Section 3.4).'
+          nullable: true
+        status:
+          type: integer
+          description: 'The HTTP status code ([RFC7231], Section 6) generated by the origin server for this occurrence of the problem.'
+          format: int32
+          nullable: true
+        detail:
+          type: string
+          description: A human-readable explanation specific to this occurrence of the problem.
+          nullable: true
+        instance:
+          type: string
+          description: A URI reference that identifies the specific occurrence of the problem. It may or may not yield further information if dereferenced.
+          nullable: true
+        trace_id:
+          type: string
+          description: A request ID that can be provided to Blackbaud Support that may help with further troubleshooting.
+        span_id:
+          type: string
+          description: A request ID that can be provided to Blackbaud Support that may help with further troubleshooting.
+      additionalProperties: { }
+      description: A machine-readable format for specifying errors in HTTP API responses based on https://tools.ietf.org/html/rfc7807.
+    RejoinType:
+      title: RejoinType
+      enum:
+        - Same
+        - Upgrade
+        - Downgrade
+      type: string
+      description: Rejoin type indicating whether the membership level is changing during rejoin
+    RenewalNoticeInformation:
+      type: object
+      properties:
+        category_renewals_id:
+          type: integer
+          description: Category renewal ID
+          format: int32
+        letters:
+          type: string
+          description: Letters description
+          nullable: true
+        comments:
+          type: string
+          description: User text associated with the record
+          nullable: true
+        send_renewals_to:
+          $ref: '#/components/schemas/RenewalNoticeType'
+        renewal_number:
+          type: integer
+          description: Time period to send notices
+          format: int32
+          nullable: true
+        frequency:
+          $ref: '#/components/schemas/NewMembershipExpiresInterval'
+        renewal_type:
+          $ref: '#/components/schemas/MembershipExpirationRange'
+        for_membership_gifts:
+          type: boolean
+          description: Whether the renewal notice is standard or has gift of membership
+      additionalProperties: false
+      description: Renewal notice information of a membership
+    RenewalNoticeInformationCollection:
+      required:
+        - limit
+        - offset
+      type: object
+      properties:
+        renewal_notices:
+          type: array
+          items:
+            $ref: '#/components/schemas/RenewalNoticeInformation'
+          description: The collection of renewal notices.
+          nullable: true
+        count:
+          type: integer
+          description: The total count of items.
+          format: int32
+        offset:
+          type: integer
+          description: The offset value used for pagination or positioning within a collection.
+          format: int32
+        limit:
+          type: integer
+          description: The limit representing the maximum number of items to retrieve or display.
+          format: int32
+      additionalProperties: false
+      description: Defines a collection of renewal notice information.
+      x-bb-suppressions:
+        - list_operation_pagination_style
+    RenewalNoticeInformationSortFields:
+      title: RenewalNoticeInformationSortFields
+      enum:
+        - Frequency
+      type: string
+      description: Renewal notices Sort Fields
+    RenewalNoticeType:
+      title: RenewalNoticeType
+      enum:
+        - Donor
+        - PrimaryMember
+        - Both
+      type: string
+      description: Renewal notice types
+    RenewalType:
+      title: RenewalType
+      enum:
+        - Same
+        - Upgrade
+        - Downgrade
+      type: string
+      description: Renewal types for membership renewal transactions
+    SortDirection:
+      title: SortDirection
+      enum:
+        - Ascending
+        - Descending
+      type: string
+      description: Sort Direction
+    SubCategory:
+      type: object
+      properties:
+        legacy_id:
+          maximum: 2147483647.0
+          minimum: 1.0
+          type: integer
+          description: The system genrated ID.
+          format: int32
+          nullable: true
+        value:
+          type: string
+          description: The value of the code table entry.
+          nullable: true
+      additionalProperties: false
+      description: SubCategory drop down data
+    TransactionGift:
+      type: object
+      properties:
+        transaction_gift_id:
+          type: string
+          description: The immutable system record ID of the transaction gift link.
+          nullable: true
+        gift_id:
+          type: string
+          description: The immutable system record ID of the gift.
+          nullable: true
+        applied_amount:
+          type: number
+          description: The applied gift amount.
+          format: double
+      additionalProperties: false
+      description: The gift associated to membership
+    UpdateGiftOfMembership:
+      type: object
+      properties:
+        special_message:
+          type: string
+          description: Special message from membership.
+          nullable: true
+        send_notice_to:
+          type: string
+          description: "Send notice to of renewal notice type.\nValid options: Donor, PrimaryMember, Both"
+          nullable: true
+        given_by_id:
+          type: string
+          description: "The ID of the constituent giving this membership as a gift.\nRequired if special_message, override_renewal_defaults, or send_notice_to (non-Donor) are provided."
+          nullable: true
+        override_renewal_defaults:
+          type: boolean
+          description: Membership override renewal defaults
+      additionalProperties: false
+      description: Update gift of membership.
+  securitySchemes:
+    apiKeyHeader:
+      type: apiKey
+      name: Bb-Api-Subscription-Key
+      in: header
+    apiKeyQuery:
+      type: apiKey
+      name: subscription-key
+      in: query
+security:
+  - apiKeyHeader: [ ]
+  - apiKeyQuery: [ ]
+tags:
+  - name: Constituent
+  - name: Membership
+  - name: Gift Of Membership
+  - name: Membership Benefits
+  - name: Membership Cards
+  - name: Membership Custom Fields
+  - name: Membership Lifecycle
+  - name: Membership Fundraisers
+  - name: Membership Categories
+  - name: Membership Gifts
+  - name: Membership Transactions
