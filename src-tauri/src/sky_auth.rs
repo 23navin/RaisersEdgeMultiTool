@@ -319,6 +319,25 @@ fn valid_access_token(app: &AppHandle) -> Result<String, AppError> {
     Ok(conn.access_token)
 }
 
+// ── Internal accessors for SKY API callers (report.rs / re_calls.rs) ────────────
+
+// True when a connection file exists — cheap, no network. Used to decide whether
+// the report pipeline runs live or falls back to mock fixtures.
+pub fn has_connection(app: &AppHandle) -> bool {
+    matches!(load_connection(app), Ok(Some(_)))
+}
+
+// A fresh access token (refreshing if needed) paired with the stored
+// subscription key — the two headers every SKY API request needs. Blocking;
+// call from a blocking thread (e.g. via spawn_blocking), never on the async
+// runtime — reqwest::blocking panics inside a Tokio context.
+pub fn live_credentials(app: &AppHandle) -> Result<(String, String), AppError> {
+    let conn = load_connection(app)?
+        .ok_or_else(|| AppError::AuthError("Not connected to Raiser's Edge NXT.".into()))?;
+    let token = valid_access_token(app)?;
+    Ok((token, conn.subscription_key))
+}
+
 // ── small helpers (no extra deps) ───────────────────────────────────────────────
 
 // Opaque CSRF nonce — not a secret, just needs to be unguessable per-attempt.

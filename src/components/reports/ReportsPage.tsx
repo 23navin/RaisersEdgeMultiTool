@@ -151,7 +151,22 @@ export function ReportsPage({
                   {status === "running" ? "Refreshing…" : "Refresh"}
                 </Button>
                 {run && status !== "running" && (
-                  <span className="text-[11px] text-neutral-400">
+                  <span className="text-[11px] text-neutral-400 inline-flex items-center gap-[6px]">
+                    <span
+                      className={cn(
+                        "px-[5px] py-[1px] rounded text-[9px] uppercase tracking-[0.06em] font-medium",
+                        run.mode === "live"
+                          ? "bg-green-100 text-green-700"
+                          : "bg-neutral-100 text-neutral-500",
+                      )}
+                      title={
+                        run.mode === "live"
+                          ? "Live data from Raiser's Edge NXT"
+                          : "Mock data (fixtures) — connect RE NXT in Settings for live data"
+                      }
+                    >
+                      {run.mode}
+                    </span>
                     Updated {new Date(run.generated_at).toLocaleTimeString()}
                   </span>
                 )}

@@ -197,14 +197,12 @@ referenced by `ref` from both Report profiles and the Data Requests tab. Each
 entry declares `id`, `name`, `kind` (`query_execute` | `rest_get` | `rest_post`),
 typed `params`, and a `result` shape.
 
-- Central definitions: Rust registry `src-tauri/src/re_calls.rs` (the single
-  executor; will reuse `re_nxt_access_token()` + the stored subscription key for
-  real HTTP) mirrored by the TS catalog `src/lib/re-calls.ts` (drives the UI).
+- Central definitions: Rust registry `src-tauri/src/re_calls.rs` — the single
+  executor, with a `Transport` of **Live** (real SKY API via
+  `sky_auth::live_credentials`) or **Mock** (fixture files) — mirrored by the TS
+  catalog `src/lib/re-calls.ts` (drives the UI).
 - Per-bundle override: a profile may ship `calls/*.yaml`; the loader merges
-  bundle calls over the central registry.
-
-> **Current status (mock):** `re_calls::execute_call` reads a fixture file
-> instead of calling RE. See *Execution* below.
+  bundle calls over the central registry. *(Not yet implemented.)*
 
 **B — Visualizations.** `src/components/reports/viz/` exports
 `VIZ_REGISTRY: Record<string, VizComponent>` keyed by `type`. Each component
@@ -221,7 +219,7 @@ profiles/src/gift_activity/
 ├── instructions.md         # header + optional <!-- label: <viz id> --> sections
 ├── sql/
 │   └── constituent_gifts.sql
-└── fixtures/               # mock-mode RE responses, one per query output
+└── fixtures/               # RE responses for mock mode, one per query output
     └── GiftRows.json
 ```
 
@@ -233,41 +231,61 @@ Activity Report).
 
 ---
 
-## Execution (mock mode)
+## Execution
 
-The report pipeline runs end-to-end today, but the RE API call is **mocked** —
-it reads a fixture instead of doing HTTP. Everything else (placeholder
-substitution, DuckDB SQL, result sets) is real.
+The report pipeline runs end-to-end. The RE call goes through a `Transport`
+chosen by the command layer:
+
+- **Live** — used when a RE NXT connection exists (`sky_auth::has_connection`),
+  unless the `RE_NXT_MOCK` env var is set. Calls the real SKY Query API.
+- **Mock** — fixture files; the offline/dev/test fallback.
+
+`ReportRunResult.mode` (`"live"` | `"mock"`) reports which one ran; the Reports
+tab shows it as a badge.
 
 **Pipeline** (`src-tauri/src/report.rs`):
 
 1. **Params** — supplied `param_values` (falling back to each parameter's
    `default`) become substitutions: `{{param:id}}` for scalars, `{{param:id.key}}`
    for object values (e.g. a `date_range` yields `.from` / `.to`).
-2. **Queries** — `bind` is substituted with those params to form the resolved
-   request, then `re_calls::execute_call` returns the rows. In mock mode it reads
-   `fixtures/<query.output>.json`; the result is written to a per-run temp dir.
+2. **Queries** — the ad-hoc `template` (or `bind`) is substituted with those
+   params to form the request, then `re_calls::execute_query` returns the rows.
+   - *Live:* `POST /query/queries/execute?product=RE&module=None` →
+     poll `GET /query/jobs/{id}` until `status` is completed →
+     download `sas_uri` (no auth headers) → rows. Headers: `Authorization:
+     Bearer <token>` + `Bb-Api-Subscription-Key`.
+   - *Mock:* reads `fixtures/<query.output>.json`.
+   Either way the result is normalized to a JSON array of row objects and written
+   to a per-run temp dir.
 3. **Transforms** — `{{query:Label}}` resolves to the query result's JSON path;
    the SQL runs via DuckDB `read_json_auto` and yields a `ResultSet`
    (`db::query_to_result_set`).
 4. **Result** — `ResultSet`s keyed by transform `output` (what a visualization's
-   `data` binds to), plus per-query debug info (the resolved request + row count).
+   `data` binds to), plus per-query debug info (the resolved request + row count)
+   and `mode`.
+
+**Actions** (write-back) re-run the pipeline, collect the `id_field` column from
+the action's `input` result set, and `re_calls::create_query` POSTs `/query/queries`
+(live) or returns a stub (mock).
+
+**Adjusting to your environment:** SKY paths / params (`API_BASE`, `EXECUTE_PATH`,
+`JOB_PATH`, `CREATE_PATH`, `EXECUTE_QUERY_PARAMS`) are constants at the top of
+`re_calls.rs`. Live result shapes are coerced defensively by `normalize_rows`
+(array, `{rows|results|value|data|records}`, or `{fields, rows}`). The
+create-query body is the least-documented part — verify its shape against your env.
 
 **Fixtures convention:** `<bundle>/fixtures/<query.output>.json` — a JSON array of
-row objects, resolved against the extracted bundle (`loaded.temp_dir`). The real
-implementation swaps the single marked block in `re_calls::execute_call` for a
-SKY request (token from `sky_auth::re_nxt_access_token`, then execute → poll job →
-page); nothing else changes.
+row objects, resolved against the extracted bundle (`loaded.temp_dir`).
 
-**Commands** (`commands.rs`, registered in `main.rs`):
+**Commands** (`commands.rs`, registered in `main.rs`; both `async`):
 
 | Command | Args | Returns |
 |---|---|---|
-| `run_report` | `zipPath`, `paramValues` (map) | `ReportRunResult` (`data`, `queries`, `generated_at`) |
-| `run_report_action` | `zipPath`, `actionId`, `paramValues` | `ActionResult` (`ok`, `message`) — re-runs the pipeline, then performs the mocked write-back |
+| `run_report` | `zipPath`, `paramValues` (map) | `ReportRunResult` (`data`, `queries`, `generated_at`, `mode`) |
+| `run_report_action` | `zipPath`, `actionId`, `paramValues` | `ActionResult` (`ok`, `message`) |
 
 `zipPath` is the extracted temp dir (`loadedProfile.temp_dir`), same as
-`run_profile`.
+`run_profile`. Force mock during live testing with `RE_NXT_MOCK=1`.
 
 ---
 
@@ -279,4 +297,5 @@ page); nothing else changes.
 - TypeScript (mirror): the same in `src/types.ts`, plus `ResultSet`,
   `ReportRunResult`, `QueryDebug`, `ActionResult`.
 - Execution (Rust): `db::ResultSet` + `db::query_to_result_set`,
-  `report::{run_report, run_report_action}`, `re_calls::execute_call`.
+  `report::{run_report, run_report_action}`, `re_calls::{Transport, execute_query,
+  create_query}`, `sky_auth::{has_connection, live_credentials}`.

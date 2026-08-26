@@ -24,9 +24,8 @@ const BUILTIN_PROFILES: &[(&str, &[u8])] = &[
     ("test2.import", include_bytes!("../../profiles/test2.import")),
     ("test3.import", include_bytes!("../../profiles/test3.import")),
     ("test4.import", include_bytes!("../../profiles/test4.import")),
-    // Report-kind built-in. Packed manually (build.sh's verifier doesn't yet
-    // understand kind: report); re-pack with: cd profiles/src/gift_activity &&
-    // zip -r -X ../../gift_activity.import . -x '*.DS_Store'
+    // Report-kind built-in. Verified + packed by profiles/build.sh like the
+    // others (the verifier branches on `kind: report`).
     ("gift_activity.import", include_bytes!("../../profiles/gift_activity.import")),
 ];
 
@@ -1028,10 +1027,10 @@ mod tests {
         // Import sections default to empty for a report bundle.
         assert!(s.inputs.is_empty() && s.outputs.is_empty() && s.steps.is_empty());
 
-        // Spot-check the hybrid query ref + bind passthrough.
+        // Spot-check the query ref + ad-hoc template passthrough.
         assert_eq!(s.queries[0].call_ref.as_deref(), Some("re.query.execute"));
         assert_eq!(s.queries[0].output, "GiftRows");
-        assert!(s.queries[0].bind.contains_key("filters.gift_date.from"));
+        assert!(s.queries[0].template.is_some());
     }
 
     // Existing import bundles must still parse unchanged after the schema grew.

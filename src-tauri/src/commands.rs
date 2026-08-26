@@ -11,6 +11,8 @@ use tauri::{AppHandle, Manager};
 use crate::profile::{self, ProfileSummary, LoadedProfile, NoticeQuery, ProfileFileEntry};
 use crate::db::{self, ValidationResult, TransformResult, NoticeInput};
 use crate::report::{self, ReportRunResult, ActionResult};
+use crate::re_calls::Transport;
+use crate::sky_auth;
 use crate::validate::{self, ValidationReport};
 
 // Combined return for create / duplicate / save — the frontend wants both
@@ -154,33 +156,65 @@ fn find_notices_for_sql<'a>(loaded: &'a LoadedProfile, sql_file: &str) -> Vec<&'
     Vec::new()
 }
 
+// Pick the RE transport for a report run. Live when connected to RE NXT, unless
+// RE_NXT_MOCK is set (forces the fixture path for offline dev). Blocking — call
+// from a blocking thread.
+fn resolve_transport(app: &AppHandle) -> Result<Transport, String> {
+    let force_mock = std::env::var("RE_NXT_MOCK")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    if !force_mock && sky_auth::has_connection(app) {
+        let (access_token, subscription_key) =
+            sky_auth::live_credentials(app).map_err(|e| e.to_string())?;
+        Ok(Transport::Live { access_token, subscription_key })
+    } else {
+        Ok(Transport::Mock)
+    }
+}
+
 // ── run_report ────────────────────────────────────────────────────────────────
 // Called by: the Reports tab on Refresh.
-// Runs the report pipeline — mocked RE queries (fixtures) → DuckDB transforms →
-// in-memory result sets keyed by transform output (what visualizations bind to).
-// `zip_path` is the extracted temp dir, like run_profile.
+// Runs the report pipeline — RE queries (live SKY API when connected, else mock
+// fixtures) → DuckDB transforms → in-memory result sets keyed by transform
+// output (what visualizations bind to). `zip_path` is the extracted temp dir,
+// like run_profile. async + spawn_blocking because the live path does network
+// I/O (reqwest::blocking would panic on the async runtime).
 
 #[tauri::command]
-pub fn run_report(
+pub async fn run_report(
+    app: AppHandle,
     zip_path: String,
     param_values: HashMap<String, serde_json::Value>,
 ) -> Result<ReportRunResult, String> {
-    let loaded = profile::load_from_dir(Path::new(&zip_path)).map_err(|e| e.to_string())?;
-    report::run_report(&loaded, &param_values).map_err(|e| e.to_string())
+    tauri::async_runtime::spawn_blocking(move || -> Result<ReportRunResult, String> {
+        let loaded = profile::load_from_dir(Path::new(&zip_path)).map_err(|e| e.to_string())?;
+        let transport = resolve_transport(&app)?;
+        report::run_report(&loaded, &param_values, &transport).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 // ── run_report_action ───────────────────────────────────────────────────────────
 // Called by: the Reports tab when the user clicks an action button (e.g. "Create
-// Query in RE"). Re-runs the pipeline and performs the action (mocked write-back).
+// Query in RE"). Re-runs the pipeline and performs the write-back (live POST or
+// mock stub).
 
 #[tauri::command]
-pub fn run_report_action(
+pub async fn run_report_action(
+    app: AppHandle,
     zip_path: String,
     action_id: String,
     param_values: HashMap<String, serde_json::Value>,
 ) -> Result<ActionResult, String> {
-    let loaded = profile::load_from_dir(Path::new(&zip_path)).map_err(|e| e.to_string())?;
-    report::run_report_action(&loaded, &action_id, &param_values).map_err(|e| e.to_string())
+    tauri::async_runtime::spawn_blocking(move || -> Result<ActionResult, String> {
+        let loaded = profile::load_from_dir(Path::new(&zip_path)).map_err(|e| e.to_string())?;
+        let transport = resolve_transport(&app)?;
+        report::run_report_action(&loaded, &action_id, &param_values, &transport)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 // ── save_output ───────────────────────────────────────────────────────────────

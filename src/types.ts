@@ -208,7 +208,7 @@ export type ResultSet = {
 export type QueryDebug = {
   id: string;
   call_ref?: string | null;
-  resolved_bind: unknown;   // the bind after {{param:...}} substitution
+  resolved_request: unknown;   // the request after {{param:...}} substitution
   row_count: number;
 };
 
@@ -218,6 +218,7 @@ export type ReportRunResult = {
   data: Record<string, ResultSet>;
   queries: QueryDebug[];
   generated_at: string;
+  mode: string;            // "live" (real SKY API) | "mock" (fixtures)
 };
 
 // Returned by run_report_action. Mirrors report::ActionResult.

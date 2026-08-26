@@ -6,10 +6,10 @@
 //   param values ─▶ queries (RE call, via re_calls) ─▶ transforms (DuckDB SQL)
 //                                                       ─▶ ResultSets ─▶ return
 //
-// The pipeline is real end-to-end (placeholder substitution + DuckDB execution);
-// only the RE call itself is mocked, behind re_calls::execute_call. See
-// REPORT_PROFILES.md. No app state is held between calls — actions re-run the
-// pipeline to recompute their input.
+// The pipeline is real end-to-end (placeholder substitution + DuckDB execution).
+// The RE call goes through a re_calls::Transport — Live (real SKY API) or Mock
+// (fixture files) — chosen by the command layer. See REPORT_PROFILES.md. No app
+// state is held between calls — actions re-run the pipeline to recompute input.
 
 use std::collections::HashMap;
 use std::fs;
@@ -21,7 +21,7 @@ use serde_json::Value;
 use crate::db::{self, ResultSet};
 use crate::errors::AppError;
 use crate::profile::LoadedProfile;
-use crate::re_calls;
+use crate::re_calls::{self, Transport};
 
 // ── Result types returned to commands.rs ─────────────────────────────────────
 
@@ -31,7 +31,7 @@ use crate::re_calls;
 pub struct QueryDebug {
     pub id: String,
     pub call_ref: Option<String>,
-    pub resolved_bind: Value,
+    pub resolved_request: Value, // the request after {{param:...}} substitution
     pub row_count: usize,
 }
 
@@ -42,6 +42,7 @@ pub struct ReportRunResult {
     pub data: HashMap<String, ResultSet>,
     pub queries: Vec<QueryDebug>,
     pub generated_at: String,
+    pub mode: String, // "live" | "mock" — which transport produced this run
 }
 
 #[derive(Debug, Serialize)]
@@ -55,6 +56,7 @@ pub struct ActionResult {
 pub fn run_report(
     loaded: &LoadedProfile,
     param_values: &HashMap<String, Value>,
+    transport: &Transport,
 ) -> Result<ReportRunResult, AppError> {
     let structure = &loaded.structure;
 
@@ -62,7 +64,7 @@ pub fn run_report(
     //    substitutions: {{param:id}} for scalars, {{param:id.key}} for objects.
     let subs = build_param_subs(loaded, param_values);
 
-    // 2. Fresh per-run temp dir for the mocked query "responses".
+    // 2. Fresh per-run temp dir for the query results (mock or live).
     let run_dir = std::env::temp_dir().join(format!("report-run-{}", structure.id));
     if run_dir.exists() {
         fs::remove_dir_all(&run_dir)
@@ -71,22 +73,27 @@ pub fn run_report(
     fs::create_dir_all(&run_dir)
         .map_err(|e| AppError::IoError(format!("Cannot create report run dir: {}", e)))?;
 
-    // 3. Run each query (mocked) and stash its JSON where transforms expect it.
+    // 3. Run each query and stash its JSON where transforms expect it.
     let mut query_paths: HashMap<String, String> = HashMap::new();
     let mut query_debug: Vec<QueryDebug> = Vec::with_capacity(structure.queries.len());
     for q in &structure.queries {
-        // Substitute params into the bind to form the resolved request.
-        let resolved_bind = resolve_value(&bind_to_value(&q.bind), &subs);
+        // The request sent to RE: the ad-hoc `template` when present, else the
+        // `bind` (saved-query style). Params are substituted into either.
+        let request = match &q.template {
+            Some(tpl) => resolve_value(tpl, &subs),
+            None => resolve_value(&bind_to_value(&q.bind), &subs),
+        };
 
         let fixture_path = loaded
             .temp_dir
             .join("fixtures")
             .join(format!("{}.json", q.output));
 
-        let json = re_calls::execute_call(
+        let json = re_calls::execute_query(
+            transport,
             q.call_ref.as_deref(),
             q.template.is_some(),
-            &resolved_bind,
+            &request,
             &fixture_path,
         )?;
 
@@ -107,7 +114,7 @@ pub fn run_report(
         query_debug.push(QueryDebug {
             id: q.id.clone(),
             call_ref: q.call_ref.clone(),
-            resolved_bind,
+            resolved_request: request,
             row_count,
         });
     }
@@ -135,17 +142,20 @@ pub fn run_report(
         data,
         queries: query_debug,
         generated_at: chrono::Local::now().to_rfc3339(),
+        mode: transport.label().to_string(),
     })
 }
 
 // ── run_report_action ──────────────────────────────────────────────────────────
-// Re-runs the pipeline (stateless), then performs the action against the named
-// result set. MOCK: no real write-back — returns a descriptive message.
+// Re-runs the pipeline (stateless), collects the ids from the action's input
+// result set, then performs the write-back through the transport (live: POST a
+// created query; mock: a stub). Returns a descriptive message.
 
 pub fn run_report_action(
     loaded: &LoadedProfile,
     action_id: &str,
     param_values: &HashMap<String, Value>,
+    transport: &Transport,
 ) -> Result<ActionResult, AppError> {
     let action = loaded
         .structure
@@ -160,7 +170,7 @@ pub fn run_report_action(
         }
     }
 
-    let run = run_report(loaded, param_values)?;
+    let run = run_report(loaded, param_values, transport)?;
 
     let input_label = action
         .input
@@ -171,25 +181,28 @@ pub fn run_report_action(
         .get(input_label)
         .ok_or_else(|| AppError::ParseError(format!("Action input '{}' not produced", input_label)))?;
 
-    // Count the ids the action would send, from the `id_field` column.
-    let count = match action.bind.get("id_field").and_then(|v| v.as_str()) {
-        Some(field) => match rs.columns.iter().position(|c| c == field) {
-            Some(idx) => rs
-                .rows
+    // Collect the ids the action sends, from the `id_field` column (deduped,
+    // non-empty, original order).
+    let ids: Vec<Value> = match action.bind.get("id_field").and_then(|v| v.as_str()) {
+        Some(field) => {
+            let idx = rs.columns.iter().position(|c| c == field).ok_or_else(|| {
+                AppError::ParseError(format!(
+                    "Action id_field '{}' is not a column in '{}'",
+                    field, input_label
+                ))
+            })?;
+            let mut seen = std::collections::HashSet::new();
+            rs.rows
                 .iter()
                 .filter_map(|row| row.get(idx))
                 .filter(|v| !v.is_empty())
-                .collect::<std::collections::HashSet<_>>()
-                .len(),
-            None => {
-                return Err(AppError::ParseError(format!(
-                    "Action id_field '{}' is not a column in '{}'",
-                    field, input_label
-                )))
-            }
-        },
-        None => rs.rows.len(),
+                .filter(|v| seen.insert((*v).clone()))
+                .map(|v| Value::String(v.clone()))
+                .collect()
+        }
+        None => Vec::new(),
     };
+    let count = ids.len();
 
     // Resolve the new query's name ({{param:...}} + {{now}}).
     let mut subs = build_param_subs(loaded, param_values);
@@ -201,11 +214,28 @@ pub fn run_report_action(
         .map(|s| apply_subs(s, &subs))
         .unwrap_or_else(|| "Untitled query".to_string());
 
+    // Build the create request and send it through the transport.
+    let request = serde_json::json!({ "name": name, "ids": ids });
+    let created = re_calls::create_query(
+        transport,
+        action.call_ref.as_deref(),
+        action.template.is_some(),
+        &request,
+    )?;
+
+    let suffix = match transport {
+        Transport::Mock => " (mock)".to_string(),
+        Transport::Live { .. } => created
+            .get("id")
+            .map(|id| format!(" (RE id: {})", id))
+            .unwrap_or_default(),
+    };
+
     Ok(ActionResult {
         ok: true,
         message: format!(
-            "Created RE query \"{}\" in RE with {} record(s). (mock)",
-            name, count
+            "Created RE query \"{}\" with {} record(s).{}",
+            name, count, suffix
         ),
     })
 }
@@ -308,18 +338,19 @@ mod tests {
     #[test]
     fn run_report_produces_resultset() {
         let loaded = load();
-        let res = run_report(&loaded, &params()).expect("run_report ok");
+        let res = run_report(&loaded, &params(), &Transport::Mock).expect("run_report ok");
 
+        assert_eq!(res.mode, "mock");
         let rs = res.data.get("ConstituentGifts").expect("ConstituentGifts present");
         assert_eq!(rs.rows.len(), 5);
         assert!(rs.columns.contains(&"constituent_name".to_string()));
         assert!(rs.columns.contains(&"gift_id".to_string()));
 
-        // The date param was merged into the query request.
+        // The date param was merged into the ad-hoc query template.
         let q = &res.queries[0];
         assert_eq!(q.row_count, 5);
         assert_eq!(
-            q.resolved_bind["filters.gift_date.from"],
+            q.resolved_request["filters"]["gift_date"]["from"],
             serde_json::json!("2026-05-01")
         );
     }
@@ -327,10 +358,12 @@ mod tests {
     #[test]
     fn run_action_counts_ids() {
         let loaded = load();
-        let r = run_report_action(&loaded, "save_re_query", &params()).expect("action ok");
+        let r = run_report_action(&loaded, "save_re_query", &params(), &Transport::Mock)
+            .expect("action ok");
         assert!(r.ok);
         assert!(r.message.contains("5 record"), "message was: {}", r.message);
         assert!(r.message.contains("Report Gifts"));
+        assert!(r.message.contains("(mock)"));
     }
 
     // Exercises the exact path the running app uses: load the PACKED built-in
@@ -341,7 +374,7 @@ mod tests {
         let loaded =
             profile::load_builtin("gift_activity.import").expect("builtin loads");
         assert_eq!(loaded.structure.kind.as_deref(), Some("report"));
-        let res = run_report(&loaded, &params()).expect("run_report ok");
+        let res = run_report(&loaded, &params(), &Transport::Mock).expect("run_report ok");
         assert_eq!(res.data.get("ConstituentGifts").unwrap().rows.len(), 5);
     }
 }

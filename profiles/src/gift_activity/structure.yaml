@@ -15,17 +15,30 @@ parameters:
       preset: last_30_days
 
 # ── 2) Queries ────────────────────────────────────────────────────────────────
-# Parameterized RE API calls. HYBRID: `ref` points at a central registry call;
-# alternatively `template` could inline a bundle-local definition. `bind` maps
-# parameter values / literals into the call (dotted keys address nested request
-# fields). `output` names the JSON result that transforms read via {{query:...}}.
+# Parameterized RE API calls. `ref` selects the central registry call
+# (re.query.execute handles the SKY execute → poll job → download flow). The
+# `template` is the ad-hoc query definition POSTed to the API; {{param:...}}
+# placeholders are merged in before sending. `output` names the JSON result that
+# transforms read via {{query:...}}.
+#
+# NOTE: the `template` shape below is illustrative. Replace it with your RE
+# environment's real ad-hoc query definition — its output field names must match
+# the columns the transform SQL selects (constituent_name, gift_id, …). The mock
+# path ignores `template` and reads fixtures/GiftRows.json instead.
 queries:
   - id: gift_rows
-    ref: re.query.execute       # central registry entry (hides async job polling)
-    bind:
-      query_id: 12345           # a saved RE query id (or an inline ad-hoc definition)
-      "filters.gift_date.from": "{{param:gift_dates.from}}"
-      "filters.gift_date.to": "{{param:gift_dates.to}}"
+    ref: re.query.execute
+    template:
+      type: GiftQuery
+      fields:
+        - constituent_name
+        - gift_id
+        - gift_amount
+        - gift_date
+      filters:
+        gift_date:
+          from: "{{param:gift_dates.from}}"
+          to: "{{param:gift_dates.to}}"
     output: GiftRows
 
 # ── 3) Transforms ─────────────────────────────────────────────────────────────
