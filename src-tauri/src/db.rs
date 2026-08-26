@@ -298,6 +298,7 @@ fn normalize_col(s: &str) -> String {
 
 pub fn run_transform(
     file_paths: &HashMap<String, String>,
+    code_table_paths: &HashMap<String, String>,
     sql_content: &str,
     output_labels: &[String],
     notices: &[NoticeInput<'_>],
@@ -355,6 +356,7 @@ pub fn run_transform(
         let only_path = normalized.values().next().unwrap();
         sql = sql.replace("{{input_file}}", only_path);
     }
+    sql = substitute_code_tables(&sql, code_table_paths);
     let mut multi_output_mode = false;
     for (label, path) in &outputs {
         let placeholder = format!("{{{{output:{}}}}}", label);
@@ -418,13 +420,52 @@ pub fn run_transform(
     // label) rather than failing the whole transform.
     let notice_results: Vec<Notice> = notices
         .iter()
-        .map(|n| run_notice(&conn, n, &normalized))
+        .map(|n| run_notice(&conn, n, &normalized, code_table_paths))
         .collect();
 
     Ok(TransformResult {
         outputs: output_files,
         notices: notice_results,
     })
+}
+
+// ── code table placeholders ───────────────────────────────────────────────────
+// {{codetable:Label}} resolves to the JSON file holding one code table's entries,
+// fetched from RE before the SQL runs (see code_tables.rs). Kept separate from
+// {{input:Label}} so a profile can tell "a file the user picked" apart from
+// "a table pulled from RE" at a glance.
+
+pub fn substitute_code_tables(sql: &str, code_table_paths: &HashMap<String, String>) -> String {
+    let mut out = sql.to_string();
+    for (label, path) in code_table_paths {
+        let placeholder = format!("{{{{codetable:{}}}}}", label);
+        out = out.replace(&placeholder, &path.replace('\\', "/"));
+    }
+    out
+}
+
+// ── select_rows ───────────────────────────────────────────────────────────────
+// Runs a bare SELECT over the profile's inputs and code tables and returns the
+// rows. Used by code_table_sync steps, where each returned row becomes one write
+// against RE — no output file is produced.
+
+pub fn select_rows(
+    file_paths: &HashMap<String, String>,
+    code_table_paths: &HashMap<String, String>,
+    sql_content: &str,
+) -> Result<ResultSet, AppError> {
+    let conn = Connection::open_in_memory().map_err(|e| AppError::SqlError(e.to_string()))?;
+    let mut sql = sql_content.to_string();
+    for (label, path) in file_paths {
+        let placeholder = format!("{{{{input:{}}}}}", label);
+        sql = sql.replace(&placeholder, &path.replace('\\', "/"));
+    }
+    if sql.contains("{{input_file}}") && file_paths.len() == 1 {
+        let only_path = file_paths.values().next().unwrap().replace('\\', "/");
+        sql = sql.replace("{{input_file}}", &only_path);
+    }
+    sql = substitute_code_tables(&sql, code_table_paths);
+    query_to_result_set(&conn, &sql)
 }
 
 // ── run_notice ────────────────────────────────────────────────────────────────
@@ -437,6 +478,7 @@ fn run_notice(
     conn: &Connection,
     n: &NoticeInput<'_>,
     file_paths: &HashMap<&str, String>,
+    code_table_paths: &HashMap<String, String>,
 ) -> Notice {
     let mut user_sql = n.sql_content.to_string();
     for (label, path) in file_paths {
@@ -447,6 +489,7 @@ fn run_notice(
         let only_path = file_paths.values().next().unwrap();
         user_sql = user_sql.replace("{{input_file}}", only_path);
     }
+    let user_sql = substitute_code_tables(&user_sql, code_table_paths);
     let trimmed = user_sql.trim().trim_end_matches(';').trim();
 
     // Phase 1: discover the column names returned by the user's query.

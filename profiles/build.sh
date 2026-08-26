@@ -94,11 +94,15 @@ let validAnchors = new Set();
 let suggestAnchors = [];
 let needsSqlDir = false;
 
+const codeTableOutputs = validateCodeTables();
+
 if (kind === 'report') {
   validateReport();
 } else {
   validateImport();
 }
+
+checkCodeTablePlaceholders(codeTableOutputs);
 
 // ── sql dir presence + unused (shared) ────────────────────────────────────────
 if (needsSqlDir && (!fs.existsSync(sqlDir) || !fs.statSync(sqlDir).isDirectory())) {
@@ -129,6 +133,50 @@ if (fs.existsSync(mdPath)) {
 for (const m of infos) console.error(`  i ${m}`);
 for (const m of errors) console.error(`  x ${m}`);
 process.exit(errors.length ? 1 : 0);
+
+// ══ code_tables (shared by both kinds) ════════════════════════════════════════
+// Declares RE code tables pulled before any SQL runs; each `output` becomes a
+// {{codetable:Label}} placeholder. Returns the set of declared output labels.
+function validateCodeTables() {
+  const outputs = new Set();
+  if (data.code_tables === undefined || data.code_tables === null) return outputs;
+  if (!isList(data.code_tables)) { err('code_tables must be a list'); return outputs; }
+  const ids = new Set();
+  for (const [i, ct] of data.code_tables.entries()) {
+    const w = `code_tables[${i}]`;
+    if (!isMap(ct)) { err(`${w} must be a mapping`); continue; }
+    if (!isStr(ct.id) || !ct.id) err(`${w}.id must be a non-empty string`);
+    else { if (ids.has(ct.id)) err(`${w}.id '${ct.id}' is duplicated`); ids.add(ct.id); }
+    if (!isStr(ct.name) && !isStr(ct.code_table_id)) {
+      err(`${w} needs name (exact code table name) or code_table_id`);
+    }
+    if ('include_inactive' in ct && ct.include_inactive !== undefined && ct.include_inactive !== null
+        && !isBool(ct.include_inactive)) {
+      err(`${w}.include_inactive must be true or false`);
+    }
+    if (!isStr(ct.output) || !ct.output) err(`${w}.output must be a non-empty string`);
+    else {
+      if (outputs.has(ct.output)) err(`${w}.output '${ct.output}' is duplicated`);
+      outputs.add(ct.output);
+    }
+  }
+  return outputs;
+}
+
+// Every {{codetable:Label}} across sql/ must name a declared output.
+function checkCodeTablePlaceholders(declared) {
+  const re = /\{\{\s*codetable\s*:\s*([^}]+?)\s*\}\}/g;
+  for (const rel of sqlOnDisk) {
+    const body = stripSqlComments(fs.readFileSync(path.join(sqlDir, rel), 'utf8'));
+    for (const m of body.matchAll(re)) {
+      const lbl = m[1].trim();
+      if (!declared.has(lbl)) {
+        err(`sql/${rel}: references {{codetable:${lbl}}} but no code_tables entry declares that output`
+            + (declared.size ? ` (declared: ${[...declared].join(', ')})` : ' (the profile declares none)'));
+      }
+    }
+  }
+}
 
 // ══ import validation ═════════════════════════════════════════════════════════
 function validateImport() {
@@ -294,8 +342,9 @@ function validateImport() {
     if (!isStr(step.label) || !step.label) err(`${where}.label must be a non-empty string`);
     else { stepLabels.push(step.label); where = `steps[${i}](${step.label})`; }
     const t = step.type;
-    if (t !== 'file_input' && t !== 'sql_transform' && t !== 'manual_instruction') {
-      err(`${where}.type must be one of file_input, sql_transform, manual_instruction (got ${JSON.stringify(t)})`);
+    const STEP_TYPES = ['file_input', 'sql_transform', 'code_table_sync', 'manual_instruction'];
+    if (!STEP_TYPES.includes(t)) {
+      err(`${where}.type must be one of ${STEP_TYPES.join(', ')} (got ${JSON.stringify(t)})`);
       continue;
     }
     if (t === 'file_input') {
@@ -314,6 +363,37 @@ function validateImport() {
         }
       } else {
         checkTransform({ input: step.input, sql: step.sql, output: step.output, notices: step.notices }, where);
+      }
+    } else if (t === 'code_table_sync') {
+      needsSqlDir = true;
+      if (!isStr(step.code_table) && !isStr(step.code_table_id)) {
+        err(`${where} (code_table_sync): needs code_table (name) or code_table_id`);
+      }
+      const OPS = ['create', 'update', 'delete'];
+      if (!OPS.includes(step.operation)) {
+        err(`${where} (code_table_sync): operation must be one of ${OPS.join(', ')} (got ${JSON.stringify(step.operation)})`);
+      }
+      if (!isStr(step.sql) || !step.sql) {
+        err(`${where} (code_table_sync): sql is required — it selects the rows to push`);
+      } else {
+        referencedSql.add(step.sql);
+        const p = path.join(sqlDir, step.sql);
+        if (!fs.existsSync(p)) err(`${where} (code_table_sync): sql references missing file sql/${step.sql}`);
+        else {
+          const body = stripSqlComments(fs.readFileSync(p, 'utf8'));
+          // update/delete address an existing entry by its system id.
+          if ((step.operation === 'update' || step.operation === 'delete')
+              && !/table_entries_id/i.test(body)) {
+            err(`${where} (code_table_sync): ${step.operation} needs sql/${step.sql} to select a table_entries_id column`);
+          }
+          // create's one required field.
+          if (step.operation === 'create' && !/long_description/i.test(body)) {
+            err(`${where} (code_table_sync): create needs sql/${step.sql} to select a long_description column`);
+          }
+          for (const l of stepInputLabels(step.input, `${where}.input`)) {
+            if (!inputLabels.has(l)) err(`${where}.input references unknown input label '${l}'`);
+          }
+        }
       }
     }
   }

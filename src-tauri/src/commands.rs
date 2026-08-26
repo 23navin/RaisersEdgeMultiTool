@@ -11,6 +11,7 @@ use tauri::{AppHandle, Manager};
 use crate::profile::{self, ProfileSummary, LoadedProfile, NoticeQuery, ProfileFileEntry};
 use crate::db::{self, ValidationResult, TransformResult, NoticeInput};
 use crate::report::{self, ReportRunResult, ActionResult};
+use crate::code_tables;
 use crate::re_calls::Transport;
 use crate::sky_auth;
 use crate::validate::{self, ValidationReport};
@@ -103,11 +104,28 @@ pub fn validate_file(
 // transform has exactly one input).
 
 #[tauri::command]
-pub fn run_profile(
+pub async fn run_profile(
+    app: AppHandle,
     file_paths: HashMap<String, String>,  // input_label → file_path
     sql_file: String,                     // filename e.g. "primary_transform.sql"
     zip_path: String,                     // temp dir path — profile already extracted
     output_labels: Vec<String>,           // every output declared on this transform
+) -> Result<TransformResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        run_profile_blocking(&app, file_paths, sql_file, zip_path, output_labels)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// The body of run_profile, off the async runtime — pulling code tables does
+// blocking network I/O (reqwest::blocking panics inside a Tokio context).
+fn run_profile_blocking(
+    app: &AppHandle,
+    file_paths: HashMap<String, String>,
+    sql_file: String,
+    zip_path: String,
+    output_labels: Vec<String>,
 ) -> Result<TransformResult, String> {
     let loaded = profile::load_from_dir(Path::new(&zip_path))
         .map_err(|e| e.to_string())?;
@@ -130,8 +148,50 @@ pub fn run_profile(
         })
         .collect();
 
-    db::run_transform(&file_paths, sql, &output_labels, &notices)
+    // Pull any code tables the profile declares so {{codetable:Label}} resolves.
+    // No-ops (and costs nothing) for the profiles that declare none.
+    let code_table_paths = if loaded.structure.code_tables.is_empty() {
+        HashMap::new()
+    } else {
+        let transport = resolve_transport(app)?;
+        let run_dir = std::env::temp_dir().join(format!("codetables-{}", loaded.structure.id));
+        code_tables::fetch_all(&loaded, &transport, &run_dir).map_err(|e| e.to_string())?
+    };
+
+    db::run_transform(&file_paths, &code_table_paths, sql, &output_labels, &notices)
         .map_err(|e| e.to_string())
+}
+
+// ── run_code_table_sync ───────────────────────────────────────────────────────
+// Called by: the Imports tab when the user runs a `code_table_sync` step.
+// Runs the step's SQL over the uploaded files, then pushes one create / update /
+// delete per returned row to RE's Code Table API. Writes are live only when
+// connected (and RE_NXT_MOCK unset) — otherwise they are stubbed like any other
+// mock-mode call.
+
+#[tauri::command]
+pub async fn run_code_table_sync(
+    app: AppHandle,
+    file_paths: HashMap<String, String>,
+    step_label: String,
+    zip_path: String,
+) -> Result<code_tables::SyncResult, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<code_tables::SyncResult, String> {
+        let loaded = profile::load_from_dir(Path::new(&zip_path)).map_err(|e| e.to_string())?;
+        let step = loaded
+            .structure
+            .steps
+            .iter()
+            .find(|s| s.label == step_label && s.step_type == "code_table_sync")
+            .ok_or_else(|| format!("No code_table_sync step labelled '{}'", step_label))?;
+
+        let transport = resolve_transport(&app)?;
+        let run_dir = std::env::temp_dir().join(format!("codetables-{}", loaded.structure.id));
+        code_tables::run_sync(&loaded, step, &file_paths, &transport, &run_dir)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 // Returns the NoticeQuery list attached to the first transform whose `sql`

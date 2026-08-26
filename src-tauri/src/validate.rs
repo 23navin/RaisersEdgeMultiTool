@@ -138,6 +138,74 @@ pub fn validate_profile(files: &[ProfileFileEntry]) -> ValidationReport {
     // Track which SQL files are referenced so we can flag orphans.
     let mut referenced_sql: HashSet<String> = HashSet::new();
 
+    // ── code_tables section ──────────────────────────────────────────────────
+    // Shared by both profile kinds. Each entry must say which RE table it means
+    // and expose a unique label for SQL's {{codetable:Label}} placeholder.
+    {
+        let mut seen_outputs: HashSet<&str> = HashSet::new();
+        for ct in &structure.code_tables {
+            if ct.name.is_none() && ct.code_table_id.is_none() {
+                issues.push(err(
+                    "yaml.code_tables.no_table",
+                    format!(
+                        "code_tables entry '{}' needs `name` (exact code table name) or `code_table_id`",
+                        ct.id
+                    ),
+                    None,
+                    false,
+                ));
+            }
+            if ct.output.trim().is_empty() {
+                issues.push(err(
+                    "yaml.code_tables.no_output",
+                    format!("code_tables entry '{}' needs a non-empty `output` label", ct.id),
+                    None,
+                    false,
+                ));
+            } else if !seen_outputs.insert(ct.output.as_str()) {
+                issues.push(err(
+                    "yaml.code_tables.duplicate_output",
+                    format!(
+                        "code_tables output '{}' is declared more than once — {{{{codetable:{}}}}} would be ambiguous",
+                        ct.output, ct.output
+                    ),
+                    None,
+                    false,
+                ));
+            }
+        }
+    }
+
+    // Every {{codetable:Label}} a SQL file uses must name a declared table.
+    {
+        let declared: HashSet<&str> = structure
+            .code_tables
+            .iter()
+            .map(|c| c.output.as_str())
+            .collect();
+        for (file, content) in &sql_files {
+            for label in code_table_placeholders(content) {
+                if !declared.contains(label.as_str()) {
+                    issues.push(err(
+                        "sql.unknown_code_table",
+                        format!(
+                            "sql/{} references {{{{codetable:{}}}}} but no code_tables entry declares that output{}",
+                            file,
+                            label,
+                            if declared.is_empty() {
+                                " (the profile declares none)".to_string()
+                            } else {
+                                format!(" (declared: {})", declared.iter().cloned().collect::<Vec<_>>().join(", "))
+                            }
+                        ),
+                        Some(IssueLocation::Sql { path: format!("sql/{}", file), line: None }),
+                        false,
+                    ));
+                }
+            }
+        }
+    }
+
     // ── Per-step structural checks ───────────────────────────────────────────
     for step in &structure.steps {
         let step_loc = || IssueLocation::YamlStep { label: step.label.clone() };
@@ -325,11 +393,92 @@ pub fn validate_profile(files: &[ProfileFileEntry]) -> ValidationReport {
                 }
             }
 
+            "code_table_sync" => {
+                // Which table: name or id, exactly one required.
+                if step.code_table.is_none() && step.code_table_id.is_none() {
+                    issues.push(err(
+                        "yaml.code_table_sync.no_table",
+                        format!(
+                            "code_table_sync step '{}' needs `code_table` (name) or `code_table_id`",
+                            step.label
+                        ),
+                        Some(step_loc()),
+                        false,
+                    ));
+                }
+
+                // Which write, and is it one we support.
+                match step.operation.as_deref() {
+                    None => issues.push(err(
+                        "yaml.code_table_sync.no_operation",
+                        format!(
+                            "code_table_sync step '{}' needs `operation` (create, update, or delete)",
+                            step.label
+                        ),
+                        Some(step_loc()),
+                        false,
+                    )),
+                    Some(op) if !matches!(op, "create" | "update" | "delete") => {
+                        issues.push(err(
+                            "yaml.code_table_sync.bad_operation",
+                            format!(
+                                "code_table_sync step '{}' has operation '{}'; expected create, update, or delete",
+                                step.label, op
+                            ),
+                            Some(step_loc()),
+                            false,
+                        ))
+                    }
+                    Some(_) => {}
+                }
+
+                // The rows to push come from a SQL file that must exist.
+                match step.sql.as_deref() {
+                    None => issues.push(err(
+                        "yaml.code_table_sync.missing_sql_field",
+                        format!(
+                            "code_table_sync step '{}' has no `sql` naming the rows to push",
+                            step.label
+                        ),
+                        Some(step_loc()),
+                        false,
+                    )),
+                    Some(sql_name) => {
+                        if !sql_files.contains_key(sql_name) {
+                            issues.push(err(
+                                "yaml.code_table_sync.missing_sql_file",
+                                format!(
+                                    "code_table_sync step '{}' references missing file sql/{}",
+                                    step.label, sql_name
+                                ),
+                                Some(IssueLocation::Sql { path: format!("sql/{}", sql_name), line: None }),
+                                true,
+                            ));
+                        } else if step.operation.as_deref() == Some("create") {
+                            // create needs a long_description column; a query that
+                            // clearly can't produce one is worth flagging early.
+                            let sql = sql_files.get(sql_name).map(|s| s.to_lowercase()).unwrap_or_default();
+                            if !sql.contains("long_description") {
+                                issues.push(warning(
+                                    "sql.code_table_sync.no_long_description",
+                                    format!(
+                                        "code_table_sync step '{}' creates entries but sql/{} never mentions long_description (the one required field)",
+                                        step.label, sql_name
+                                    ),
+                                    Some(IssueLocation::Sql { path: format!("sql/{}", sql_name), line: None }),
+                                    false,
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+
             other => {
                 issues.push(err(
                     "yaml.unknown_step_type",
                     format!(
-                        "Step '{}' has unknown type '{}'. Expected file_input, sql_transform, or manual_instruction.",
+                        "Step '{}' has unknown type '{}'. Expected file_input, sql_transform, code_table_sync, or manual_instruction.",
                         step.label, other
                     ),
                     Some(step_loc()),
@@ -573,6 +722,25 @@ fn ref_label(r: &StepInputRef) -> String {
         StepInputRef::Simple(s) => s.clone(),
         StepInputRef::Detailed(d) => d.label.clone(),
     }
+}
+
+// Pull the labels out of every {{codetable:Label}} in a SQL file. Comments are
+// not stripped — a commented-out placeholder naming a real table is harmless,
+// and one naming a missing table is still worth surfacing.
+fn code_table_placeholders(sql: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut rest = sql;
+    while let Some(start) = rest.find("{{codetable:") {
+        let after = &rest[start + "{{codetable:".len()..];
+        match after.find("}}") {
+            Some(end) => {
+                out.push(after[..end].trim().to_string());
+                rest = &after[end + 2..];
+            }
+            None => break,
+        }
+    }
+    out
 }
 
 fn err(code: &str, msg: String, loc: Option<IssueLocation>, fixable: bool) -> ValidationIssue {

@@ -67,6 +67,7 @@ import-tool/
 │       ├── steps/
 │       │   ├── StepSelectFiles.tsx   # file_input step rendering
 │       │   ├── StepGenerateFile.tsx  # sql_transform step rendering
+│       │   ├── StepCodeTableSync.tsx # code_table_sync step rendering
 │       │   └── StepImport.tsx        # manual_instruction step rendering
 │       └── ui/                   # Shadcn primitives (button, popover, command)
 │
@@ -77,6 +78,8 @@ import-tool/
 │       ├── commands.rs           # #[tauri::command] functions (thin API layer)
 │       ├── profile.rs            # Profile bundle loading (unzip, parse YAML + SQL + Markdown)
 │       ├── db.rs                 # DuckDB validation and SQL transforms — writes output CSV
+│       ├── re_calls.rs           # The one place a SKY API call is executed (Query + Code Table)
+│       ├── code_tables.rs        # Pulls RE code tables into SQL; runs code_table_sync writes
 │       └── errors.rs             # Shared AppError enum
 │
 └── profiles/                     # PROFILE BUNDLES — not compiled in, ship alongside exe
@@ -97,6 +100,7 @@ Every command must be registered in `main.rs` inside `generate_handler![]` or `i
 | `load_profile` | `App.tsx` on profile select | `zipPath` | `LoadedProfile` |
 | `validate_file` | `App.tsx` on validate click | `filePath`, `inputLabel`, `zipPath` | `ValidationResult` |
 | `run_profile` | `App.tsx` on generate click | `filePaths` (map of input label → file path), `sqlFile`, `zipPath`, `outputLabels` | `TransformResult` |
+| `run_code_table_sync` | `App.tsx` on a `code_table_sync` step | `filePaths`, `stepLabel`, `zipPath` | `SyncResult` |
 | `save_output` | `App.tsx` on download click | `srcPath`, `destPath` | `void` |
 
 `zipPath` for `validate_file` and `run_profile` is actually the extracted temp dir
@@ -156,7 +160,8 @@ steps:
     output: ["Import File"]
 ```
 
-Step types supported: `file_input`, `sql_transform`, `manual_instruction`.
+Step types supported: `file_input`, `sql_transform`, `code_table_sync`,
+`manual_instruction`.
 Validation is not its own step type — it's a per-row checkbox inside a
 `file_input` step.
 
@@ -177,6 +182,11 @@ Three placeholder forms are substituted at runtime:
   When present, the SQL author writes their own `COPY (...) TO '{{output:X}}'`
   statements (multi-output mode). When absent, the SQL is treated as a bare
   `SELECT` and wrapped in a `COPY` to the single declared output.
+
+- `{{codetable:Label}}` — resolves to a JSON file holding one RE code table's
+  entries, pulled before the SQL runs. Declared in the top-level `code_tables:`
+  section (valid in both profile kinds); read with `read_json_auto`. See
+  STEP_TYPES.md → *Code tables*.
 
 Column names with spaces, `#`, `/` etc. must be double-quoted in SQL: `"Item #"`.
 
@@ -250,6 +260,10 @@ re-read validation rules and SQL.
 - **State read too early?** → Use the value returned by the setter callback, not the stale state variable
 - **`validate_file` / `run_profile` `zipPath` arg is the extracted temp dir, not the .import zip** → naming is misleading; the backend reads `structure.yaml` and SQL straight from that directory
 - **`{{input_file}}` errors in a multi-input transform** → use `{{input:Label}}` placeholders to disambiguate, one per declared input
+- **`{{codetable:X}}` errors?** → the label must match a `code_tables:` entry's
+  `output`, not the RE table's name. Both `validate.rs` and `build.sh` check this
+- **Code table step does nothing?** → check the live/mock badge. Without an RE
+  connection (or with `RE_NXT_MOCK=1`) writes are stubbed, not sent
 - **Two profiles with the same name in the sidebar?** → built-in and user profile share an `id`; this is expected. Select on `zip_path`, never on `id`
 
 ---

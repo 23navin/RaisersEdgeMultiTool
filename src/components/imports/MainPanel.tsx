@@ -5,11 +5,12 @@
 
 import { CheckIcon } from "lucide-react";
 import type { LoadedProfile, Step } from "../../types";
-import type { FileEntry, GenEntry } from "../../App";
+import type { FileEntry, GenEntry, SyncEntry } from "../../App";
 import { refLabel, stepTransforms } from "../../lib/profile-utils";
 import { StepSelectFiles } from "./steps/StepSelectFiles";
 import { StepGenerateFile } from "./steps/StepGenerateFile";
 import { StepImport } from "./steps/StepImport";
+import { StepCodeTableSync } from "./steps/StepCodeTableSync";
 
 type MainPanelProps = {
   loadedProfile: LoadedProfile | null;
@@ -21,6 +22,8 @@ type MainPanelProps = {
   onClearFile: (inputLabel: string) => void;
   onGenerate: (stepLabel: string, transformIdx: number) => void;
   onDownload: (stepLabel: string, transformIdx: number, outputLabel: string) => void;
+  syncs: Record<string, SyncEntry>;
+  onCodeTableSync: (stepLabel: string) => void;
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -68,6 +71,8 @@ export function MainPanel({
   onClearFile,
   onGenerate,
   onDownload,
+  syncs,
+  onCodeTableSync,
 }: MainPanelProps) {
   if (!loadedProfile) {
     return (
@@ -116,6 +121,8 @@ export function MainPanel({
               onClearFile={onClearFile}
               onGenerate={onGenerate}
               onDownload={onDownload}
+              syncs={syncs}
+              onCodeTableSync={onCodeTableSync}
             />
           ))}
         </div>
@@ -149,6 +156,8 @@ function StepSection({
   onClearFile,
   onGenerate,
   onDownload,
+  syncs,
+  onCodeTableSync,
 }: StepSectionProps) {
   const name = `${stepNumber}. ${stepDisplayName(step.label, instructions)}`;
   const heading = <StepHeading name={name} done={done} />;
@@ -218,6 +227,40 @@ function StepSection({
         <section id={`step-${step.label}`} className="scroll-mt-[18px]">
           {heading}
           <StepGenerateFile transforms={transformRows} />
+        </section>
+      );
+    }
+    case "code_table_sync": {
+      const state = syncs[step.label];
+      const inputRefs = step.input ?? [];
+      const inputs = inputRefs.map((r) => {
+        const lbl = refLabel(r);
+        return { label: lbl, ready: files[lbl]?.status === "valid" };
+      });
+      // Same readiness rule as a transform: every required input valid.
+      const canRun = inputRefs.every((r) => {
+        const lbl = refLabel(r);
+        const def = structure.inputs.find((i) => i.label === lbl);
+        const f = files[lbl];
+        if (def?.required) return f?.status === "valid";
+        return !f || f.status === "valid";
+      });
+      return (
+        <section id={`step-${step.label}`} className="scroll-mt-[18px]">
+          {heading}
+          <StepCodeTableSync
+            description={stepBody(instructions[step.label])}
+            sync={{
+              operation: step.operation ?? "create",
+              codeTable: step.code_table ?? step.code_table_id ?? "(unspecified)",
+              inputs,
+              canRun,
+              status: state?.status ?? "idle",
+              result: state?.result,
+              error: state?.error,
+              onRun: () => onCodeTableSync(step.label),
+            }}
+          />
         </section>
       );
     }

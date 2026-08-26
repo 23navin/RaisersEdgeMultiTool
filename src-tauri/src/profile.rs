@@ -24,6 +24,8 @@ const BUILTIN_PROFILES: &[(&str, &[u8])] = &[
     ("test2.import", include_bytes!("../../profiles/test2.import")),
     ("test3.import", include_bytes!("../../profiles/test3.import")),
     ("test4.import", include_bytes!("../../profiles/test4.import")),
+    // Demonstrates the code_tables section + the code_table_sync step.
+    ("code_table_demo.import", include_bytes!("../../profiles/code_table_demo.import")),
     // Report-kind built-in. Verified + packed by profiles/build.sh like the
     // others (the verifier branches on `kind: report`).
     ("gift_activity.import", include_bytes!("../../profiles/gift_activity.import")),
@@ -97,6 +99,40 @@ pub struct SqlTransform {
     pub notices: Option<Vec<NoticeQuery>>,
 }
 
+// A code table pulled from RE before transforms run. Shared by both profile
+// kinds: the fetched entries are written to the run's temp dir as JSON and
+// exposed to SQL as {{codetable:<output>}}, which DuckDB reads via
+// read_json_auto. Address the table by `name` (exact match, resolved to its id
+// with one extra call) or by `code_table_id` when the id is already known.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct CodeTableRef {
+    pub id: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub code_table_id: Option<String>,
+    // Retired entries are excluded unless a profile asks for them.
+    #[serde(default)]
+    pub include_inactive: Option<bool>,
+    pub output: String,
+}
+
+impl CodeTableRef {
+    // Whether the table is addressed by id or by name — id wins when both are set.
+    pub fn selector(&self) -> Result<crate::re_calls::CodeTableSelector<'_>, AppError> {
+        if let Some(id) = self.code_table_id.as_deref() {
+            return Ok(crate::re_calls::CodeTableSelector::Id(id));
+        }
+        if let Some(name) = self.name.as_deref() {
+            return Ok(crate::re_calls::CodeTableSelector::Name(name));
+        }
+        Err(AppError::ParseError(format!(
+            "code_tables entry '{}' needs either `name` or `code_table_id`",
+            self.id
+        )))
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Step {
     pub label: String,
@@ -107,6 +143,13 @@ pub struct Step {
     pub output: Option<Vec<String>>, // sql_transform single-transform shortcut
     pub notices: Option<Vec<NoticeQuery>>, // sql_transform single-transform shortcut
     pub transforms: Option<Vec<SqlTransform>>, // sql_transform multi-transform form
+
+    // ── code_table_sync fields ───────────────────────────────────────────────
+    // The step's `sql` (above) selects the rows to push; each row becomes one
+    // create / update / delete against the named table.
+    pub code_table: Option<String>,        // code table name
+    pub code_table_id: Option<String>,     // ...or its id, skipping the lookup
+    pub operation: Option<String>,         // "create" | "update" | "delete"
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -131,6 +174,12 @@ pub struct ProfileStructure {
     pub outputs: Vec<OutputDefinition>,
     #[serde(default)]
     pub steps: Vec<Step>,
+
+    // ── Shared sections ──────────────────────────────────────────────────────
+    // Code tables are pulled from RE before any SQL runs and exposed to it as
+    // {{codetable:<output>}}. Usable by import and report profiles alike.
+    #[serde(default)]
+    pub code_tables: Vec<CodeTableRef>,
 
     // ── Report sections ──────────────────────────────────────────────────────
     // All optional; populated only when kind == "report". See REPORT_PROFILES.md.

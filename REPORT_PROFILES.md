@@ -250,32 +250,73 @@ tab shows it as a badge.
    for object values (e.g. a `date_range` yields `.from` / `.to`).
 2. **Queries** — the ad-hoc `template` (or `bind`) is substituted with those
    params to form the request, then `re_calls::execute_query` returns the rows.
-   - *Live:* `POST /query/queries/execute?product=RE&module=None` →
-     poll `GET /query/jobs/{id}` until `status` is completed →
-     download `sas_uri` (no auth headers) → rows. Headers: `Authorization:
-     Bearer <token>` + `Bb-Api-Subscription-Key`.
+   - *Live:* `POST /queries/execute?product=RE&module=None` →
+     poll `GET /jobs/{id}?product=RE&module=None&include_read_url=OnceCompleted`
+     until `status` is `Completed` → download `sas_uri` (no auth headers, expires
+     after 15 min) → rows. Headers on the API calls: `Authorization: Bearer
+     <token>` + `Bb-Api-Subscription-Key`. Base URL is the Query API server,
+     `https://api.sky.blackbaud.com/query`.
    - *Mock:* reads `fixtures/<query.output>.json`.
    Either way the result is normalized to a JSON array of row objects and written
    to a per-run temp dir.
 3. **Transforms** — `{{query:Label}}` resolves to the query result's JSON path;
    the SQL runs via DuckDB `read_json_auto` and yields a `ResultSet`
-   (`db::query_to_result_set`).
+   (`db::query_to_result_set`). `{{codetable:Label}}` resolves the same way for
+   any RE code table the profile declares — see below.
 4. **Result** — `ResultSet`s keyed by transform `output` (what a visualization's
    `data` binds to), plus per-query debug info (the resolved request + row count)
    and `mode`.
 
-**Actions** (write-back) re-run the pipeline, collect the `id_field` column from
-the action's `input` result set, and `re_calls::create_query` POSTs `/query/queries`
-(live) or returns a stub (mock).
+**The request envelope.** A profile's `template` is an **ExecuteQueryDefinition**
+(`select_fields` / `filter_fields` / `sort_fields` / `type_id` / …), *not* the whole
+request. `re_calls::build_execute_body` nests it under `query` and fills the
+defaults — posting the bare definition returns `400 … "The Query field is
+required."` A template that already has a top-level `query` key is passed through
+untouched, so an author can override `ux_mode`, `output_format`,
+`results_file_name`, or `time_zone_offset_in_minutes`.
 
-**Adjusting to your environment:** SKY paths / params (`API_BASE`, `EXECUTE_PATH`,
-`JOB_PATH`, `CREATE_PATH`, `EXECUTE_QUERY_PARAMS`) are constants at the top of
-`re_calls.rs`. Live result shapes are coerced defensively by `normalize_rows`
-(array, `{rows|results|value|data|records}`, or `{fields, rows}`). The
-create-query body is the least-documented part — verify its shape against your env.
+Defaults: `output_format: Json` (the API's own default is `Csv`, which
+`read_json_auto` can't consume), `formatting_mode: None` (raw SQL values, not
+`"$5.00"` / localized dates), `ux_mode: Asynchronous` (a throttled job queues
+instead of 429-ing).
+
+**Field ids.** RE addresses query fields by numeric `query_field_id`, and the ids
+are environment-specific. Discover them with `GET /querytypes` then
+`GET /v2/queryfields/root|node` (all need `product=RE&module=None`). Set
+`user_alias` on each select field to the column name the transform SQL expects —
+that's the seam that keeps the SQL independent of RE's field naming.
+
+**Actions** (write-back) re-run the pipeline and collect the `id_field` column from
+the action's `input` result set. RE has no "save this list of ids" endpoint — a
+static query is *criteria* — so `re_calls::create_query` POSTs a **QueryAdd**
+(`format: Static`) whose `filter_fields` carry the ids as one `OneOf` filter. The
+action's `bind` must supply `type_id` and `id_query_field_id` for that filter.
+
+**Adjusting to your environment:** endpoint constants (`API_BASE`, `EXECUTE_PATH`,
+`JOB_PATH`, `CREATE_PATH`, `PRODUCT_MODULE`, `INCLUDE_READ_URL`, the three
+`DEFAULT_*` values) sit at the top of `re_calls.rs`, and the shapes they build
+follow `API reference/query.yaml`. Live result shapes are coerced defensively by
+`normalize_rows` (array, `{rows|results|value|data|records}`, or `{fields, rows}`).
+
+**Code tables.** A report profile may declare a top-level `code_tables:` section
+(the same one import profiles use) to pull an RE code table into its transforms:
+
+```yaml
+code_tables:
+  - id: constituent_codes
+    name: "Constituent Codes"    # exact name — or code_table_id: "43"
+    output: ConstituentCodes     # → {{codetable:ConstituentCodes}}
+```
+
+Tables are fetched once per run, before the queries, via
+`code_tables::fetch_all` — the same `Transport`, so mock mode reads
+`fixtures/codetables/<output>.json`. Full reference: STEP_TYPES.md → *Code
+tables*. Code table **writes** are an import-side step (`code_table_sync`);
+reports use `actions` for write-back.
 
 **Fixtures convention:** `<bundle>/fixtures/<query.output>.json` — a JSON array of
-row objects, resolved against the extracted bundle (`loaded.temp_dir`).
+row objects, resolved against the extracted bundle (`loaded.temp_dir`). Code
+tables use `<bundle>/fixtures/codetables/<output>.json`.
 
 **Commands** (`commands.rs`, registered in `main.rs`; both `async`):
 
@@ -299,3 +340,6 @@ row objects, resolved against the extracted bundle (`loaded.temp_dir`).
 - Execution (Rust): `db::ResultSet` + `db::query_to_result_set`,
   `report::{run_report, run_report_action}`, `re_calls::{Transport, execute_query,
   create_query}`, `sky_auth::{has_connection, live_credentials}`.
+- Code tables (Rust): `code_tables::{fetch_all, run_sync}`,
+  `re_calls::{fetch_code_table_entries, write_code_table_entry}`,
+  `db::substitute_code_tables`.

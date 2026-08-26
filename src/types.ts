@@ -72,12 +72,27 @@ export type SqlTransform = {
 
 export type Step = {
   label: string;
-  type: string;            // "file_input" | "sql_transform" | "manual_instruction"
+  // "file_input" | "sql_transform" | "code_table_sync" | "manual_instruction"
+  type: string;
   input?: StepInputRef[];  // file_input: one upload row per entry. sql_transform: single-transform shortcut.
-  sql?: string;            // sql_transform single-transform shortcut
+  sql?: string;            // sql_transform single-transform shortcut; code_table_sync: rows to push
   output?: string[];       // sql_transform single-transform shortcut
   notices?: NoticeQuery[]; // sql_transform single-transform shortcut
   transforms?: SqlTransform[]; // sql_transform multi-transform form
+  // code_table_sync fields
+  code_table?: string;     // code table name...
+  code_table_id?: string;  // ...or its id, skipping the name lookup
+  operation?: string;      // "create" | "update" | "delete"
+};
+
+// A code table pulled from RE before SQL runs, exposed to it as
+// {{codetable:<output>}}. Mirrors profile::CodeTableRef. Both profile kinds.
+export type CodeTableRef = {
+  id: string;
+  name?: string | null;
+  code_table_id?: string | null;
+  include_inactive?: boolean | null;
+  output: string;
 };
 
 // One row in a file_input step's validation-errors table. Most fields are
@@ -131,6 +146,8 @@ export type ProfileStructure = {
   inputs: InputDefinition[];
   outputs: OutputDefinition[];
   steps: Step[];
+  // Shared section — RE code tables available to SQL in either profile kind.
+  code_tables: CodeTableRef[];
   // Report sections — populated only when kind === "report". See REPORT_PROFILES.md.
   parameters: Parameter[];
   queries: QueryRef[];
@@ -219,6 +236,24 @@ export type ReportRunResult = {
   queries: QueryDebug[];
   generated_at: string;
   mode: string;            // "live" (real SKY API) | "mock" (fixtures)
+};
+
+// Returned by run_code_table_sync. Mirrors code_tables::SyncResult.
+export type SyncFailure = {
+  row: number;
+  identifier: string;      // long_description or entry id — a human-readable pointer
+  error: string;
+};
+
+export type SyncResult = {
+  ok: boolean;             // false when any row failed
+  operation: string;       // "create" | "update" | "delete"
+  code_table: string;      // how the table was addressed, for display
+  attempted: number;
+  succeeded: number;
+  failures: SyncFailure[]; // one per failed row — the run continues past failures
+  message: string;
+  mode: string;            // "live" (real SKY API) | "mock"
 };
 
 // Returned by run_report_action. Mirrors report::ActionResult.

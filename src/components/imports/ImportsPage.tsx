@@ -3,7 +3,7 @@
 // The Imports tab: profile sidebar on the left, step content on the right.
 
 import type { LoadedProfile, ProfileSummary } from "../../types";
-import type { FileEntry, GenEntry } from "../../App";
+import type { FileEntry, GenEntry, SyncEntry } from "../../App";
 import { Panel } from "../shared/Panel";
 import { Sidebar } from "./Sidebar";
 import { MainPanel } from "./MainPanel";
@@ -21,6 +21,8 @@ type ImportsPageProps = {
   onClearFile: (inputLabel: string) => void;
   onGenerate: (stepLabel: string, transformIdx: number) => void;
   onDownload: (stepLabel: string, transformIdx: number, outputLabel: string) => void;
+  syncs: Record<string, SyncEntry>;
+  onCodeTableSync: (stepLabel: string) => void;
   onReset: () => void;
 };
 
@@ -37,6 +39,8 @@ export function ImportsPage({
   onClearFile,
   onGenerate,
   onDownload,
+  syncs,
+  onCodeTableSync,
   onReset,
 }: ImportsPageProps) {
   return (
@@ -58,6 +62,8 @@ export function ImportsPage({
         onValidate={onValidate}
         onClearFile={onClearFile}
         onGenerate={onGenerate}
+        syncs={syncs}
+        onCodeTableSync={onCodeTableSync}
         onDownload={onDownload}
       />
     </Panel>

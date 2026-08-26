@@ -17,6 +17,7 @@ import type {
   Parameter,
   ReportRunResult,
   SqlError,
+  SyncResult,
   TransformResult,
   ValidationError,
 } from "./types";
@@ -44,6 +45,10 @@ const TAB_ORDER: TopTab[] = ["imports", "data-requests", "reports"];
 export type FileStatus = "none" | "pending" | "valid" | "invalid";
 export type GenerateStatus = "idle" | "running" | "done" | "error";
 
+// A code_table_sync step runs in one shot — no progress bar, so no separate
+// progress field the way a generation has.
+export type SyncStatus = "idle" | "running" | "done" | "error";
+
 export type FileEntry = {
   path: string;
   name: string;
@@ -57,6 +62,14 @@ export type GenEntry = {
   errors?: SqlError[];
   notices?: Notice[];
   outputs?: OutputFile[];
+};
+
+// One code_table_sync step's run state, keyed by step label (a sync step holds
+// exactly one operation, so it needs no composite key the way transforms do).
+export type SyncEntry = {
+  status: SyncStatus;
+  result?: SyncResult;
+  error?: string;
 };
 
 // Composite key for a single transform within a sql_transform step.
@@ -114,6 +127,7 @@ export default function App() {
   const [loadedProfile, setLoadedProfile] = useState<LoadedProfile | null>(null);
   const [files, setFiles] = useState<Record<string, FileEntry>>({});
   const [generations, setGenerations] = useState<Record<string, GenEntry>>({});
+  const [syncs, setSyncs] = useState<Record<string, SyncEntry>>({});
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TopTab>("imports");
   const [exitingTab, setExitingTab] = useState<TopTab | null>(null);
@@ -185,6 +199,9 @@ export default function App() {
         stepsDone[step.label] = transforms.every(
           (_, i) => generations[genKey(step.label, i)]?.status === "done"
         );
+      } else if (step.type === "code_table_sync") {
+        const st = syncs[step.label];
+        stepsDone[step.label] = st?.status === "done" && (st.result?.ok ?? false);
       } else {
         stepsDone[step.label] = false;
       }
@@ -329,6 +346,41 @@ export default function App() {
     }
   };
 
+  // Runs a code_table_sync step: the backend executes the step's SQL over the
+  // uploaded files and pushes one write per row to RE. Failures come back
+  // per-row rather than aborting, so a partial result is still reported.
+  const handleCodeTableSync = async (stepLabel: string) => {
+    if (!loadedProfile) return;
+    const step = loadedProfile.structure.steps.find((s) => s.label === stepLabel);
+    if (!step) return;
+
+    const filePaths: Record<string, string> = {};
+    for (const ref of step.input ?? []) {
+      const lbl = refLabel(ref);
+      const f = files[lbl];
+      if (f?.status === "valid") filePaths[lbl] = f.path;
+    }
+
+    setSyncs((prev) => ({ ...prev, [stepLabel]: { status: "running" } }));
+    try {
+      const result = await invoke<SyncResult>("run_code_table_sync", {
+        filePaths,
+        stepLabel,
+        zipPath: loadedProfile.temp_dir,
+      });
+      setSyncs((prev) => ({
+        ...prev,
+        [stepLabel]: { status: "done", result },
+      }));
+    } catch (e) {
+      console.error("run_code_table_sync failed:", e);
+      setSyncs((prev) => ({
+        ...prev,
+        [stepLabel]: { status: "error", error: asString(e) },
+      }));
+    }
+  };
+
   const handleDownload = async (
     stepLabel: string,
     transformIdx: number,
@@ -357,6 +409,7 @@ export default function App() {
   const handleReset = () => {
     setFiles({});
     setGenerations({});
+    setSyncs({});
   };
 
   // `zipPath` is the unique selection key — built-in and user profiles can
@@ -367,6 +420,7 @@ export default function App() {
     setSelectedProfile(zipPath);
     setFiles({});
     setGenerations({});
+    setSyncs({});
     setLoadedProfile(null);
     if (zipPath == null) return;
     const summary = profiles.find((p) => p.zip_path === zipPath);
@@ -476,6 +530,8 @@ export default function App() {
           onClearFile={handleClearFile}
           onGenerate={handleGenerate}
           onDownload={handleDownload}
+          syncs={syncs}
+          onCodeTableSync={handleCodeTableSync}
           onReset={handleReset}
         />
       );

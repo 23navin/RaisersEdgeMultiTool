@@ -290,6 +290,91 @@ Optional body describing what this transform does.
 
 ---
 
+## Step type: `code_table_sync`
+
+### Purpose
+Pushes rows to an RE **code table** — creating, updating, or deleting entries.
+The step's SQL selects the rows; each returned row becomes one write. There is
+no output file. Renders via `StepCodeTableSync`.
+
+Reading a code table needs no step at all — declare it in the top-level
+`code_tables:` section and reference it from any SQL as `{{codetable:Label}}`
+(see *Code tables* below).
+
+### YAML
+```yaml
+  - label: AddMissingCodes
+    type: code_table_sync
+    code_table: "Constituent Codes"   # exact name — or code_table_id: "43"
+    operation: create                 # create | update | delete
+    input:                            # inputs the SQL reads
+      - Classification
+    sql: missing_codes.sql            # selects the rows to push
+```
+
+### The SQL contract
+Column names are the API's writable `TableEntry` fields. Any other column is
+ignored, so a query can carry extra columns for its own joins.
+
+| Column              | Applies to           | Notes                                    |
+| ------------------- | -------------------- | ---------------------------------------- |
+| `long_description`  | create (**required**), update | The entry's name.               |
+| `table_entries_id`  | update, delete (**required**) | RE's system id for the entry.   |
+| `short_description` | create, update       | Optional.                                |
+| `numeric_value`     | create, update       | Optional; parsed as a number.            |
+| `sequence`          | create               | Optional; parsed as an integer.          |
+| `is_active`         | create, update       | Optional; `true`/`1`/`yes` → `true`.     |
+
+### Behavior
+- One HTTP call per row. A failed row is recorded and the run **continues** —
+  the result carries `succeeded`, `attempted`, and a `failures[]` list naming
+  each bad row, so one rejected entry can't hide the rest.
+- Writes reach RE only when connected and `RE_NXT_MOCK` is unset; otherwise
+  they're stubbed. The result's `mode` (`live`/`mock`) is shown as a badge
+  next to the button *before* the user clicks, because this step changes RE data.
+- The step is marked done only when every row succeeded.
+
+### UI behavior
+- **Pipeline diagram**: input pills on the left, an upload icon in the middle,
+  the target code table on the right.
+- **Button**: labelled by operation ("Add entries" / "Update entries" /
+  "Delete entries"), enabled on the same rule as a transform — every required
+  input uploaded and valid.
+- **Result**: a green callout on full success, amber on partial. Failures render
+  as a table of `Row` / `Entry` / `Error`.
+
+---
+
+## Code tables (no step required)
+
+A top-level section, valid in **both** import and report profiles. Each entry is
+fetched from RE before any SQL runs and written to the run's temp dir as JSON.
+
+```yaml
+code_tables:
+  - id: constituent_codes
+    name: "Constituent Codes"    # exact name — or code_table_id: "43"
+    include_inactive: false      # default false
+    output: ConstituentCodes     # → {{codetable:ConstituentCodes}}
+```
+
+`{{codetable:Label}}` resolves to that JSON file, read with `read_json_auto`:
+
+```sql
+LEFT JOIN read_json_auto('{{codetable:ConstituentCodes}}') ct
+       ON lower(trim(ct.long_description)) = lower(trim(v."class"))
+```
+
+Columns are the API's `TableEntry` fields: `table_entries_id`,
+`long_description`, `short_description`, `numeric_value`, `sequence`,
+`is_active`, `is_system_entry`, `code_tables_id`, `code_tables_name`.
+
+Mock mode reads `fixtures/codetables/<output>.json` from the bundle, so a
+profile that uses code tables still runs offline. Working example:
+`profiles/src/code_table_demo/`.
+
+---
+
 ## Step type: `manual_instruction`
 
 ### Purpose
@@ -342,6 +427,7 @@ multi-transform steps track each transform independently.
 | -------------------- | ------------------------------------ | ---------------------------------------- |
 | `file_input`         | `label`, `type`, at least one `input`| `input[].validate`                       |
 | `sql_transform`      | `label`, `type`, `sql` or `transforms`| `input`, `output`, `notices`, `transforms[].input`, `transforms[].output`, `transforms[].notices` |
+| `code_table_sync`    | `label`, `type`, `sql`, `operation`, `code_table` or `code_table_id` | `input`     |
 | `manual_instruction` | `label`, `type`                      | —                                        |
 
 ---
@@ -352,10 +438,12 @@ To add a new step type or change an existing one, touch:
 
 1. **`src-tauri/src/profile.rs`** — extend `Step` / `StepInputRef` if new fields are needed; serde handles the YAML mapping.
 2. **`src/types.ts`** — mirror any new field in the TS `Step` type.
-3. **`src/components/MainPanel.tsx`** — add a `case "your_type":` in the
+3. **`src/components/imports/MainPanel.tsx`** — add a `case "your_type":` in the
    `StepSection` switch, dispatching to a new or existing component.
 4. **`src/App.tsx`** — extend state shape / handlers if the new step needs
    to track per-step data beyond the existing `files` and `generations` maps.
-5. **An example profile** — add a corresponding YAML+MD example under
+5. **`src-tauri/src/validate.rs`** and **`profiles/build.sh`** — both reject
+   unknown step types, so a new one must be added to each or bundles won't verify.
+6. **An example profile** — add a corresponding YAML+MD example under
    `profiles/src/<name>/` and rebuild with `profiles/build.sh` so you can
    exercise it end to end.

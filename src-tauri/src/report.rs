@@ -66,14 +66,25 @@ pub fn run_report(
 
     // 2. Fresh per-run temp dir for the query results (mock or live).
     let run_dir = std::env::temp_dir().join(format!("report-run-{}", structure.id));
-    if run_dir.exists() {
-        fs::remove_dir_all(&run_dir)
-            .map_err(|e| AppError::IoError(format!("Cannot clear report run dir: {}", e)))?;
+    // exists() then remove_dir_all() is a TOCTOU race: two runs of the same
+    // report can each see the dir and both try to remove it, and the loser gets
+    // NotFound. The dir being gone is the outcome we wanted either way.
+    if let Err(e) = fs::remove_dir_all(&run_dir) {
+        if e.kind() != std::io::ErrorKind::NotFound {
+            return Err(AppError::IoError(format!(
+                "Cannot clear report run dir: {}",
+                e
+            )));
+        }
     }
     fs::create_dir_all(&run_dir)
         .map_err(|e| AppError::IoError(format!("Cannot create report run dir: {}", e)))?;
 
-    // 3. Run each query and stash its JSON where transforms expect it.
+    // 3. Pull any declared code tables — transforms reference them as
+    //    {{codetable:Label}} alongside {{query:Label}}.
+    let code_table_paths = crate::code_tables::fetch_all(loaded, transport, &run_dir)?;
+
+    // 4. Run each query and stash its JSON where transforms expect it.
     let mut query_paths: HashMap<String, String> = HashMap::new();
     let mut query_debug: Vec<QueryDebug> = Vec::with_capacity(structure.queries.len());
     for q in &structure.queries {
@@ -128,11 +139,13 @@ pub fn run_report(
             .get(&t.sql)
             .ok_or_else(|| AppError::ParseError(format!("SQL file '{}' not found in profile", t.sql)))?;
 
-        // Substitute {{query:Label}} with each query result's JSON path.
+        // Substitute {{query:Label}} with each query result's JSON path, then
+        // {{codetable:Label}} with each fetched code table's.
         let mut sql = sql_template.clone();
         for (label, path) in &query_paths {
             sql = sql.replace(&format!("{{{{query:{}}}}}", label), path);
         }
+        sql = db::substitute_code_tables(&sql, &code_table_paths);
 
         let result = db::query_to_result_set(&conn, &sql)?;
         data.insert(t.output.clone(), result);
@@ -214,8 +227,43 @@ pub fn run_report_action(
         .map(|s| apply_subs(s, &subs))
         .unwrap_or_else(|| "Untitled query".to_string());
 
-    // Build the create request and send it through the transport.
-    let request = serde_json::json!({ "name": name, "ids": ids });
+    // Build the QueryAdd body (see "API reference/query.yaml" → QueryAdd). RE has
+    // no "save this list of ids" endpoint — a static query is criteria, so the
+    // collected ids become a single OneOf filter on the id field. The action's
+    // `bind` supplies the two environment-specific numbers:
+    //   type_id            — the query type (e.g. 18 for Constituent)
+    //   id_query_field_id  — the query field the ids belong to
+    let type_id = action.bind.get("type_id").and_then(|v| v.as_i64()).ok_or_else(|| {
+        AppError::ParseError(format!(
+            "Action '{}' needs bind.type_id (the RE query type id) to create a query",
+            action_id
+        ))
+    })?;
+    let id_field_id = action
+        .bind
+        .get("id_query_field_id")
+        .and_then(|v| v.as_i64())
+        .ok_or_else(|| {
+            AppError::ParseError(format!(
+                "Action '{}' needs bind.id_query_field_id (the RE query field id for \
+                 the ids being saved) to create a query",
+                action_id
+            ))
+        })?;
+
+    let request = serde_json::json!({
+        "name": name,
+        "format": "Static",
+        "type_id": type_id,
+        "filter_fields": [{
+            "query_field_id": id_field_id,
+            "compare_type": "None",
+            "operator": "OneOf",
+            "filter_values": ids,
+            "left_parenthesis": false,
+            "right_parenthesis": false
+        }]
+    });
     let created = re_calls::create_query(
         transport,
         action.call_ref.as_deref(),
@@ -346,11 +394,12 @@ mod tests {
         assert!(rs.columns.contains(&"constituent_name".to_string()));
         assert!(rs.columns.contains(&"gift_id".to_string()));
 
-        // The date param was merged into the ad-hoc query template.
+        // The date params were merged into the ad-hoc query definition's
+        // Between filter (filter_values[0] = from, [1] = to).
         let q = &res.queries[0];
         assert_eq!(q.row_count, 5);
         assert_eq!(
-            q.resolved_request["filters"]["gift_date"]["from"],
+            q.resolved_request["filter_fields"][0]["filter_values"][0],
             serde_json::json!("2026-05-01")
         );
     }
