@@ -8,8 +8,15 @@ component behavior live here side by side.
 Authoritative code locations:
 - YAML parsing (Rust): `src-tauri/src/profile.rs`
 - Type mirror (TS): `src/types.ts`
-- Step → component dispatch: `src/components/MainPanel.tsx` (`switch (step.type)`)
+- Step → component dispatch: `src/components/imports/MainPanel.tsx` (`switch (step.type)`)
 - Instruction section parser: `parse_instructions()` in `src-tauri/src/profile.rs`
+- Step-type acceptance: `src-tauri/src/validate.rs` and `profiles/build.sh` — both
+  reject unknown types
+
+**Scope:** this file covers **import** profiles. Report profiles (`kind: report`)
+have no steps at all — they declare `parameters` / `queries` / `transforms` /
+`visualizations` / `actions`, documented in `REPORT_PROFILES.md`. The one section
+below that applies to both kinds is *Code tables*.
 
 ---
 
@@ -20,7 +27,9 @@ A `.import` file is a zip archive containing:
 ```
 structure.yaml      # required — profile metadata, inputs/outputs, steps
 instructions.md     # optional — markdown text per step
-sql/                # optional — .sql files referenced by sql_transform steps
+sql/                # optional — .sql files referenced by sql_transform steps,
+                    #            code_table_sync steps, and notice queries
+fixtures/           # optional — mock-mode RE responses (see Code tables below)
 assets/             # optional — images referenced from instructions.md
 ```
 
@@ -51,6 +60,11 @@ inputs:
 outputs:
   - label: Update_Records
     type: csv
+
+code_tables:               # optional — RE code tables pulled before any SQL runs
+  - id: constituent_codes  # (see Code tables below; also valid in report profiles)
+    name: "Constituent Codes"
+    output: ConstituentCodes
 
 steps:
   - label: ...
@@ -198,7 +212,8 @@ Renders the **pipeline diagram + Generate/progress/Download** row
 - The notice SQL is expected to return zero rows in the nominal case. Any
   returned rows are rendered as a table beneath the Generate row using the
   result-set column names as headers.
-- `{{input_file}}` substitution works the same way as in the main transform.
+- `{{input_file}}` / `{{input:Label}}` substitution works the same way as in the
+  main transform, and so does `{{codetable:Label}}`.
 - Notices live on the individual transform — both the single-transform
   shortcut and entries inside `transforms[]` support a `notices` field.
 
@@ -414,10 +429,13 @@ Computed in `App.tsx` (`stepsDone`):
 - `file_input` — done when **every** input row in the step is `"valid"`.
 - `sql_transform` — done when **every** transform in the step has
   `status === "done"`.
+- `code_table_sync` — done when the run finished **and** every row succeeded
+  (`status === "done" && result.ok`). A partial run leaves the step open.
 - `manual_instruction` — currently never marked done (no user action tracked).
 
 Generation state is keyed by `${stepLabel}::${transformIdx}` so that
-multi-transform steps track each transform independently.
+multi-transform steps track each transform independently. Sync state is keyed by
+step label alone — a `code_table_sync` step holds exactly one operation.
 
 ---
 
