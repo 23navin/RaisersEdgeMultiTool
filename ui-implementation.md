@@ -1,5 +1,19 @@
 # Import Tool — UI Implementation Prompt
 
+> **Historical document.** This was the original build prompt for the first
+> version of the Imports UI. It is kept for its visual specs — spacing, colors,
+> button states, pipeline diagram — which the current components still follow.
+>
+> It predates several changes and is **not** a map of the current code:
+> components now live under `src/components/imports/`, `reports/`,
+> `data-request/`, and `settings/`; there are `StepQuery` and
+> `StepCodeTableSync` step components; and `settings/imports/ImportTab.tsx`
+> calls `invoke()` itself rather than routing everything through `App.tsx`.
+>
+> For current structure see [CLAUDE.md](CLAUDE.md); for step-by-step UI behavior
+> see [STEP_TYPES.md](STEP_TYPES.md); for authoring profiles see
+> [PROFILE_AUTHORING.md](PROFILE_AUTHORING.md).
+
 > Hand this document to Claude Code to implement the React/Tauri frontend.
 > The app is built with React + TypeScript + Tailwind + shadcn/ui inside a Tauri shell.
 > All layout decisions, component specs, and state shapes are defined here.
