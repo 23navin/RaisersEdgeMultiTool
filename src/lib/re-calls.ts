@@ -4,14 +4,14 @@
 // half of the hybrid API-call library. This catalog drives the UI (parameter
 // forms, labels, validation) and is shared by both Report profiles and the Data
 // Requests tab. The actual HTTP/auth/polling lives in the Rust registry
-// (src-tauri/src/re_calls.rs, future) and is invoked via a generic
-// `run_re_call(callId, params)` command.
+// (src-tauri/src/re_calls.rs), which profiles reach indirectly: a profile names
+// a call in `ref:` and the run_* commands execute it. There is no generic
+// run_re_call command.
 //
-// A bundle may also ship its own call definitions (the per-bundle half of the
-// hybrid model); those are merged over this catalog at load time.
-//
-// SHELL ONLY: definitions/signatures, no execution logic yet. See
-// REPORT_PROFILES.md for the full contract.
+// This catalog is descriptive only — it carries no execution logic, and it is
+// narrower than the Rust registry (which also defines the re.codetable.* calls).
+// Per-bundle `calls/*.yaml` overrides described in REPORT_PROFILES.md are not
+// implemented yet. See REPORT_PROFILES.md for the full contract.
 
 // query_execute hides the SKY async pattern (execute → poll job → page results)
 // so authors never deal with job polling. rest_get / rest_post are thin wrappers

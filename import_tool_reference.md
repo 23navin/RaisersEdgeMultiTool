@@ -1,8 +1,14 @@
 # Import Tool — Developer Reference
 
 > **Purpose of this document:** A single reference for everything you need while building
-> and maintaining this project. Covers project goals, architecture decisions, Tauri concepts,
-> file structure, the development cycle, and how data flows through the app.
+> and maintaining **the app itself**. Covers project goals, architecture decisions, Tauri
+> concepts, file structure, the development cycle, and how data flows through the app.
+>
+> **Writing a profile, not app code?** Go to
+> **[PROFILE_AUTHORING.md](PROFILE_AUTHORING.md)** instead — it is the complete
+> authoring guide for both import and report profiles, with
+> [STEP_TYPES.md](STEP_TYPES.md) and [REPORT_PROFILES.md](REPORT_PROFILES.md) as
+> its field-level references.
 
 ---
 
@@ -30,8 +36,14 @@
 
 ### What this app does
 
-A lightweight Windows desktop tool that transforms vendor-supplied CSV and Excel files
-into the specific column format and structure required by a target database's import tool.
+A lightweight Windows desktop tool with two workspaces:
+
+- **Imports** — transforms vendor-supplied CSV and Excel files into the specific column
+  format and structure required by a target database's import tool, optionally enriching
+  them with live lookups against the RE NXT (Blackbaud SKY) API and pushing new code-table
+  entries back.
+- **Reports** — runs parameterized queries against that same API and renders the results
+  on screen.
 
 ### Core requirements
 
@@ -47,14 +59,16 @@ into the specific column format and structure required by a target database's im
 
 ### What a "profile" is
 
-A profile is a self-contained zip bundle that teaches the app how to handle one specific
-vendor's file format. Adding a new vendor means dropping in a new zip — no recompiling,
-no code changes.
+A profile is a self-contained zip bundle (extension `.import`) that teaches the app how to
+handle one specific job — one vendor's file format, or one report. Adding either means
+shipping a new bundle: no recompiling, no code changes.
 
 ### Who writes profiles
 
-Anyone comfortable writing SQL. The profile format is deliberately kept to YAML metadata
-+ a SQL file + a README. No programming language required.
+Anyone comfortable writing SQL. A bundle is YAML metadata + SQL files + a Markdown
+walkthrough; no programming language is required, and profiles can be written and
+validated inside the app itself (Settings → Imports). See
+[PROFILE_AUTHORING.md](PROFILE_AUTHORING.md).
 
 ---
 
@@ -160,15 +174,21 @@ This is the single most important concept to internalize.
 ## 5. Project File Structure
 
 ```
-import-tool/
+tauri-import/
 │
 ├── src/                              FRONTEND — React app
 │   ├── main.tsx                      React entry point — mounts <App /> into index.html
-│   ├── App.tsx                       Root component — holds shared state, wires components
+│   ├── App.tsx                       Root component — holds shared state, makes the invoke() calls
+│   ├── types.ts                      TS mirror of the Rust structs
+│   ├── lib/                          cn() helper, profile helpers, RE call catalog
 │   └── components/
-│       ├── ProfilePicker.tsx         Step 1 — dropdown of available profiles
-│       ├── FileDropZone.tsx          Step 2 — file selection + validation feedback
-│       └── ResultsPanel.tsx          Step 3 — run button, progress, output/errors
+│       ├── Titlebar.tsx              Window chrome + workspace tabs
+│       ├── imports/                  Imports workspace (Sidebar, MainPanel, steps/)
+│       ├── reports/                  Reports workspace (ReportInputs, viz/ registry)
+│       ├── data-request/             Data Requests workspace
+│       ├── settings/                 Settings, incl. the in-app profile editor
+│       ├── shared/                   CodeMirror editor, notice block, panel
+│       └── ui/                       Shadcn primitives
 │
 ├── src-tauri/                        BACKEND — Rust binary
 │   ├── Cargo.toml                    Rust dependencies (equivalent to package.json)
@@ -177,20 +197,23 @@ import-tool/
 │   └── src/
 │       ├── main.rs                   Entry point — starts app, registers commands
 │       ├── commands.rs               #[tauri::command] functions (the backend API)
-│       ├── profile.rs                Profile bundle loading — unzip, parse YAML + SQL
-│       ├── db.rs                     DuckDB execution — run SQL, write output CSV
+│       ├── profile.rs                Bundle load/save/duplicate/create; the YAML structs
+│       ├── validate.rs               Profile linting + missing-file scaffolding
+│       ├── db.rs                     DuckDB execution — validation, transforms, result sets
+│       ├── re_calls.rs               The single SKY API executor (Live / Mock transports)
+│       ├── code_tables.rs            Code table pulls + code_table_sync writes
+│       ├── query_step.rs             The re_query step runner
+│       ├── report.rs                 The report pipeline
+│       ├── sky_auth.rs               RE NXT OAuth + credential storage
 │       └── errors.rs                 Shared error enum used across all modules
 │
 ├── profiles/                         PROFILE BUNDLES — external, not compiled in
-│   ├── vendor_a.zip
-│   │   ├── profile.yaml
-│   │   ├── transform.sql
-│   │   └── README.md
-│   └── vendor_b.zip
-│       ├── profile.yaml
-│       ├── transform.sql
-│       └── README.md
+│   ├── src/<name>/                   Source: structure.yaml, instructions.md, sql/,
+│   │                                 fixtures/, assets/, test-files/
+│   ├── build.sh                      Verifies each source folder, packs <name>.import
+│   └── <name>.import                 The zip the app consumes
 │
+├── API reference/                    SKY OpenAPI specs + query-synchronize best practices
 ├── index.html                        HTML shell that React mounts into
 ├── package.json                      Frontend dependencies (React, Tailwind, shadcn)
 ├── vite.config.ts                    Frontend build configuration
@@ -201,55 +224,95 @@ import-tool/
 
 | File | Owns | Never touches |
 |---|---|---|
-| `App.tsx` | Shared state (selected profile, validated file path) | Filesystem, DuckDB |
-| `ProfilePicker.tsx` | Profile dropdown UI, profile metadata display | File selection |
-| `FileDropZone.tsx` | File selection UI, validation feedback | Running transforms |
-| `ResultsPanel.tsx` | Run button, progress, results display | Profile selection |
+| `App.tsx` | Shared state (selected profile, files, generations, params) | Filesystem, DuckDB |
+| `imports/MainPanel.tsx` | Step dispatch — one component per `step.type` | Backend calls |
+| `reports/viz/index.tsx` | `VIZ_REGISTRY` — one component per `visualization.type` | Backend calls |
+| `settings/imports/ImportTab.tsx` | The profile editor's state + its own editor `invoke()`s | Import/report execution |
 | `commands.rs` | Tauri command definitions (the API surface) | UI state |
-| `profile.rs` | Unzipping bundles, parsing YAML, reading SQL | DuckDB |
-| `db.rs` | DuckDB connection, SQL execution, CSV output | Profile parsing |
+| `profile.rs` | Zip read/write, YAML parsing, instruction splitting | DuckDB, HTTP |
+| `validate.rs` | Structural linting of a bundle, stub generation | Disk I/O |
+| `db.rs` | DuckDB connection, SQL execution, CSV output | Profile parsing, HTTP |
+| `re_calls.rs` | Every SKY HTTP call, job polling, fixtures | DuckDB |
+| `report.rs` | Params → queries → transforms → result sets | HTTP details |
 | `errors.rs` | Error type definitions | Everything else |
 
 ---
 
 ## 6. Profile Bundle Format
 
-Each profile is a `.zip` file containing exactly three files:
+> This is the orientation version. The authoritative, field-by-field docs are
+> [PROFILE_AUTHORING.md](PROFILE_AUTHORING.md) (how to write one),
+> [STEP_TYPES.md](STEP_TYPES.md) (import step types), and
+> [REPORT_PROFILES.md](REPORT_PROFILES.md) (report sections).
+
+Each profile is a zip archive with the extension `.import`:
 
 ```
-vendor_name.zip
-├── profile.yaml      Metadata and configuration
-├── transform.sql     The DuckDB transformation query
-└── README.md         Human-readable documentation
+vendor_name.import
+├── structure.yaml    REQUIRED — metadata + the whole declarative contract
+├── instructions.md   On-screen prose, split per step by <!-- label: X --> anchors
+├── sql/              The .sql files structure.yaml names
+├── fixtures/         Canned RE API responses for offline ("mock") runs
+└── assets/           Images referenced from instructions.md
 ```
 
-### profile.yaml
+There are two kinds, distinguished by a top-level `kind:` key:
+
+| | Import profile (no `kind:`) | Report profile (`kind: report`) |
+|---|---|---|
+| Sections | `inputs`, `outputs`, `steps` | `parameters`, `queries`, `transforms`, `visualizations`, `actions` |
+| Source data | Files the user uploads | The RE NXT (SKY) API |
+| Result | CSVs the user downloads | On-screen visualizations |
+
+Both kinds may declare a top-level `code_tables:` section, and both run their
+SQL through the same DuckDB engine.
+
+### structure.yaml
 
 ```yaml
-name: "Vendor A — Inventory Feed"
-description: "Maps Vendor A's weekly inventory export to DB import format"
-accepts:
-  - ".csv"
-  - ".xlsx"
-expected_columns:
-  - "Item #"
-  - "Description"
-  - "Unit Cost"
-output_filename_prefix: "vendor_a_import"
+id: vendor_a
+name: "Vendor A Import"
+version: "1.0"
+min_app_version: "0.1.0"
+
+inputs:
+  - label: Classification
+    type: csv                # csv | xlsx
+    required: true
+    validation:              # checked by the Validate button, before any SQL
+      - { label: "Item #", required: true, type: number, digits: 6 }
+      - { label: Category, required: true, type: string, value: ["Alpha", "Beta"] }
+
+outputs:
+  - label: Import_File
+    type: csv
+
+steps:
+  - label: AddSourceFiles
+    type: file_input
+    input:
+      - { label: Classification, validate: true }
+
+  - label: CreateImportFile
+    type: sql_transform
+    input: [Classification]
+    sql: primary_transform.sql
+    output: [Import_File]
+
+  - label: Import
+    type: manual_instruction
 ```
 
-| Field | Purpose |
-|---|---|
-| `name` | Display name shown in the app dropdown |
-| `description` | Short description shown under the dropdown |
-| `accepts` | File extensions this profile can handle — used for validation |
-| `expected_columns` | Columns the app checks for before running — surfaces errors early |
-| `output_filename_prefix` | Prefix for the generated output file name |
+Five step types exist: `file_input`, `sql_transform`, `re_query`,
+`code_table_sync`, `manual_instruction`.
 
-### transform.sql
+### sql/*.sql
 
-The SQL that DuckDB executes. Use `{{input_file}}` as a placeholder for the actual
-file path — the app substitutes it at runtime.
+The SQL DuckDB executes. Files are named by the YAML and referenced through
+placeholders — `{{input:Label}}` for an uploaded file, `{{output:Label}}` for a
+declared output, `{{codetable:…}}` / `{{query:…}}` / `{{sync:…}}` for data
+pulled from RE. (`{{input_file}}` is a legacy alias for the sole input of a
+single-input transform.)
 
 ```sql
 -- The SELECT defines the output columns and their order.
@@ -266,13 +329,17 @@ SELECT
     "UOM"                                           AS unit_of_measure,
     COALESCE("Stock Qty", 0)                        AS quantity_on_hand
 
-FROM read_csv_auto('{{input_file}}')
+FROM read_csv_auto('{{input:Classification}}')
 
 WHERE "Item #" IS NOT NULL
   AND TRIM("Item #") != ''
 
 ORDER BY "Item #";
 ```
+
+A bare `SELECT` like this is wrapped in a `COPY` to the single declared output.
+To write several files from one transform, write your own
+`COPY (...) TO '{{output:Label}}'` statements instead.
 
 **DuckDB functions useful in profiles:**
 
@@ -286,10 +353,27 @@ ORDER BY "Item #";
 | `COALESCE(col, default)` | Use default value when column is NULL |
 | `UPPER(col)` / `LOWER(col)` | Case conversion |
 
-### README.md
+### instructions.md
 
-Document what the profile does, where the source file comes from, any known quirks
-of the vendor's format, and who to contact if it breaks.
+One Markdown file split into per-step sections by `<!-- label: StepLabel -->`
+anchors. Text before the first anchor is the profile header. Document what the
+profile does, where the source file comes from, any known quirks of the vendor's
+format, and who to contact if it breaks.
+
+### fixtures/
+
+Canned RE responses so a profile that touches the API still runs with no
+connection (or with `RE_NXT_MOCK=1`): `fixtures/<output>.json` for report
+queries, `fixtures/queries/<query_output>.json` for `re_query` steps, and
+`fixtures/codetables/<output>.json` for code tables.
+
+### Where profiles come from
+
+- **Built-ins** — embedded in the binary via `include_bytes!`
+  (`BUILTIN_PROFILES` in `profile.rs`). Run `./profiles/build.sh` before the
+  Rust build if you changed one.
+- **User profiles** — `.import` files in `app_data_dir()/profiles/`, creatable
+  and editable inside the app under Settings → Imports.
 
 ---
 
@@ -396,13 +480,20 @@ fn main() {
 
 **Every command must be registered here or invoke() will fail silently.**
 
-### The three commands this app needs
+### The command surface
 
-| Command | Called from | Args | Returns |
-|---|---|---|---|
-| `list_profiles` | ProfilePicker on mount | `profilesDir` | `ProfileMeta[]` |
-| `validate_file` | FileDropZone on file select | `filePath`, `profileName` | `ValidationResult` |
-| `run_profile` | ResultsPanel on button click | `filePath`, `profileName`, `outputDir` | `OutputResult` |
+Grouped by area; the full arg/return table lives in [CLAUDE.md](CLAUDE.md#the-backend-commands).
+
+| Area | Commands |
+|---|---|
+| Profiles + imports | `list_profiles`, `load_profile`, `validate_file`, `run_profile`, `run_re_query`, `run_code_table_sync`, `save_output` |
+| Reports | `run_report`, `run_report_action` |
+| In-app profile editor | `new_profile`, `duplicate_profile`, `save_profile`, `delete_profile`, `validate_profile`, `scaffold_missing` |
+| RE NXT connection | `connect_re_nxt`, `re_nxt_status`, `disconnect_re_nxt`, `re_nxt_access_token` |
+
+Note that the `zipPath` argument on the *run* commands is the extracted temp dir
+(`loadedProfile.temp_dir`), not the `.import` zip — the editor commands are the
+ones that take a real bundle path.
 
 ---
 
@@ -475,22 +566,22 @@ portable exe if you prefer not to use an installer.
 
 ### What ships to the end user
 
-- The `.exe` or `.msi` — everything is compiled in
-- The `profiles/` folder — shipped alongside the exe, not compiled in
+- The `.exe` or `.msi`. The built-in profiles listed in `BUILTIN_PROFILES` are
+  compiled into it, so run `./profiles/build.sh` *before* `npm run tauri build`.
+- Nothing else is required. Extra profiles are distributed as loose `.import`
+  files.
 
-### Profiles folder location strategy
+### Where the app looks for profiles
 
-You have two options for where the app looks for profiles:
+Resolved at runtime via `AppHandle::path().app_data_dir()`, plus `profiles/`:
 
-**Option A — Alongside the exe (simplest)**
-The app looks for a `profiles/` folder in the same directory as the exe.
-Easy to update: drop in a new zip file, relaunch the app.
+- Windows: `%APPDATA%\com.navin.tauri-import\profiles\`
+- macOS: `~/Library/Application Support/com.navin.tauri-import/profiles/`
 
-**Option B — AppData folder**
-The app looks in `%APPDATA%\ImportTool\profiles\`.
-Survives reinstalls, survives the exe moving. More robust for managed deployments.
-
-Tauri provides `app_data_dir()` from `tauri::api::path` to resolve this path portably.
+The directory is created on the first `list_profiles`. Dropping a `.import`
+file there makes it available on the next launch, alongside the built-ins; the
+in-app editor (Settings → Imports) writes to the same place. Built-ins are
+addressed by the sentinel `builtin://<filename>` rather than a filesystem path.
 
 ---
 
@@ -669,7 +760,14 @@ Windows: replace `\` with `/` in `db.rs` before injecting into the SQL string.
 | **#[tauri::command]** | Rust attribute that marks a function as callable from the frontend |
 | **WebView2** | Windows' built-in web renderer (like a lightweight browser engine) — used by Tauri |
 | **DuckDB** | Embedded SQL database that reads files directly and runs analytical queries |
-| **Profile bundle** | A `.zip` containing `profile.yaml`, `transform.sql`, and `README.md` |
+| **Profile bundle** | A `.import` zip containing `structure.yaml`, `instructions.md`, `sql/`, and optional `fixtures/` and `assets/` |
+| **Import profile** | A profile with `inputs` / `outputs` / `steps` — uploads in, CSVs out |
+| **Report profile** | A profile with `kind: report` — parameters in, live RE data on screen |
+| **Step** | One entry in an import profile's `steps:` list; its `type` picks the UI component |
+| **Placeholder** | A `{{…}}` token in profile SQL or YAML the runtime substitutes (`{{input:X}}`, `{{output:X}}`, `{{query:X}}`, `{{sync:X}}`, `{{codetable:X}}`, `{{param:X}}`) |
+| **Fixture** | A canned RE API response in the bundle, used when running in mock mode |
+| **Mock mode** | Fixture-backed execution — no RE connection, or `RE_NXT_MOCK=1` |
+| **SKY / RE NXT** | Blackbaud's Raiser's Edge NXT API, the source of query and code-table data |
 | **Cargo.toml** | Rust's dependency manifest file (equivalent to `package.json`) |
 | **Crate** | A Rust library/package (equivalent to an npm package) |
 | **Result<T, E>** | Rust's way of returning either a success value `T` or an error `E` |

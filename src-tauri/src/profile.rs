@@ -218,7 +218,7 @@ pub struct ProfileStructure {
 
     // ── Report sections ──────────────────────────────────────────────────────
     // All optional; populated only when kind == "report". See REPORT_PROFILES.md.
-    // Deserialize-only for now — nothing executes these yet.
+    // Executed by report.rs (params → queries → transforms → result sets).
     #[serde(default)]
     pub parameters: Vec<Parameter>,
     #[serde(default)]
@@ -233,7 +233,7 @@ pub struct ProfileStructure {
     pub actions: Vec<Action>,
 }
 
-// ── Report profile structs (deserialize-only) ─────────────────────────────────
+// ── Report profile structs ────────────────────────────────────────────────────
 // A report profile reuses the bundle/loader machinery but declares five
 // report-specific sections instead of the import step-list:
 //   parameters  → UI inputs
@@ -243,7 +243,7 @@ pub struct ProfileStructure {
 //   actions     → on-demand write-backs (e.g. create an RE query)
 // Free-form fields (config/default/template/bind) use serde_json::Value so they
 // pass through to the frontend as native JSON. See REPORT_PROFILES.md for the
-// full contract. No execution logic exists yet.
+// full contract, and report.rs for the pipeline that runs them.
 
 // A UI input control rendered in the Inputs panel.
 #[derive(Debug, Deserialize, Serialize, Clone)]

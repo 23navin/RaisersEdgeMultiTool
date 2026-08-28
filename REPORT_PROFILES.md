@@ -11,10 +11,22 @@ Report profiles reuse the existing `.import` bundle format and loader
 distinguished by a top-level `kind: report` and replace the import step-list with
 five declarative sections.
 
-> **Status:** This document defines the *structure/contract*. The backend parses
-> report bundles (deserialize-only) but **does not execute them yet** — the RE
-> call runner, JSON→DuckDB path, refresh pipeline, and write-back actions are a
-> follow-up. See the plan at `~/.claude/plans/recommend-a-structure-for-adaptive-frost.md`.
+> **This file is the field-by-field contract.** For a step-by-step walkthrough of
+> building a report profile from scratch — including how to discover RE field
+> ids, what to put in `fixtures/`, and the checklist before you ship — start with
+> **[PROFILE_AUTHORING.md](PROFILE_AUTHORING.md#6-walkthrough--build-a-report-profile)**.
+
+> **Status:** the pipeline runs end to end — parameters → queries (live SKY API
+> or fixtures) → DuckDB transforms → result sets → visualizations, plus
+> write-back actions. Two gaps to author around:
+> - Only the `table` visualization is implemented. `bar` / `line` / `pie` / `kpi`
+>   are registered in `VIZ_REGISTRY` but render as placeholder cards.
+> - Per-bundle `calls/*.yaml` overrides of the central RE call registry are not
+>   implemented; use `ref` + `template` instead.
+>
+> Report bundles are verified by `profiles/build.sh` (which branches on
+> `kind: report`). The in-app **Validate** button implements the import-profile
+> rules only, so verify reports from the terminal.
 
 ---
 
@@ -75,6 +87,22 @@ parameters:
 
 A `date_range` exposes `.from` and `.to` for placeholders. `select` uses
 `options`. Parameter `id`s are referenced from queries via `{{param:id}}`.
+
+Field rules (enforced by `profiles/build.sh`):
+
+| Field | Rule |
+|---|---|
+| `id` | Required, unique. This is the name `{{param:id}}` resolves. |
+| `label` | Required. The control's on-screen label. |
+| `type` | Required, one of `date`, `date_range`, `select`, `text`, `number`. |
+| `options` | Required (non-empty list of strings) for `select`; optional elsewhere. |
+| `required` | Optional boolean. |
+| `default` | Optional; shape varies by type. |
+
+Defaults are resolved in `App.tsx` (`resolveParamDefault`) before the first
+Refresh. For `date_range`, `{ preset: last_30_days }` is the only preset
+implemented — anything else must give explicit `from` / `to` dates. Scalar types
+take a plain value. An unresolvable default yields an empty control.
 
 ---
 
@@ -156,6 +184,14 @@ The renderer maps `type` → component via `VIZ_REGISTRY`
 step-dispatch. `config` is viz-specific (column defs for tables; axes/series for
 charts).
 
+`data:` must name a **transform** `output`, and every `config.columns[].field`
+must match a column the transform's SQL selects — that pairing is the whole
+binding, so keep the transform's aliases and the viz's fields in sync.
+
+> **Only `table` is implemented.** `bar`, `line`, `pie`, and `kpi` resolve to
+> placeholder cards that print the bound row/column counts. Build reports around
+> `table` until the Recharts components land.
+
 ---
 
 ## `actions` — on-demand write-backs
@@ -181,12 +217,15 @@ new query's id list).
 
 | Placeholder | Resolves to | Used in |
 |---|---|---|
-| `{{param:Id}}` / `{{param:Id.from}}` / `{{param:Id.to}}` | a parameter's value | `queries[].bind` |
+| `{{param:Id}}` / `{{param:Id.from}}` / `{{param:Id.to}}` | a parameter's value (`.key` for object-valued types like `date_range`) | `queries[].template` and `queries[].bind` |
 | `{{query:Label}}` | temp-dir JSON path of a query result (for `read_json_auto`) | transform SQL |
+| `{{codetable:Label}}` | temp-dir JSON path of a pulled RE code table | transform SQL |
 | `{{now}}` | current timestamp | `actions[].bind` (e.g. query naming) |
 
 The existing import placeholders (`{{input:Label}}`, `{{input_file}}`,
 `{{output:Label}}`, see `db.rs` / CLAUDE.md) are unchanged and unused by reports.
+The full cross-kind placeholder table lives in
+[PROFILE_AUTHORING.md](PROFILE_AUTHORING.md#8-placeholder-reference).
 
 ---
 

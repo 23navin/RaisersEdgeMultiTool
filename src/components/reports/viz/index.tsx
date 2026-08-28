@@ -1,13 +1,15 @@
 // viz/index.tsx
 //
 // The report visualization registry. Maps a visualization's `type` to its
-// component. The report renderer (future) looks up VIZ_REGISTRY[viz.type] and
-// renders it with the bound ResultSet + config — mirroring how the imports
-// MainPanel dispatches step types to step components.
+// component. ReportsPage looks up VIZ_REGISTRY[viz.type] and renders it with the
+// bound ResultSet + config — mirroring how the imports MainPanel dispatches step
+// types to step components.
 //
-// SHELL ONLY: these are placeholder stubs so the contract compiles. Intended
-// implementations: TableViz on TanStack Table; Bar/Line/Pie/Kpi on Recharts.
-// Those dependencies are added in the execution plan, not here.
+// Only `table` is implemented. Bar/Line/Pie/Kpi are registered so a profile
+// declaring them still renders (as a placeholder card naming the bound data)
+// instead of blowing up; the intended implementation is Recharts. Profile
+// authors are warned about this in REPORT_PROFILES.md and PROFILE_AUTHORING.md —
+// keep those in sync when the charts land.
 
 import type { VizComponent, VizProps } from "./types";
 import { TableViz } from "./TableViz";

@@ -18,6 +18,10 @@ have no steps at all — they declare `parameters` / `queries` / `transforms` /
 `visualizations` / `actions`, documented in `REPORT_PROFILES.md`. The one section
 below that applies to both kinds is *Code tables*.
 
+> **New to profiles?** This is a per-step-type reference, not a tutorial. Read
+> **[PROFILE_AUTHORING.md](PROFILE_AUTHORING.md)** first — it walks a profile
+> from empty folder to shipped bundle, and points back here for the details.
+
 ---
 
 ## Profile bundle layout
@@ -130,6 +134,24 @@ the **Upload + filename box + Validate** row (`StepSelectFiles`).
 step's card. Use this when two files come from the same source (e.g. a
 vendor portal export containing both inventory and category lookups).
 
+### What `validate: true` actually checks
+
+The rules come from the top-level `inputs[].validation` list, not from the step.
+`db::validate_file` opens the file with DuckDB (so CSV and XLSX behave the same)
+and applies each rule:
+
+| Rule field | Check |
+|---|---|
+| `label` | Resolves the rule to a real column: exact header match first, then a case- and punctuation-insensitive match. A fuzzy hit still validates and adds a "Column name mismatches" notice listing expected vs. found. |
+| `required: true` | Column must exist (else "Missing required column"), and no cell may be null or blank. |
+| `type: number` | Counts cells that fail `TRY_CAST(... AS DOUBLE)`. |
+| `type: string` | No check of its own; `required` / `value` still apply. |
+| `digits: N` | Counts cells whose stringified length isn't exactly `N`. Only applied to `type: number`. |
+| `value: [...]` | Counts non-null cells outside the allowed list. |
+
+Declaring `validate: true` on an input with no `validation:` rules is flagged by
+the verifiers (`yaml.validate_without_columns`) — the button would always pass.
+
 ### Markdown
 ```markdown
 <!-- label: AddSourceFiles -->
@@ -152,7 +174,9 @@ The section body becomes the description shown above the upload row.
 - **Validation errors table** — when `fileStatus === "invalid"`, a data table
   appears below the file row listing each error with columns: `Row`,
   `Column`, `Value`, `Error`. The shape is defined by `ValidationError` in
-  `src/types.ts`. Backend should return one row per failing cell.
+  `src/types.ts`. `db::validate_file` emits **one row per failing rule with a
+  count** ("3 non-numeric value(s)"), not one row per offending cell, so `Row`
+  and `Value` are empty today.
 - Re-uploading or re-validating resets the status of any downstream
   `sql_transform` that consumes this input.
 
@@ -287,6 +311,11 @@ COPY (SELECT ... FROM read_csv_auto('{{input_file}}'))
 
 The UI renders one Download button per output beneath the Generate row, each
 labeled with the output's name.
+
+Every output is written to the system temp dir as
+`<label lowercased, spaces → _>_<YYYYMMDD_HHMMSS>.csv`; the user picks the final
+destination through `save_output`. The `outputs[].type` key is documentation —
+the writer always emits CSV.
 
 ### Markdown
 ```markdown
