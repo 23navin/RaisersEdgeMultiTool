@@ -9,6 +9,7 @@ import {
   DatabaseIcon,
   FileTextIcon,
   TableIcon,
+  UploadCloudIcon,
   PlayIcon,
   DownloadIcon,
   CheckIcon,
@@ -20,7 +21,22 @@ import { NoticeBlock } from "../../shared/NoticeBlock";
 import type { GenerateStatus } from "../../../App";
 import type { Notice, SqlError } from "../../../types";
 
-export type PipeItem = { label: string; ready: boolean };
+// `kind` picks the input pill's icon: "file" is an uploaded input, "query" is
+// the result an earlier re_query step stored ({{query:Label}}), and "sync" is
+// the outcome rows a code_table_sync step published ({{sync:Label}}). Each pill
+// carries the same icon the producing step drew on its own output node, so the
+// same dataset looks the same in both panels.
+export type PipeItem = {
+  label: string;
+  ready: boolean;
+  kind?: "file" | "query" | "sync";
+};
+
+const PIPE_ICONS: Record<string, LucideIcon> = {
+  query: DatabaseIcon,
+  sync: UploadCloudIcon,
+  file: FileTextIcon,
+};
 
 export type TransformRow = {
   inputs: PipeItem[];
@@ -114,7 +130,7 @@ function TransformBlock({ t }: { t: TransformRow }) {
             {t.inputs.map((item) => (
               <PipeNode
                 key={item.label}
-                icon={FileTextIcon}
+                icon={PIPE_ICONS[item.kind ?? "file"] ?? FileTextIcon}
                 label={item.label}
                 ready={item.ready}
               />

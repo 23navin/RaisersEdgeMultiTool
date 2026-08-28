@@ -67,6 +67,7 @@ import-tool/
 │       ├── steps/
 │       │   ├── StepSelectFiles.tsx   # file_input step rendering
 │       │   ├── StepGenerateFile.tsx  # sql_transform step rendering
+│       │   ├── StepQuery.tsx         # re_query step rendering
 │       │   ├── StepCodeTableSync.tsx # code_table_sync step rendering
 │       │   └── StepImport.tsx        # manual_instruction step rendering
 │       └── ui/                   # Shadcn primitives (button, popover, command)
@@ -80,6 +81,8 @@ import-tool/
 │       ├── db.rs                 # DuckDB validation and SQL transforms — writes output CSV
 │       ├── re_calls.rs           # The one place a SKY API call is executed (Query + Code Table)
 │       ├── code_tables.rs        # Pulls RE code tables into SQL; runs code_table_sync writes
+│       │                         #   and publishes their outcomes as {{sync:Label}}
+│       ├── query_step.rs         # Runs an re_query step: SQL params → RE query → JSON for later SQL
 │       └── errors.rs             # Shared AppError enum
 │
 └── profiles/                     # PROFILE BUNDLES — not compiled in, ship alongside exe
@@ -99,7 +102,8 @@ Every command must be registered in `main.rs` inside `generate_handler![]` or `i
 | `list_profiles` | `App.tsx` on mount | _(none from frontend; `AppHandle` injected by Tauri)_ — returns embedded built-ins + `.import` files in `app_data_dir()/profiles/` | `ProfileSummary[]` |
 | `load_profile` | `App.tsx` on profile select | `zipPath` | `LoadedProfile` |
 | `validate_file` | `App.tsx` on validate click | `filePath`, `inputLabel`, `zipPath` | `ValidationResult` |
-| `run_profile` | `App.tsx` on generate click | `filePaths` (map of input label → file path), `sqlFile`, `zipPath`, `outputLabels` | `TransformResult` |
+| `run_profile` | `App.tsx` on generate click | `filePaths` (map of input label → file path), `queryPaths` (query label → result JSON), `syncPaths` (sync label → outcome JSON), `sqlFile`, `zipPath`, `outputLabels` | `TransformResult` |
+| `run_re_query` | `App.tsx` on an `re_query` step | `filePaths`, `stepLabel`, `zipPath` | `QueryStepResult` |
 | `run_code_table_sync` | `App.tsx` on a `code_table_sync` step | `filePaths`, `stepLabel`, `zipPath` | `SyncResult` |
 | `save_output` | `App.tsx` on download click | `srcPath`, `destPath` | `void` |
 
@@ -160,8 +164,8 @@ steps:
     output: ["Import File"]
 ```
 
-Step types supported: `file_input`, `sql_transform`, `code_table_sync`,
-`manual_instruction`.
+Step types supported: `file_input`, `sql_transform`, `re_query`,
+`code_table_sync`, `manual_instruction`.
 Validation is not its own step type — it's a per-row checkbox inside a
 `file_input` step.
 
@@ -187,6 +191,14 @@ Three placeholder forms are substituted at runtime:
   entries, pulled before the SQL runs. Declared in the top-level `code_tables:`
   section (valid in both profile kinds); read with `read_json_auto`. See
   STEP_TYPES.md → *Code tables*.
+- `{{query:Label}}` — resolves to the JSON an earlier `re_query` step returned.
+  The consuming transform must declare the label in `query_input`. Read with
+  `read_json_auto`. See STEP_TYPES.md → *Step type: `re_query`*.
+- `{{sync:Label}}` — resolves to the outcome rows an earlier `code_table_sync`
+  step published via `sync_output` (one row per attempted write, carrying the id
+  RE assigned). The consuming transform must declare the label in `sync_input`.
+  Read with `read_json(..., columns={...})` — the result is empty when nothing
+  needed syncing. See STEP_TYPES.md → *Step type: `code_table_sync`*.
 
 Column names with spaces, `#`, `/` etc. must be double-quoted in SQL: `"Item #"`.
 
@@ -264,6 +276,18 @@ re-read validation rules and SQL.
   `output`, not the RE table's name. Both `validate.rs` and `build.sh` check this
 - **Code table step does nothing?** → check the live/mock badge. Without an RE
   connection (or with `RE_NXT_MOCK=1`) writes are stubbed, not sent
+- **`{{query:X}}` unresolved at runtime?** → the consuming transform must declare
+  `X` in `query_input`, and the producing `re_query` step must appear *earlier*
+  in `steps:` and have been run. Both verifiers catch the ordering case
+- **`{{sync:X}}` unresolved at runtime?** → same rule with `sync_input` and a
+  `code_table_sync` step declaring `sync_output: X`. The step must have been run
+  even when it had nothing to push — a zero-row run still publishes `[]`
+- **Binder error on a `{{sync:X}}` column?** → the sync attempted zero rows, so
+  `read_json_auto` has no schema to infer. Use
+  `read_json('{{sync:X}}', columns={...})` naming the columns you join on
+- **`{{rows:col}}` sent as a string instead of an array?** → it only becomes an
+  array when the YAML value is *exactly* that placeholder, e.g.
+  `filter_values: "{{rows:record_id}}"`, not embedded in a longer string
 - **Two profiles with the same name in the sidebar?** → built-in and user profile share an `id`; this is expected. Select on `zip_path`, never on `id`
 
 ---

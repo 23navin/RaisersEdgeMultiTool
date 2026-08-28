@@ -200,6 +200,15 @@ export function StepCodeTableSync({
             {r.message}
           </div>
 
+          {r.sync_output && (
+            <p className="mt-[10px] text-[12px] text-neutral-600">
+              Outcome rows available to later steps as{" "}
+              <code className="px-[4px] py-[1px] bg-neutral-100 text-[11px]">
+                {`{{sync:${r.sync_output}}}`}
+              </code>
+            </p>
+          )}
+
           {r.failures.length > 0 && (
             <table className="w-full mt-[10px] text-[11px] border-collapse">
               <thead>

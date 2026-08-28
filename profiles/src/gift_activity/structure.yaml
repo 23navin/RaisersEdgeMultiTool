@@ -42,7 +42,7 @@ queries:
       suppress_duplicates: true
       select_fields:
         - { query_field_id: 597,   user_alias: constituent_name }
-        - { query_field_id: 8467,  user_alias: gift_id }
+        - { query_field_id: 8472,  user_alias: gift_id }
         - { query_field_id: 8469,  user_alias: gift_amount }
         - { query_field_id: 8471,  user_alias: gift_date }
       filter_fields:
@@ -80,6 +80,7 @@ visualizations:
       sortable: true
       columns:
         - { field: constituent_name, header: "Constituent" }
+        - { field: gift_id, header: "Gift ID" }
         - { field: gift_amount, header: "Amount", format: currency }
         - { field: gift_date, header: "Date", format: date }
 

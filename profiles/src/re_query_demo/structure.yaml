@@ -1,0 +1,91 @@
+---
+id: re_query_demo
+name: RE Query Demo
+version: 1.0.0
+min_app_version: 0.2.0
+
+# Takes ids out of the vendor file, asks RE for those records, and joins the
+# answer back into the import file. Demonstrates the re_query step.
+
+inputs:
+  - label: Vendor
+    type: csv
+    required: true
+    validation:
+      - label: record_id
+        required: true
+        type: number
+        digits: 5
+      - label: new_email
+        required: true
+        type: string
+
+outputs:
+  - label: Update_Records
+    type: csv
+
+steps:
+  - label: AddSourceFiles
+    type: file_input
+    input:
+      - label: Vendor
+        validate: true
+
+  # ── The query step ──────────────────────────────────────────────────────────
+  # params_sql runs first over the uploaded file. Its rows fill the placeholders
+  # in `template`:
+  #   {{rows:col}}  — the WHOLE value becomes a JSON array of that column
+  #                   (what an OneOf filter wants)
+  #   {{value:col}} — the first row's cell, substituted inline
+  # `query_output` names the result; later steps read it as {{query:RERecords}}.
+  #
+  # ⚠ The query_field_id / type_id values below are placeholders from the SKY
+  # spec's own examples. Replace them with your environment's — discover them
+  # with GET /query/querytypes and GET /query/v2/queryfields/root. `user_alias`
+  # renames each column in the result, so keep those aliases matching what
+  # sql/build_import.sql selects. Mock mode ignores `template` entirely and
+  # reads fixtures/queries/RERecords.json.
+  - label: FetchFromRE
+    type: re_query
+    ref: re.query.execute
+    input:
+      - Vendor
+    params_sql: lookup_ids.sql
+    query_output: RERecords
+    template:
+      type_id: 18
+      sql_generation_mode: Query
+      result_layout: MultiRow
+      select_fields:
+        - { query_field_id: 425,  user_alias: re_id }
+        - { query_field_id: 597, user_alias: re_name }
+        - { query_field_id: 131221, user_alias: re_email }
+      filter_fields:
+        - query_field_id: 425
+          compare_type: None
+          operator: OneOf
+          filter_values: "{{rows:record_id}}"
+          left_parenthesis: false
+          right_parenthesis: false
+
+  # ── Consuming the result ────────────────────────────────────────────────────
+  # query_input declares the dependency so the verifier can check ordering and
+  # the frontend knows which result to hand down.
+  - label: CreateImportFile
+    type: sql_transform
+    input:
+      - Vendor
+    query_input:
+      - RERecords
+    sql: build_import.sql
+    output:
+      - Update_Records
+    notices:
+      - label: "Not found in RE"
+        sql: unmatched.sql
+        description: >
+          These vendor rows have no matching RE record. They are excluded from
+          the import file — check the ids before proceeding.
+
+  - label: Import
+    type: manual_instruction

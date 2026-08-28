@@ -16,7 +16,8 @@ use duckdb::Connection;
 use serde::Serialize;
 
 use crate::profile::{
-    InputDefinition, NoticeQuery, ProfileFileEntry, ProfileStructure, StepInputRef,
+    InputDefinition, NoticeQuery, ProfileFileEntry, ProfileStructure, SqlTransform, Step,
+    StepInputRef,
 };
 
 // ── Public types ─────────────────────────────────────────────────────────────
@@ -184,7 +185,7 @@ pub fn validate_profile(files: &[ProfileFileEntry]) -> ValidationReport {
             .map(|c| c.output.as_str())
             .collect();
         for (file, content) in &sql_files {
-            for label in code_table_placeholders(content) {
+            for label in labeled_placeholders(content, "codetable") {
                 if !declared.contains(label.as_str()) {
                     issues.push(err(
                         "sql.unknown_code_table",
@@ -204,6 +205,14 @@ pub fn validate_profile(files: &[ProfileFileEntry]) -> ValidationReport {
                 }
             }
         }
+    }
+
+    // ── Upstream wiring (query_output/query_input, sync_output/sync_input) ───
+    // Both families share one rule: an earlier step produces a label, a later
+    // transform declares it, and SQL reads it as {{kind:Label}}. Checked by one
+    // routine so a third family is a table entry rather than another 100 lines.
+    for family in UPSTREAM_FAMILIES {
+        check_upstream_wiring(&structure, &sql_files, family, &mut issues);
     }
 
     // ── Per-step structural checks ───────────────────────────────────────────
@@ -474,11 +483,59 @@ pub fn validate_profile(files: &[ProfileFileEntry]) -> ValidationReport {
                 }
             }
 
+            "re_query" => {
+                // Something runnable: a registry ref or an inline template.
+                if step.call_ref.is_none() && step.template.is_none() {
+                    issues.push(err(
+                        "yaml.re_query.no_call",
+                        format!(
+                            "re_query step '{}' needs a `ref` (registry call) or an inline `template`",
+                            step.label
+                        ),
+                        Some(step_loc()),
+                        false,
+                    ));
+                }
+                // The label later SQL will reference.
+                match step.query_output.as_deref() {
+                    None => issues.push(err(
+                        "yaml.re_query.no_output",
+                        format!(
+                            "re_query step '{}' needs `query_output` naming its result",
+                            step.label
+                        ),
+                        Some(step_loc()),
+                        false,
+                    )),
+                    Some(out) if out.trim().is_empty() => issues.push(err(
+                        "yaml.re_query.no_output",
+                        format!("re_query step '{}' has an empty `query_output`", step.label),
+                        Some(step_loc()),
+                        false,
+                    )),
+                    Some(_) => {}
+                }
+                // params_sql is optional, but must exist when named.
+                if let Some(name) = step.params_sql.as_deref() {
+                    if !sql_files.contains_key(name) {
+                        issues.push(err(
+                            "yaml.re_query.missing_params_sql",
+                            format!(
+                                "re_query step '{}' references missing file sql/{}",
+                                step.label, name
+                            ),
+                            Some(IssueLocation::Sql { path: format!("sql/{}", name), line: None }),
+                            true,
+                        ));
+                    }
+                }
+            }
+
             other => {
                 issues.push(err(
                     "yaml.unknown_step_type",
                     format!(
-                        "Step '{}' has unknown type '{}'. Expected file_input, sql_transform, code_table_sync, or manual_instruction.",
+                        "Step '{}' has unknown type '{}'. Expected file_input, sql_transform, re_query, code_table_sync, or manual_instruction.",
                         step.label, other
                     ),
                     Some(step_loc()),
@@ -724,14 +781,16 @@ fn ref_label(r: &StepInputRef) -> String {
     }
 }
 
-// Pull the labels out of every {{codetable:Label}} in a SQL file. Comments are
-// not stripped — a commented-out placeholder naming a real table is harmless,
-// and one naming a missing table is still worth surfacing.
-fn code_table_placeholders(sql: &str) -> Vec<String> {
+// Pull the labels out of every {{<kind>:Label}} in a SQL file — used for
+// "codetable" and "query". Comments are not stripped: a commented-out
+// placeholder naming a real label is harmless, and one naming a missing label is
+// still worth surfacing.
+fn labeled_placeholders(sql: &str, kind: &str) -> Vec<String> {
+    let opener = format!("{{{{{}:", kind);
     let mut out = Vec::new();
     let mut rest = sql;
-    while let Some(start) = rest.find("{{codetable:") {
-        let after = &rest[start + "{{codetable:".len()..];
+    while let Some(start) = rest.find(&opener) {
+        let after = &rest[start + opener.len()..];
         match after.find("}}") {
             Some(end) => {
                 out.push(after[..end].trim().to_string());
@@ -741,6 +800,174 @@ fn code_table_placeholders(sql: &str) -> Vec<String> {
         }
     }
     out
+}
+
+// ── Upstream families ─────────────────────────────────────────────────────────
+// A "family" is one producer-step-type publishing a named result that later
+// transforms declare and SQL reads as {{kind:Label}}. Adding a new one means
+// adding a row here and the matching accessors — no new validation logic.
+
+struct UpstreamFamily {
+    producer_type: &'static str, // step type that publishes a label
+    kind: &'static str,          // placeholder kind: {{kind:Label}}
+    output_field: &'static str,  // YAML key naming the published label
+    input_field: &'static str,   // YAML key declaring a dependency on one
+    dup_code: &'static str,
+    unresolved_code: &'static str,
+    sql_code: &'static str,
+    // Plain fn pointers — neither accessor captures anything.
+    output_of: fn(&Step) -> Option<&str>,
+    inputs_of: fn(&Step) -> Vec<&String>,
+}
+
+const UPSTREAM_FAMILIES: &[UpstreamFamily] = &[
+    UpstreamFamily {
+        producer_type: "re_query",
+        kind: "query",
+        output_field: "query_output",
+        input_field: "query_input",
+        dup_code: "yaml.re_query.duplicate_output",
+        unresolved_code: "yaml.query_input.unresolved",
+        sql_code: "sql.unknown_query",
+        output_of: |s| s.query_output.as_deref(),
+        inputs_of: |s| collect_declared(s.query_input.as_ref(), s, |t| t.query_input.as_ref()),
+    },
+    UpstreamFamily {
+        producer_type: "code_table_sync",
+        kind: "sync",
+        output_field: "sync_output",
+        input_field: "sync_input",
+        dup_code: "yaml.code_table_sync.duplicate_output",
+        unresolved_code: "yaml.sync_input.unresolved",
+        sql_code: "sql.unknown_sync",
+        output_of: |s| s.sync_output.as_deref(),
+        inputs_of: |s| collect_declared(s.sync_input.as_ref(), s, |t| t.sync_input.as_ref()),
+    },
+];
+
+// A transform declares its dependencies either at step level (single-transform
+// shortcut) or per entry in `transforms:`. Both shapes count.
+fn collect_declared<'a>(
+    step_level: Option<&'a Vec<String>>,
+    step: &'a Step,
+    per_transform: fn(&'a SqlTransform) -> Option<&'a Vec<String>>,
+) -> Vec<&'a String> {
+    let mut out: Vec<&String> = Vec::new();
+    if let Some(v) = step_level {
+        out.extend(v.iter());
+    }
+    if let Some(transforms) = &step.transforms {
+        for t in transforms {
+            if let Some(v) = per_transform(t) {
+                out.extend(v.iter());
+            }
+        }
+    }
+    out
+}
+
+// Walk the steps in declaration order, accumulating the labels produced so far.
+// A dependency may only name one already produced — steps run in the order the
+// user clicks them, so a forward reference would read a result that doesn't
+// exist yet.
+fn check_upstream_wiring(
+    structure: &ProfileStructure,
+    sql_files: &HashMap<String, &str>,
+    fam: &UpstreamFamily,
+    issues: &mut Vec<ValidationIssue>,
+) {
+    let mut all_outputs: HashSet<&str> = HashSet::new();
+    for step in &structure.steps {
+        if step.step_type != fam.producer_type {
+            continue;
+        }
+        if let Some(out) = (fam.output_of)(step) {
+            if !out.trim().is_empty() && !all_outputs.insert(out) {
+                issues.push(err(
+                    fam.dup_code,
+                    format!(
+                        "{} '{}' is declared by more than one step — {{{{{}:{}}}}} would be ambiguous",
+                        fam.output_field, out, fam.kind, out
+                    ),
+                    Some(IssueLocation::YamlStep { label: step.label.clone() }),
+                    false,
+                ));
+            }
+        }
+    }
+
+    let mut produced: HashSet<&str> = HashSet::new();
+    for step in &structure.steps {
+        for label in (fam.inputs_of)(step) {
+            if produced.contains(label.as_str()) {
+                continue;
+            }
+            let msg = if all_outputs.contains(label.as_str()) {
+                format!(
+                    "Step '{}' reads {} '{}' but the {} step producing it comes later — reorder the steps",
+                    step.label, fam.kind, label, fam.producer_type
+                )
+            } else {
+                format!(
+                    "Step '{}' declares {} '{}' but no {} step produces it{}",
+                    step.label,
+                    fam.input_field,
+                    label,
+                    fam.producer_type,
+                    if all_outputs.is_empty() {
+                        format!(" (the profile declares no {} outputs)", fam.output_field)
+                    } else {
+                        format!(
+                            " (available: {})",
+                            all_outputs.iter().cloned().collect::<Vec<_>>().join(", ")
+                        )
+                    }
+                )
+            };
+            issues.push(err(
+                fam.unresolved_code,
+                msg,
+                Some(IssueLocation::YamlStep { label: step.label.clone() }),
+                false,
+            ));
+        }
+
+        // This step's own output becomes available to everything after it.
+        if step.step_type == fam.producer_type {
+            if let Some(out) = (fam.output_of)(step) {
+                produced.insert(out);
+            }
+        }
+    }
+
+    // Every {{kind:Label}} in a SQL file must name some declared output.
+    for (file, content) in sql_files {
+        for label in labeled_placeholders(content, fam.kind) {
+            if !all_outputs.contains(label.as_str()) {
+                issues.push(err(
+                    fam.sql_code,
+                    format!(
+                        "sql/{} references {{{{{}:{}}}}} but no {} step declares that {}{}",
+                        file,
+                        fam.kind,
+                        label,
+                        fam.producer_type,
+                        fam.output_field,
+                        if all_outputs.is_empty() {
+                            " (the profile declares none)".to_string()
+                        } else {
+                            format!(
+                                " (declared: {})",
+                                all_outputs.iter().cloned().collect::<Vec<_>>().join(", ")
+                            )
+                        }
+                    ),
+                    Some(IssueLocation::Sql { path: format!("sql/{}", file), line: None }),
+                    false,
+                ));
+            }
+        }
+    }
 }
 
 fn err(code: &str, msg: String, loc: Option<IssueLocation>, fixable: bool) -> ValidationIssue {
@@ -1294,4 +1521,155 @@ fn build_notice_stub(
     ));
 
     buf
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::profile::ProfileFileEntry;
+
+    fn file(path: &str, content: &str) -> ProfileFileEntry {
+        ProfileFileEntry { path: path.to_string(), content: content.to_string() }
+    }
+
+    // Two re_query steps and one consumer, in an order the caller controls.
+    fn bundle(yaml: &str) -> Vec<ProfileFileEntry> {
+        vec![
+            file("structure.yaml", yaml),
+            file("instructions.md", "# T\n\n<!-- label: Fetch -->\n## Fetch\n\n<!-- label: Build -->\n## Build\n"),
+            file("sql/build.sql", "SELECT * FROM read_json_auto('{{query:RERecords}}');"),
+        ]
+    }
+
+    const HEAD: &str = "id: t\nname: T\nversion: '1.0'\nmin_app_version: '0.1.0'\n\
+                        inputs: []\noutputs:\n  - label: Out\n    type: csv\n";
+
+    fn codes(report: &ValidationReport) -> Vec<&str> {
+        report.issues.iter().map(|i| i.code.as_str()).collect()
+    }
+
+    #[test]
+    fn query_input_in_order_is_accepted() {
+        let yaml = format!(
+            "{HEAD}steps:\n\
+             \x20 - label: Fetch\n    type: re_query\n    ref: re.query.execute\n    query_output: RERecords\n\
+             \x20 - label: Build\n    type: sql_transform\n    query_input: [RERecords]\n    sql: build.sql\n    output: [Out]\n"
+        );
+        let r = validate_profile(&bundle(&yaml));
+        assert!(
+            !codes(&r).contains(&"yaml.query_input.unresolved"),
+            "issues: {:?}",
+            r.issues.iter().map(|i| (&i.code, &i.message)).collect::<Vec<_>>()
+        );
+    }
+
+    // The ordering bug this design can produce: reading a query declared later.
+    #[test]
+    fn forward_reference_is_rejected() {
+        let yaml = format!(
+            "{HEAD}steps:\n\
+             \x20 - label: Build\n    type: sql_transform\n    query_input: [RERecords]\n    sql: build.sql\n    output: [Out]\n\
+             \x20 - label: Fetch\n    type: re_query\n    ref: re.query.execute\n    query_output: RERecords\n"
+        );
+        let r = validate_profile(&bundle(&yaml));
+        let msg = r
+            .issues
+            .iter()
+            .find(|i| i.code == "yaml.query_input.unresolved")
+            .map(|i| i.message.clone())
+            .unwrap_or_default();
+        assert!(msg.contains("comes later"), "issues: {:?}", codes(&r));
+    }
+
+    #[test]
+    fn unknown_query_input_is_rejected() {
+        let yaml = format!(
+            "{HEAD}steps:\n\
+             \x20 - label: Build\n    type: sql_transform\n    query_input: [Nope]\n    sql: build.sql\n    output: [Out]\n"
+        );
+        let r = validate_profile(&bundle(&yaml));
+        assert!(codes(&r).contains(&"yaml.query_input.unresolved"));
+        // The SQL's {{query:RERecords}} is unresolvable too.
+        assert!(codes(&r).contains(&"sql.unknown_query"));
+    }
+
+    // ── sync_output / sync_input ──────────────────────────────────────────────
+    // The same wiring rules, driven by the second UPSTREAM_FAMILIES entry.
+
+    fn sync_bundle(yaml: &str) -> Vec<ProfileFileEntry> {
+        vec![
+            file("structure.yaml", yaml),
+            file(
+                "instructions.md",
+                "# T\n\n<!-- label: Push -->\n## Push\n\n<!-- label: Build -->\n## Build\n",
+            ),
+            file("sql/push.sql", "SELECT 'x' AS long_description;"),
+            file(
+                "sql/build.sql",
+                "SELECT * FROM read_json_auto('{{sync:NewCodes}}');",
+            ),
+        ]
+    }
+
+    const SYNC_PUSH: &str = "\x20 - label: Push\n    type: code_table_sync\n    \
+                             code_table: Constituent Codes\n    operation: create\n    \
+                             sql: push.sql\n    sync_output: NewCodes\n";
+    const SYNC_BUILD: &str = "\x20 - label: Build\n    type: sql_transform\n    \
+                              sync_input: [NewCodes]\n    sql: build.sql\n    output: [Out]\n";
+
+    #[test]
+    fn sync_input_in_order_is_accepted() {
+        let yaml = format!("{HEAD}steps:\n{SYNC_PUSH}{SYNC_BUILD}");
+        let r = validate_profile(&sync_bundle(&yaml));
+        assert!(
+            !codes(&r).contains(&"yaml.sync_input.unresolved"),
+            "issues: {:?}",
+            r.issues.iter().map(|i| (&i.code, &i.message)).collect::<Vec<_>>()
+        );
+        assert!(!codes(&r).contains(&"sql.unknown_sync"));
+    }
+
+    #[test]
+    fn sync_input_before_its_producer_is_rejected() {
+        // Build reads NewCodes but the sync producing it runs afterwards.
+        let yaml = format!("{HEAD}steps:\n{SYNC_BUILD}{SYNC_PUSH}");
+        let r = validate_profile(&sync_bundle(&yaml));
+        let msg = &r
+            .issues
+            .iter()
+            .find(|i| i.code == "yaml.sync_input.unresolved")
+            .expect("expected an unresolved sync_input issue")
+            .message;
+        assert!(msg.contains("comes later"), "message was: {}", msg);
+    }
+
+    #[test]
+    fn unknown_sync_input_is_rejected() {
+        let yaml = format!(
+            "{HEAD}steps:\n\
+             \x20 - label: Build\n    type: sql_transform\n    sync_input: [Nope]\n    sql: build.sql\n    output: [Out]\n"
+        );
+        let r = validate_profile(&sync_bundle(&yaml));
+        assert!(codes(&r).contains(&"yaml.sync_input.unresolved"));
+        // build.sql's {{sync:NewCodes}} has no producer either.
+        assert!(codes(&r).contains(&"sql.unknown_sync"));
+    }
+
+    #[test]
+    fn duplicate_sync_output_is_rejected() {
+        let yaml = format!("{HEAD}steps:\n{SYNC_PUSH}{SYNC_PUSH}{SYNC_BUILD}");
+        let r = validate_profile(&sync_bundle(&yaml));
+        assert!(codes(&r).contains(&"yaml.code_table_sync.duplicate_output"));
+    }
+
+    // re_query needs something runnable and a label to publish under.
+    #[test]
+    fn re_query_requires_call_and_output() {
+        let yaml = format!(
+            "{HEAD}steps:\n  - label: Fetch\n    type: re_query\n"
+        );
+        let r = validate_profile(&bundle(&yaml));
+        assert!(codes(&r).contains(&"yaml.re_query.no_call"));
+        assert!(codes(&r).contains(&"yaml.re_query.no_output"));
+    }
 }

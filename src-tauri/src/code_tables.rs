@@ -4,7 +4,7 @@
 //   read:  fetch_all()  — pull every entry of each declared table, write it to
 //                         the run's temp dir as JSON, and hand back the
 //                         label → path map that SQL's {{codetable:Label}}
-//                         placeholders resolve against (db::substitute_code_tables).
+//                         placeholders resolve against (db::substitute_labeled_paths).
 //   write: run_sync()   — run a code_table_sync step's SQL and turn each row
 //                         into one create / update / delete against RE.
 //
@@ -104,6 +104,11 @@ pub struct SyncResult {
     pub failures: Vec<SyncFailure>,
     pub message: String,
     pub mode: String, // "live" | "mock"
+    // Set when the step declares `sync_output`. The label later SQL reads as
+    // {{sync:<label>}}, and the JSON file the outcome rows were written to —
+    // the same shape re_query returns, so the frontend routes both the same way.
+    pub sync_output: Option<String>,
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -153,10 +158,17 @@ pub fn run_sync(
     // Code tables are fetched first so a sync query can join against the live
     // table — the usual shape being "rows in my file that aren't in RE yet".
     let code_table_paths = fetch_all(loaded, transport, run_dir)?;
-    let rows = db::select_rows(file_paths, &code_table_paths, sql)?;
+    // A sync query reads uploaded files and the code table it is about. It does
+    // not read another step's results — that would need ordering guarantees the
+    // step model doesn't provide for the *producing* side.
+    let sources = db::SqlSources::new().with(db::KIND_CODETABLE, &code_table_paths);
+    let rows = db::select_rows(file_paths, &sources, sql)?;
 
     let mut succeeded = 0usize;
     let mut failures: Vec<SyncFailure> = Vec::new();
+    // One entry per attempted write, in the order the SQL returned them. This
+    // is what {{sync:Label}} exposes to later transforms.
+    let mut outcomes: Vec<Value> = Vec::with_capacity(rows.rows.len());
 
     for (i, row) in rows.rows.iter().enumerate() {
         let record = row_to_map(&rows.columns, row);
@@ -167,19 +179,77 @@ pub fn run_sync(
             .unwrap_or("(unnamed)")
             .to_string();
 
+        // The id this row is *about*: what we sent for update/delete, or
+        // whatever RE assigns to a create (filled in from the response below).
+        let sent_id = record
+            .get(ID_COLUMN)
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+
         let result = build_write(&operation, &record, step).and_then(|w| {
             re_calls::write_code_table_entry(transport, &selector, &w)
         });
 
-        match result {
-            Ok(_) => succeeded += 1,
-            Err(e) => failures.push(SyncFailure {
+        // Echo the source row's own columns so a later join can match on
+        // whatever the profile author already had (usually long_description),
+        // then overlay the outcome fields.
+        let mut outcome = record.clone();
+        match &result {
+            Ok(response) => {
+                succeeded += 1;
+                let assigned = assigned_id(response, transport, i).or(sent_id);
+                outcome.insert(
+                    ID_COLUMN.to_string(),
+                    assigned.map(Value::String).unwrap_or(Value::Null),
+                );
+                outcome.insert("sync_status".to_string(), Value::String("ok".into()));
+                outcome.insert("sync_error".to_string(), Value::Null);
+            }
+            Err(e) => {
+                outcome.insert(
+                    ID_COLUMN.to_string(),
+                    sent_id.map(Value::String).unwrap_or(Value::Null),
+                );
+                outcome.insert("sync_status".to_string(), Value::String("failed".into()));
+                outcome.insert("sync_error".to_string(), Value::String(e.to_string()));
+            }
+        }
+        outcome.insert("sync_row".to_string(), Value::Number((i + 1).into()));
+        outcome.insert("sync_operation".to_string(), Value::String(operation.clone()));
+        outcome.insert(
+            "sync_mode".to_string(),
+            Value::String(transport.label().to_string()),
+        );
+        outcomes.push(Value::Object(outcome));
+
+        if let Err(e) = result {
+            failures.push(SyncFailure {
                 row: i + 1,
                 identifier,
                 error: e.to_string(),
-            }),
+            });
         }
     }
+
+    // Write the outcome rows only when the step named them. A sync nothing reads
+    // costs no file.
+    let (sync_output, sync_path) = match step.sync_output.as_deref() {
+        Some(label) => {
+            fs::create_dir_all(run_dir).map_err(|e| {
+                AppError::IoError(format!("Cannot create sync run dir: {}", e))
+            })?;
+            let path: PathBuf = run_dir.join(format!("sync_{}.json", label));
+            fs::write(&path, serde_json::to_vec(&outcomes).unwrap_or_default()).map_err(|e| {
+                AppError::IoError(format!("Cannot write sync result {}: {}", label, e))
+            })?;
+            (
+                Some(label.to_string()),
+                Some(path.to_string_lossy().to_string()),
+            )
+        }
+        None => (None, None),
+    };
 
     let attempted = rows.rows.len();
     let table_label = selector.describe();
@@ -213,7 +283,30 @@ pub fn run_sync(
         failures,
         message,
         mode: transport.label().to_string(),
+        sync_output,
+        path: sync_path,
     })
+}
+
+// The id RE assigned to a newly created entry. The create response carries it as
+// `id` (the spec's shape) — accept `table_entries_id` and a bare number too
+// rather than losing the id to a field-name difference.
+//
+// Mock mode has no server to assign one, so it gets a deterministic stand-in:
+// downstream SQL then joins identically in both modes, which is the whole point
+// of routing the outcome onward.
+fn assigned_id(response: &Value, transport: &Transport, index: usize) -> Option<String> {
+    if matches!(transport, Transport::Mock) {
+        return Some(format!("mock-{}", index + 1));
+    }
+    response
+        .get("id")
+        .or_else(|| response.get(ID_COLUMN))
+        .and_then(|v| match v {
+            Value::String(s) if !s.is_empty() => Some(s.clone()),
+            Value::Number(n) => Some(n.to_string()),
+            _ => None,
+        })
 }
 
 // A step addresses its table the same way a code_tables entry does.
@@ -385,7 +478,8 @@ mod tests {
         let paths = fetch_all(&loaded, &Transport::Mock, &run_dir("join")).expect("fetch ok");
         let sql = loaded.sql_files.get("primary_transform.sql").expect("sql present");
 
-        let rows = db::select_rows(&sample_inputs(&loaded), &paths, sql).expect("select ok");
+        let sources = db::SqlSources::new().with(db::KIND_CODETABLE, &paths);
+        let rows = db::select_rows(&sample_inputs(&loaded), &sources, sql).expect("select ok");
         let id_col = rows.columns.iter().position(|c| c == "re_code_id").unwrap();
         let class_col = rows.columns.iter().position(|c| c == "vendor_class").unwrap();
 
@@ -423,6 +517,150 @@ mod tests {
         assert!(res.ok && res.failures.is_empty());
         assert_eq!(res.mode, "mock");
         assert_eq!(res.operation, "create");
+        // code_table_demo names no sync_output, so nothing is published.
+        assert!(res.sync_output.is_none() && res.path.is_none());
+    }
+
+    // ── sync_output → {{sync:Label}} ──────────────────────────────────────────
+    // The full round trip the code_table_crossref profile depends on: a sync
+    // publishes its outcome rows, and the next transform joins them to fill in
+    // ids the pulled code table doesn't have yet.
+
+    fn load_crossref() -> LoadedProfile {
+        let dir =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../profiles/src/code_table_crossref");
+        profile::load_from_dir(&dir).expect("code_table_crossref should load")
+    }
+
+    fn crossref_inputs(loaded: &LoadedProfile) -> HashMap<String, String> {
+        let csv = loaded
+            .temp_dir
+            .join("test-files")
+            .join("sample_constituents.csv");
+        let mut m = HashMap::new();
+        m.insert("Constituents".to_string(), csv.to_string_lossy().to_string());
+        m
+    }
+
+    fn run_crossref_sync(dir_name: &str) -> (LoadedProfile, SyncResult) {
+        let loaded = load_crossref();
+        let step = loaded
+            .structure
+            .steps
+            .iter()
+            .find(|s| s.step_type == "code_table_sync")
+            .expect("crossref has a sync step")
+            .clone();
+        let res = run_sync(
+            &loaded,
+            &step,
+            &crossref_inputs(&loaded),
+            &Transport::Mock,
+            &run_dir(dir_name),
+        )
+        .expect("sync ok");
+        (loaded, res)
+    }
+
+    #[test]
+    fn sync_output_publishes_outcome_rows() {
+        let (_loaded, res) = run_crossref_sync("published");
+
+        assert_eq!(res.sync_output.as_deref(), Some("NewCodes"));
+        let path = res.path.expect("a declared sync_output writes a file");
+
+        let rows: Vec<Value> =
+            serde_json::from_slice(&fs::read(&path).expect("outcome file readable"))
+                .expect("outcome file is JSON");
+
+        // Corporation, Foundation and Major Donor are missing from the fixture.
+        assert_eq!(rows.len(), 3, "rows: {:?}", rows);
+        for (i, row) in rows.iter().enumerate() {
+            assert_eq!(row["sync_status"], "ok");
+            assert_eq!(row["sync_operation"], "create");
+            assert_eq!(row["sync_mode"], "mock");
+            assert_eq!(row["sync_row"], (i + 1) as u64);
+            assert!(row["sync_error"].is_null());
+            // Mock mode still assigns an id, so downstream joins resolve offline.
+            assert_eq!(row[ID_COLUMN], format!("mock-{}", i + 1));
+            // The source SQL's own columns are echoed through for joining.
+            assert!(row["long_description"].is_string());
+        }
+    }
+
+    #[test]
+    fn transform_joins_sync_output() {
+        let (loaded, res) = run_crossref_sync("joined");
+        let sync_path = res.path.expect("sync published");
+
+        let ct_paths = fetch_all(&loaded, &Transport::Mock, &run_dir("joined-ct"))
+            .expect("code tables fetch");
+        let mut sync_paths = HashMap::new();
+        sync_paths.insert("NewCodes".to_string(), sync_path);
+
+        let sources = db::SqlSources::new()
+            .with(db::KIND_CODETABLE, &ct_paths)
+            .with(db::KIND_SYNC, &sync_paths);
+        let sql = loaded
+            .sql_files
+            .get("primary_transform.sql")
+            .expect("sql present");
+        let rows = db::select_rows(&crossref_inputs(&loaded), &sources, sql)
+            .expect("transform runs");
+
+        let id_col = rows.columns.iter().position(|c| c == "re_code_id").unwrap();
+        let code_col = rows.columns.iter().position(|c| c == "source_code").unwrap();
+
+        // Every row with a non-blank code now resolves: the four already in the
+        // fixture from the code table, the three new ones from the sync result.
+        let mut from_sync = 0;
+        for row in &rows.rows {
+            if row[code_col].trim().is_empty() {
+                continue;
+            }
+            assert!(
+                !row[id_col].is_empty(),
+                "row {:?} should have resolved an id",
+                row
+            );
+            if row[id_col].starts_with("mock-") {
+                from_sync += 1;
+            }
+        }
+        // Foundation appears twice, plus Corporation and Major Donor.
+        assert_eq!(from_sync, 4, "columns: {:?}", rows.columns);
+    }
+
+    // A sync result is legitimately empty when nothing was missing. The
+    // consuming SQL must still bind, which is why the profile reads it with an
+    // explicit `columns=` list rather than read_json_auto.
+    #[test]
+    fn empty_sync_output_still_joins() {
+        let dir = run_dir("empty-sync");
+        fs::create_dir_all(&dir).expect("dir");
+        let path = dir.join("sync_NewCodes.json");
+        fs::write(&path, b"[]").expect("write empty result");
+
+        let loaded = load_crossref();
+        let ct_paths = fetch_all(&loaded, &Transport::Mock, &run_dir("empty-ct"))
+            .expect("code tables fetch");
+        let mut sync_paths = HashMap::new();
+        sync_paths.insert(
+            "NewCodes".to_string(),
+            path.to_string_lossy().to_string(),
+        );
+
+        let sources = db::SqlSources::new()
+            .with(db::KIND_CODETABLE, &ct_paths)
+            .with(db::KIND_SYNC, &sync_paths);
+        let sql = loaded
+            .sql_files
+            .get("primary_transform.sql")
+            .expect("sql present");
+
+        let rows = db::select_rows(&crossref_inputs(&loaded), &sources, sql)
+            .expect("transform runs against an empty sync result");
+        assert_eq!(rows.rows.len(), 10);
     }
 
     // Only API-writable columns reach the request body; helper columns are dropped

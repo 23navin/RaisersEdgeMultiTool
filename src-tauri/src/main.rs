@@ -5,6 +5,7 @@ mod errors;
 mod profile;
 mod db;
 mod code_tables;
+mod query_step;
 mod re_calls;
 mod report;
 mod validate;
@@ -20,6 +21,7 @@ fn main() {
             commands::validate_file,
             commands::run_profile,
             commands::run_code_table_sync,
+            commands::run_re_query,
             commands::run_report,
             commands::run_report_action,
             commands::save_output,

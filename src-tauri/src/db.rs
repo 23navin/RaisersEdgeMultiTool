@@ -298,7 +298,7 @@ fn normalize_col(s: &str) -> String {
 
 pub fn run_transform(
     file_paths: &HashMap<String, String>,
-    code_table_paths: &HashMap<String, String>,
+    sources: &SqlSources,
     sql_content: &str,
     output_labels: &[String],
     notices: &[NoticeInput<'_>],
@@ -356,7 +356,7 @@ pub fn run_transform(
         let only_path = normalized.values().next().unwrap();
         sql = sql.replace("{{input_file}}", only_path);
     }
-    sql = substitute_code_tables(&sql, code_table_paths);
+    sql = sources.apply(&sql);
     let mut multi_output_mode = false;
     for (label, path) in &outputs {
         let placeholder = format!("{{{{output:{}}}}}", label);
@@ -420,7 +420,7 @@ pub fn run_transform(
     // label) rather than failing the whole transform.
     let notice_results: Vec<Notice> = notices
         .iter()
-        .map(|n| run_notice(&conn, n, &normalized, code_table_paths))
+        .map(|n| run_notice(&conn, n, &normalized, sources))
         .collect();
 
     Ok(TransformResult {
@@ -429,19 +429,67 @@ pub fn run_transform(
     })
 }
 
-// ── code table placeholders ───────────────────────────────────────────────────
-// {{codetable:Label}} resolves to the JSON file holding one code table's entries,
-// fetched from RE before the SQL runs (see code_tables.rs). Kept separate from
-// {{input:Label}} so a profile can tell "a file the user picked" apart from
-// "a table pulled from RE" at a glance.
+// ── RE-sourced placeholders ───────────────────────────────────────────────────
+// Every placeholder family besides {{input:}} / {{output:}} resolves to a JSON
+// file produced before the SQL runs, all read with read_json_auto:
+//   {{codetable:Label}} — one code table's entries      (code_tables.rs)
+//   {{query:Label}}     — one re_query step's results   (query_step.rs)
+//   {{sync:Label}}      — one code_table_sync's outcome (code_tables.rs)
+// Kept separate from {{input:Label}} so a profile can tell "a file the user
+// picked" apart from "data produced by an earlier step" at a glance.
 
-pub fn substitute_code_tables(sql: &str, code_table_paths: &HashMap<String, String>) -> String {
+pub fn substitute_labeled_paths(
+    sql: &str,
+    kind: &str,
+    paths: &HashMap<String, String>,
+) -> String {
     let mut out = sql.to_string();
-    for (label, path) in code_table_paths {
-        let placeholder = format!("{{{{codetable:{}}}}}", label);
+    for (label, path) in paths {
+        let placeholder = format!("{{{{{}:{}}}}}", kind, label);
         out = out.replace(&placeholder, &path.replace('\\', "/"));
     }
     out
+}
+
+// The kinds in use. All resolve to a JSON file read with read_json_auto.
+pub const KIND_CODETABLE: &str = "codetable";
+pub const KIND_QUERY: &str = "query";
+pub const KIND_SYNC: &str = "sync";
+
+// ── SqlSources ────────────────────────────────────────────────────────────────
+// The registry of label→path maps a SQL body can reference, keyed by placeholder
+// family. Everything that runs profile SQL takes one of these instead of a
+// parameter per family, so adding a family later is a `KIND_` const plus one
+// `.with(...)` at the call site — not a new argument threaded through
+// run_transform, select_rows and run_notice.
+
+#[derive(Debug, Default, Clone)]
+pub struct SqlSources {
+    families: Vec<(&'static str, HashMap<String, String>)>,
+}
+
+impl SqlSources {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    // Register one family. An empty map is kept rather than skipped so the
+    // debug view still shows which families a call site considered.
+    pub fn with(mut self, kind: &'static str, paths: &HashMap<String, String>) -> Self {
+        self.families.push((kind, paths.clone()));
+        self
+    }
+
+    // Resolve every registered family in one pass. Unregistered labels are left
+    // as literal `{{kind:Label}}` text so DuckDB names them in its error rather
+    // than the run silently reading nothing.
+    pub fn apply(&self, sql: &str) -> String {
+        let mut out = sql.to_string();
+        for (kind, paths) in &self.families {
+            out = substitute_labeled_paths(&out, kind, paths);
+        }
+        out
+    }
 }
 
 // ── select_rows ───────────────────────────────────────────────────────────────
@@ -451,7 +499,7 @@ pub fn substitute_code_tables(sql: &str, code_table_paths: &HashMap<String, Stri
 
 pub fn select_rows(
     file_paths: &HashMap<String, String>,
-    code_table_paths: &HashMap<String, String>,
+    sources: &SqlSources,
     sql_content: &str,
 ) -> Result<ResultSet, AppError> {
     let conn = Connection::open_in_memory().map_err(|e| AppError::SqlError(e.to_string()))?;
@@ -464,7 +512,7 @@ pub fn select_rows(
         let only_path = file_paths.values().next().unwrap().replace('\\', "/");
         sql = sql.replace("{{input_file}}", &only_path);
     }
-    sql = substitute_code_tables(&sql, code_table_paths);
+    sql = sources.apply(&sql);
     query_to_result_set(&conn, &sql)
 }
 
@@ -478,7 +526,7 @@ fn run_notice(
     conn: &Connection,
     n: &NoticeInput<'_>,
     file_paths: &HashMap<&str, String>,
-    code_table_paths: &HashMap<String, String>,
+    sources: &SqlSources,
 ) -> Notice {
     let mut user_sql = n.sql_content.to_string();
     for (label, path) in file_paths {
@@ -489,7 +537,7 @@ fn run_notice(
         let only_path = file_paths.values().next().unwrap();
         user_sql = user_sql.replace("{{input_file}}", only_path);
     }
-    let user_sql = substitute_code_tables(&user_sql, code_table_paths);
+    let user_sql = sources.apply(&user_sql);
     let trimmed = user_sql.trim().trim_end_matches(';').trim();
 
     // Phase 1: discover the column names returned by the user's query.

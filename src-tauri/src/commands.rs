@@ -12,6 +12,7 @@ use crate::profile::{self, ProfileSummary, LoadedProfile, NoticeQuery, ProfileFi
 use crate::db::{self, ValidationResult, TransformResult, NoticeInput};
 use crate::report::{self, ReportRunResult, ActionResult};
 use crate::code_tables;
+use crate::query_step;
 use crate::re_calls::Transport;
 use crate::sky_auth;
 use crate::validate::{self, ValidationReport};
@@ -107,12 +108,22 @@ pub fn validate_file(
 pub async fn run_profile(
     app: AppHandle,
     file_paths: HashMap<String, String>,  // input_label → file_path
+    query_paths: HashMap<String, String>, // query_output label → result JSON path
+    sync_paths: HashMap<String, String>,  // sync_output label → outcome JSON path
     sql_file: String,                     // filename e.g. "primary_transform.sql"
     zip_path: String,                     // temp dir path — profile already extracted
     output_labels: Vec<String>,           // every output declared on this transform
 ) -> Result<TransformResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        run_profile_blocking(&app, file_paths, sql_file, zip_path, output_labels)
+        run_profile_blocking(
+            &app,
+            file_paths,
+            query_paths,
+            sync_paths,
+            sql_file,
+            zip_path,
+            output_labels,
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -123,6 +134,8 @@ pub async fn run_profile(
 fn run_profile_blocking(
     app: &AppHandle,
     file_paths: HashMap<String, String>,
+    query_paths: HashMap<String, String>,
+    sync_paths: HashMap<String, String>,
     sql_file: String,
     zip_path: String,
     output_labels: Vec<String>,
@@ -158,8 +171,61 @@ fn run_profile_blocking(
         code_tables::fetch_all(&loaded, &transport, &run_dir).map_err(|e| e.to_string())?
     };
 
-    db::run_transform(&file_paths, &code_table_paths, sql, &output_labels, &notices)
+    // Everything the SQL body may reference beyond {{input:}} / {{output:}}.
+    // One registry, so a new placeholder family is a line here rather than a
+    // new parameter on run_transform.
+    let sources = db::SqlSources::new()
+        .with(db::KIND_CODETABLE, &code_table_paths)
+        .with(db::KIND_QUERY, &query_paths)
+        .with(db::KIND_SYNC, &sync_paths);
+
+    db::run_transform(&file_paths, &sources, sql, &output_labels, &notices)
         .map_err(|e| e.to_string())
+}
+
+// ── run_re_query ──────────────────────────────────────────────────────────────
+// Called by: the Imports tab when the user runs an `re_query` step.
+// Runs the step's params SQL over the uploaded files, substitutes the values
+// into the query template, executes it against RE (live or mock), and writes the
+// rows to a temp file. The returned path is what the frontend hands to whichever
+// later transform declared this step's `query_output` in its `query_input`.
+
+#[tauri::command]
+pub async fn run_re_query(
+    app: AppHandle,
+    file_paths: HashMap<String, String>,
+    step_label: String,
+    zip_path: String,
+) -> Result<query_step::QueryStepResult, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<query_step::QueryStepResult, String> {
+        let loaded = profile::load_from_dir(Path::new(&zip_path)).map_err(|e| e.to_string())?;
+        let step = loaded
+            .structure
+            .steps
+            .iter()
+            .find(|s| s.label == step_label && s.step_type == "re_query")
+            .ok_or_else(|| format!("No re_query step labelled '{}'", step_label))?;
+
+        let transport = resolve_transport(&app)?;
+        let run_dir = std::env::temp_dir().join(format!("queries-{}", loaded.structure.id));
+
+        // A params query may join against code tables, so pull them first.
+        let ct_dir = std::env::temp_dir().join(format!("codetables-{}", loaded.structure.id));
+        let code_table_paths = code_tables::fetch_all(&loaded, &transport, &ct_dir)
+            .map_err(|e| e.to_string())?;
+
+        query_step::run_query(
+            &loaded,
+            step,
+            &file_paths,
+            &code_table_paths,
+            &transport,
+            &run_dir,
+        )
+        .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 // ── run_code_table_sync ───────────────────────────────────────────────────────

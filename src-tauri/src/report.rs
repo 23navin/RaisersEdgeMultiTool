@@ -65,18 +65,18 @@ pub fn run_report(
     let subs = build_param_subs(loaded, param_values);
 
     // 2. Fresh per-run temp dir for the query results (mock or live).
-    let run_dir = std::env::temp_dir().join(format!("report-run-{}", structure.id));
-    // exists() then remove_dir_all() is a TOCTOU race: two runs of the same
-    // report can each see the dir and both try to remove it, and the loser gets
-    // NotFound. The dir being gone is the outcome we wanted either way.
-    if let Err(e) = fs::remove_dir_all(&run_dir) {
-        if e.kind() != std::io::ErrorKind::NotFound {
-            return Err(AppError::IoError(format!(
-                "Cannot clear report run dir: {}",
-                e
-            )));
-        }
-    }
+    //
+    // The directory is unique per run, not per report. Keying it on the report
+    // id alone meant two runs of the same report shared one directory: the
+    // second run's remove_dir_all could delete the first's files mid-flight, or
+    // both could race to remove it and the loser got NotFound. Nothing is
+    // cleared here because nothing is ever reused — each run gets its own dir,
+    // and the OS reclaims temp.
+    let run_dir = std::env::temp_dir().join(format!(
+        "report-run-{}-{}",
+        structure.id,
+        unique_run_token()
+    ));
     fs::create_dir_all(&run_dir)
         .map_err(|e| AppError::IoError(format!("Cannot create report run dir: {}", e)))?;
 
@@ -145,7 +145,7 @@ pub fn run_report(
         for (label, path) in &query_paths {
             sql = sql.replace(&format!("{{{{query:{}}}}}", label), path);
         }
-        sql = db::substitute_code_tables(&sql, &code_table_paths);
+        sql = db::substitute_labeled_paths(&sql, db::KIND_CODETABLE, &code_table_paths);
 
         let result = db::query_to_result_set(&conn, &sql)?;
         data.insert(t.output.clone(), result);
@@ -333,7 +333,21 @@ fn scalar_to_string(v: &Value) -> String {
     }
 }
 
-fn apply_subs(s: &str, subs: &[(String, String)]) -> String {
+// Distinct per run within a process. The counter alone would collide across
+// processes (concurrent `cargo test` binaries, a second app instance), and the
+// clock alone can repeat under a coarse timer, so use both.
+fn unique_run_token() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("{:x}-{:x}", nanos, n)
+}
+
+pub(crate) fn apply_subs(s: &str, subs: &[(String, String)]) -> String {
     let mut out = s.to_string();
     for (placeholder, value) in subs {
         if out.contains(placeholder.as_str()) {

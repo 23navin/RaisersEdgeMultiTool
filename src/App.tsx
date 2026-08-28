@@ -16,6 +16,7 @@ import type {
   ProfileSummary,
   Parameter,
   ReportRunResult,
+  QueryStepResult,
   SqlError,
   SyncResult,
   TransformResult,
@@ -49,6 +50,10 @@ export type GenerateStatus = "idle" | "running" | "done" | "error";
 // progress field the way a generation has.
 export type SyncStatus = "idle" | "running" | "done" | "error";
 
+// An re_query step likewise. The SKY job reports no progress, so the UI shows an
+// indeterminate bar rather than a percentage.
+export type QueryStatus = "idle" | "running" | "done" | "error";
+
 export type FileEntry = {
   path: string;
   name: string;
@@ -69,6 +74,14 @@ export type GenEntry = {
 export type SyncEntry = {
   status: SyncStatus;
   result?: SyncResult;
+  error?: string;
+};
+
+// One re_query step's run state, keyed by step label. `result.path` is what gets
+// handed to whichever later transform declared this step's query_output.
+export type QueryEntry = {
+  status: QueryStatus;
+  result?: QueryStepResult;
   error?: string;
 };
 
@@ -128,6 +141,7 @@ export default function App() {
   const [files, setFiles] = useState<Record<string, FileEntry>>({});
   const [generations, setGenerations] = useState<Record<string, GenEntry>>({});
   const [syncs, setSyncs] = useState<Record<string, SyncEntry>>({});
+  const [queries, setQueries] = useState<Record<string, QueryEntry>>({});
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TopTab>("imports");
   const [exitingTab, setExitingTab] = useState<TopTab | null>(null);
@@ -199,6 +213,8 @@ export default function App() {
         stepsDone[step.label] = transforms.every(
           (_, i) => generations[genKey(step.label, i)]?.status === "done"
         );
+      } else if (step.type === "re_query") {
+        stepsDone[step.label] = queries[step.label]?.status === "done";
       } else if (step.type === "code_table_sync") {
         const st = syncs[step.label];
         stepsDone[step.label] = st?.status === "done" && (st.result?.ok ?? false);
@@ -224,14 +240,81 @@ export default function App() {
     return keys;
   };
 
-  const resetGenerationsConsuming = (inputLabel: string) => {
-    const affected = transformsConsumingInput(inputLabel);
+  // The fields a transform uses to declare an upstream step's result.
+  type UpstreamField = "query_input" | "sync_input";
+
+  // Transform keys that read a given upstream result. One walk parameterised by
+  // the declaring field, so adding a third upstream family doesn't need another
+  // copy of this.
+  const transformsConsuming = (field: UpstreamField, label: string): string[] => {
+    if (!loadedProfile) return [];
+    const keys: string[] = [];
+    for (const step of loadedProfile.structure.steps) {
+      if (step.type !== "sql_transform") continue;
+      stepTransforms(step).forEach((t, idx) => {
+        if ((t[field] ?? []).includes(label)) {
+          keys.push(genKey(step.label, idx));
+        }
+      });
+    }
+    return keys;
+  };
+
+  // Clears every transform that reads this upstream result. Called when the
+  // producing step re-runs and when it's invalidated — a stale join is worse
+  // than a missing one.
+  const resetTransformsConsuming = (field: UpstreamField, label: string) => {
+    const affected = transformsConsuming(field, label);
     if (!affected.length) return;
     setGenerations((prev) => {
       const next = { ...prev };
       for (const k of affected) delete next[k];
       return next;
     });
+  };
+
+  // Changing an input invalidates, in order: transforms that read it, the
+  // re_query and code_table_sync steps that read it, and — because those
+  // results are now stale — the transforms downstream of them.
+  const resetGenerationsConsuming = (inputLabel: string) => {
+    const affected = transformsConsumingInput(inputLabel);
+    if (affected.length) {
+      setGenerations((prev) => {
+        const next = { ...prev };
+        for (const k of affected) delete next[k];
+        return next;
+      });
+    }
+    if (!loadedProfile) return;
+    for (const step of loadedProfile.structure.steps) {
+      const readsIt = (step.input ?? []).some((r) => refLabel(r) === inputLabel);
+      if (!readsIt) continue;
+
+      if (step.type === "re_query") {
+        setQueries((prev) => {
+          if (!prev[step.label]) return prev;
+          const next = { ...prev };
+          delete next[step.label];
+          return next;
+        });
+        if (step.query_output) {
+          resetTransformsConsuming("query_input", step.query_output);
+        }
+      } else if (step.type === "code_table_sync") {
+        // The rows already pushed to RE can't be un-pushed, but the recorded
+        // outcome no longer describes the file on screen, so it stops counting
+        // as done and anything joined to it is cleared.
+        setSyncs((prev) => {
+          if (!prev[step.label]) return prev;
+          const next = { ...prev };
+          delete next[step.label];
+          return next;
+        });
+        if (step.sync_output) {
+          resetTransformsConsuming("sync_input", step.sync_output);
+        }
+      }
+    }
   };
 
   // ── Handlers ──────────────────────────────────────────────────────────────
@@ -312,6 +395,30 @@ export default function App() {
       if (f?.status === "valid") filePaths[lbl] = f.path;
     }
 
+    // Query results this transform declared via query_input. A declared label
+    // whose step hasn't run yet is simply absent — the backend leaves the
+    // placeholder unsubstituted and DuckDB reports it, rather than us guessing.
+    const queryPaths: Record<string, string> = {};
+    for (const label of transform.query_input ?? []) {
+      const producer = loadedProfile.structure.steps.find(
+        (s) => s.type === "re_query" && s.query_output === label,
+      );
+      const res = producer ? queries[producer.label]?.result : undefined;
+      if (res) queryPaths[label] = res.path;
+    }
+
+    // Same contract for code_table_sync outcomes declared via sync_input. A
+    // sync that hasn't run yet is absent for the same reason: DuckDB naming the
+    // unresolved placeholder beats us inventing an empty table.
+    const syncPaths: Record<string, string> = {};
+    for (const label of transform.sync_input ?? []) {
+      const producer = loadedProfile.structure.steps.find(
+        (s) => s.type === "code_table_sync" && s.sync_output === label,
+      );
+      const res = producer ? syncs[producer.label]?.result : undefined;
+      if (res?.path) syncPaths[label] = res.path;
+    }
+
     setGenerations((prev) => ({
       ...prev,
       [key]: { status: "running", progress: 0 },
@@ -320,6 +427,8 @@ export default function App() {
     try {
       const result = await invoke<TransformResult>("run_profile", {
         filePaths,
+        queryPaths,
+        syncPaths,
         sqlFile: transform.sql,
         zipPath: loadedProfile.temp_dir,
         outputLabels: transform.output ?? [],
@@ -346,6 +455,45 @@ export default function App() {
     }
   };
 
+  // Runs an re_query step: the backend executes the step's params SQL over the
+  // uploaded files, substitutes the values into the query template, calls RE,
+  // and writes the rows to a temp file. The returned path is what downstream
+  // transforms read as {{query:Label}}.
+  const handleRunQuery = async (stepLabel: string) => {
+    if (!loadedProfile) return;
+    const step = loadedProfile.structure.steps.find((s) => s.label === stepLabel);
+    if (!step) return;
+
+    const filePaths: Record<string, string> = {};
+    for (const ref of step.input ?? []) {
+      const lbl = refLabel(ref);
+      const f = files[lbl];
+      if (f?.status === "valid") filePaths[lbl] = f.path;
+    }
+
+    setQueries((prev) => ({ ...prev, [stepLabel]: { status: "running" } }));
+    // Anything already built off the previous result is now stale.
+    if (step.query_output) resetTransformsConsuming("query_input", step.query_output);
+
+    try {
+      const result = await invoke<QueryStepResult>("run_re_query", {
+        filePaths,
+        stepLabel,
+        zipPath: loadedProfile.temp_dir,
+      });
+      setQueries((prev) => ({
+        ...prev,
+        [stepLabel]: { status: "done", result },
+      }));
+    } catch (e) {
+      console.error("run_re_query failed:", e);
+      setQueries((prev) => ({
+        ...prev,
+        [stepLabel]: { status: "error", error: asString(e) },
+      }));
+    }
+  };
+
   // Runs a code_table_sync step: the backend executes the step's SQL over the
   // uploaded files and pushes one write per row to RE. Failures come back
   // per-row rather than aborting, so a partial result is still reported.
@@ -362,6 +510,8 @@ export default function App() {
     }
 
     setSyncs((prev) => ({ ...prev, [stepLabel]: { status: "running" } }));
+    // Anything joined to the previous run's outcome rows is now stale.
+    if (step.sync_output) resetTransformsConsuming("sync_input", step.sync_output);
     try {
       const result = await invoke<SyncResult>("run_code_table_sync", {
         filePaths,
@@ -410,6 +560,7 @@ export default function App() {
     setFiles({});
     setGenerations({});
     setSyncs({});
+    setQueries({});
   };
 
   // `zipPath` is the unique selection key — built-in and user profiles can
@@ -421,6 +572,7 @@ export default function App() {
     setFiles({});
     setGenerations({});
     setSyncs({});
+    setQueries({});
     setLoadedProfile(null);
     if (zipPath == null) return;
     const summary = profiles.find((p) => p.zip_path === zipPath);
@@ -532,6 +684,8 @@ export default function App() {
           onDownload={handleDownload}
           syncs={syncs}
           onCodeTableSync={handleCodeTableSync}
+          queries={queries}
+          onRunQuery={handleRunQuery}
           onReset={handleReset}
         />
       );

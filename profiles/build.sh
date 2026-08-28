@@ -96,13 +96,22 @@ let needsSqlDir = false;
 
 const codeTableOutputs = validateCodeTables();
 
+// Populated by validateImport() from re_query steps; reports have no such steps.
+let queryOutputs = new Set();
+// Same, for code_table_sync steps that name their outcome rows via sync_output.
+let syncOutputs = new Set();
+
 if (kind === 'report') {
   validateReport();
 } else {
   validateImport();
 }
 
-checkCodeTablePlaceholders(codeTableOutputs);
+checkLabeledPlaceholders('codetable', codeTableOutputs, 'code_tables entry');
+if (kind !== 'report') {
+  checkLabeledPlaceholders('query', queryOutputs, 're_query step');
+  checkLabeledPlaceholders('sync', syncOutputs, 'code_table_sync step');
+}
 
 // ── sql dir presence + unused (shared) ────────────────────────────────────────
 if (needsSqlDir && (!fs.existsSync(sqlDir) || !fs.statSync(sqlDir).isDirectory())) {
@@ -163,15 +172,16 @@ function validateCodeTables() {
   return outputs;
 }
 
-// Every {{codetable:Label}} across sql/ must name a declared output.
-function checkCodeTablePlaceholders(declared) {
-  const re = /\{\{\s*codetable\s*:\s*([^}]+?)\s*\}\}/g;
+// Every {{<kind>:Label}} across sql/ must name something declared. Used for
+// "codetable" (code_tables entries) and "query" (re_query step outputs).
+function checkLabeledPlaceholders(kind, declared, whatDeclares) {
+  const re = new RegExp(`\\{\\{\\s*${kind}\\s*:\\s*([^}]+?)\\s*\\}\\}`, 'g');
   for (const rel of sqlOnDisk) {
     const body = stripSqlComments(fs.readFileSync(path.join(sqlDir, rel), 'utf8'));
     for (const m of body.matchAll(re)) {
       const lbl = m[1].trim();
       if (!declared.has(lbl)) {
-        err(`sql/${rel}: references {{codetable:${lbl}}} but no code_tables entry declares that output`
+        err(`sql/${rel}: references {{${kind}:${lbl}}} but no ${whatDeclares} declares that output`
             + (declared.size ? ` (declared: ${[...declared].join(', ')})` : ' (the profile declares none)'));
       }
     }
@@ -336,16 +346,51 @@ function validateImport() {
   const steps = data.steps || [];
   if (!isList(data.steps)) err('steps must be a list');
 
+  // One entry per "an earlier step publishes a label a later transform reads"
+  // family. `all` is every label declared anywhere in the profile regardless of
+  // position, which lets the ordering check below tell "no such label" from
+  // "declared, but later". `seen` accumulates as the walk goes.
+  const UPSTREAM = [
+    { kind: 'query', producer: 're_query', outField: 'query_output', inField: 'query_input', seen: queryOutputs },
+    { kind: 'sync', producer: 'code_table_sync', outField: 'sync_output', inField: 'sync_input', seen: syncOutputs },
+  ];
+  for (const fam of UPSTREAM) {
+    fam.all = new Set(
+      steps.filter(st => isMap(st) && st.type === fam.producer && isStr(st[fam.outField]))
+           .map(st => st[fam.outField]));
+  }
+
   for (const [i, step] of steps.entries()) {
     let where = `steps[${i}]`;
     if (!isMap(step)) { err(`${where} must be a mapping`); continue; }
     if (!isStr(step.label) || !step.label) err(`${where}.label must be a non-empty string`);
     else { stepLabels.push(step.label); where = `steps[${i}](${step.label})`; }
     const t = step.type;
-    const STEP_TYPES = ['file_input', 'sql_transform', 'code_table_sync', 'manual_instruction'];
+    const STEP_TYPES = ['file_input', 'sql_transform', 're_query', 'code_table_sync', 'manual_instruction'];
     if (!STEP_TYPES.includes(t)) {
       err(`${where}.type must be one of ${STEP_TYPES.join(', ')} (got ${JSON.stringify(t)})`);
       continue;
+    }
+
+    // A step may only read results produced by an EARLIER step — steps run in
+    // the order the user clicks them, so a forward reference reads nothing.
+    for (const fam of UPSTREAM) {
+      const declared = [];
+      if (isList(step[fam.inField])) declared.push(...step[fam.inField]);
+      if (isList(step.transforms)) {
+        for (const tr of step.transforms) {
+          if (isMap(tr) && isList(tr[fam.inField])) declared.push(...tr[fam.inField]);
+        }
+      }
+      for (const lbl of declared) {
+        if (fam.seen.has(lbl)) continue;
+        if (fam.all.has(lbl)) {
+          err(`${where}: reads ${fam.kind} '${lbl}' but the ${fam.producer} step producing it comes later — reorder the steps`);
+        } else {
+          err(`${where}: ${fam.inField} '${lbl}' matches no ${fam.producer} step's ${fam.outField}`
+              + (fam.all.size ? ` (available: ${[...fam.all].join(', ')})` : ''));
+        }
+      }
     }
     if (t === 'file_input') {
       if (step.input === undefined || step.input === null) err(`${where} (file_input): input is required`);
@@ -364,10 +409,45 @@ function validateImport() {
       } else {
         checkTransform({ input: step.input, sql: step.sql, output: step.output, notices: step.notices }, where);
       }
+    } else if (t === 're_query') {
+      if (!isStr(step.ref) && (step.template === undefined || step.template === null)) {
+        err(`${where} (re_query): needs a ref (registry call) or an inline template`);
+      }
+      if (!isStr(step.query_output) || !step.query_output) {
+        err(`${where} (re_query): query_output is required — it names the result later SQL reads`);
+      } else if (queryOutputs.has(step.query_output)) {
+        err(`${where} (re_query): query_output '${step.query_output}' is declared by more than one step`);
+      } else {
+        queryOutputs.add(step.query_output);
+      }
+      if (step.params_sql !== undefined && step.params_sql !== null) {
+        if (!isStr(step.params_sql) || !step.params_sql) {
+          err(`${where} (re_query): params_sql must be a non-empty string`);
+        } else {
+          needsSqlDir = true;
+          referencedSql.add(step.params_sql);
+          if (!fs.existsSync(path.join(sqlDir, step.params_sql))) {
+            err(`${where} (re_query): params_sql references missing file sql/${step.params_sql}`);
+          }
+        }
+      }
+      for (const l of stepInputLabels(step.input, `${where}.input`)) {
+        if (!inputLabels.has(l)) err(`${where}.input references unknown input label '${l}'`);
+      }
     } else if (t === 'code_table_sync') {
       needsSqlDir = true;
       if (!isStr(step.code_table) && !isStr(step.code_table_id)) {
         err(`${where} (code_table_sync): needs code_table (name) or code_table_id`);
+      }
+      // Optional: names the outcome rows so later SQL can read {{sync:Label}}.
+      if (step.sync_output !== undefined && step.sync_output !== null) {
+        if (!isStr(step.sync_output) || !step.sync_output) {
+          err(`${where} (code_table_sync): sync_output must be a non-empty string`);
+        } else if (syncOutputs.has(step.sync_output)) {
+          err(`${where} (code_table_sync): sync_output '${step.sync_output}' is declared by more than one step`);
+        } else {
+          syncOutputs.add(step.sync_output);
+        }
       }
       const OPS = ['create', 'update', 'delete'];
       if (!OPS.includes(step.operation)) {

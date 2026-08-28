@@ -24,8 +24,13 @@ const BUILTIN_PROFILES: &[(&str, &[u8])] = &[
     ("test2.import", include_bytes!("../../profiles/test2.import")),
     ("test3.import", include_bytes!("../../profiles/test3.import")),
     ("test4.import", include_bytes!("../../profiles/test4.import")),
+    // Demonstrates the re_query step feeding a later sql_transform.
+    ("re_query_demo.import", include_bytes!("../../profiles/re_query_demo.import")),
     // Demonstrates the code_tables section + the code_table_sync step.
     ("code_table_demo.import", include_bytes!("../../profiles/code_table_demo.import")),
+    // Same pieces, ordered as a cross-reference workflow: audit the file's codes
+    // against the table, then offer to create the missing ones before importing.
+    ("code_table_crossref.import", include_bytes!("../../profiles/code_table_crossref.import")),
     // Report-kind built-in. Verified + packed by profiles/build.sh like the
     // others (the verifier branches on `kind: report`).
     ("gift_activity.import", include_bytes!("../../profiles/gift_activity.import")),
@@ -97,6 +102,13 @@ pub struct SqlTransform {
     pub sql: String,
     pub output: Option<Vec<String>>,
     pub notices: Option<Vec<NoticeQuery>>,
+    // Query outputs (from an earlier re_query step) this transform reads as
+    // {{query:Label}}. Declared so the dependency is validatable and so the
+    // frontend knows which results to pass down.
+    pub query_input: Option<Vec<String>>,
+    // Same contract for an earlier code_table_sync step's outcome rows, read as
+    // {{sync:Label}}.
+    pub sync_input: Option<Vec<String>>,
 }
 
 // A code table pulled from RE before transforms run. Shared by both profile
@@ -150,6 +162,29 @@ pub struct Step {
     pub code_table: Option<String>,        // code table name
     pub code_table_id: Option<String>,     // ...or its id, skipping the lookup
     pub operation: Option<String>,         // "create" | "update" | "delete"
+    // Names the step's outcome rows, exposing them to later SQL as
+    // {{sync:<sync_output>}} — one row per attempted write, carrying the id RE
+    // assigned. Optional: a sync step that nothing reads needs no label.
+    pub sync_output: Option<String>,
+
+    // ── re_query fields ──────────────────────────────────────────────────────
+    // Runs an RE query mid-pipeline: `params_sql` (optional) supplies values
+    // from the uploaded files, they are substituted into `template`, and the
+    // returned rows are exposed to later steps as {{query:<query_output>}}.
+    #[serde(rename = "ref")]
+    pub call_ref: Option<String>,          // central registry entry, e.g. re.query.execute
+    pub template: Option<serde_json::Value>, // inline ExecuteQueryDefinition
+    #[serde(default)]
+    pub bind: HashMap<String, serde_json::Value>,
+    pub params_sql: Option<String>,        // SQL whose rows fill {{rows:}}/{{value:}}
+    pub query_output: Option<String>,      // names the result; NOT `output` (see below)
+
+    // sql_transform single-transform shortcut for the query results it reads.
+    // Kept distinct from `output`, which means "a declared file with a Download
+    // button" and would collide.
+    pub query_input: Option<Vec<String>>,
+    // Same shortcut for code_table_sync outcomes read as {{sync:Label}}.
+    pub sync_input: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

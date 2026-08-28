@@ -68,11 +68,14 @@ export type SqlTransform = {
   sql: string;
   output?: string[];
   notices?: NoticeQuery[];
+  query_input?: string[];   // query outputs this transform reads
+  sync_input?: string[];    // code_table_sync outcomes this transform reads
 };
 
 export type Step = {
   label: string;
-  // "file_input" | "sql_transform" | "code_table_sync" | "manual_instruction"
+  // "file_input" | "sql_transform" | "re_query" | "code_table_sync"
+  // | "manual_instruction"
   type: string;
   input?: StepInputRef[];  // file_input: one upload row per entry. sql_transform: single-transform shortcut.
   sql?: string;            // sql_transform single-transform shortcut; code_table_sync: rows to push
@@ -83,6 +86,21 @@ export type Step = {
   code_table?: string;     // code table name...
   code_table_id?: string;  // ...or its id, skipping the name lookup
   operation?: string;      // "create" | "update" | "delete"
+  // Names this step's outcome rows -> {{sync:<label>}} downstream. Optional:
+  // a sync nothing reads needs no label.
+  sync_output?: string;
+  // re_query fields
+  ref?: string;            // central registry call, e.g. re.query.execute
+  template?: unknown;      // inline ExecuteQueryDefinition
+  bind?: Record<string, unknown>;
+  params_sql?: string;     // SQL whose rows fill {{rows:}} / {{value:}}
+  query_output?: string;   // names the result -> {{query:<label>}} downstream
+  // sql_transform: query outputs this transform reads. Distinct from `output`,
+  // which means "a declared file with a Download button".
+  query_input?: string[];
+  // sql_transform: code_table_sync outcomes this transform reads as
+  // {{sync:<label>}}.
+  sync_input?: string[];
 };
 
 // A code table pulled from RE before SQL runs, exposed to it as
@@ -238,6 +256,15 @@ export type ReportRunResult = {
   mode: string;            // "live" (real SKY API) | "mock" (fixtures)
 };
 
+// Returned by run_re_query. Mirrors query_step::QueryStepResult.
+export type QueryStepResult = {
+  query_output: string;    // the label later SQL uses as {{query:<label>}}
+  path: string;            // JSON file the rows were written to
+  row_count: number;
+  mode: string;            // "live" (real SKY API) | "mock"
+  resolved_request: unknown; // request after {{rows:}}/{{value:}} substitution
+};
+
 // Returned by run_code_table_sync. Mirrors code_tables::SyncResult.
 export type SyncFailure = {
   row: number;
@@ -254,6 +281,10 @@ export type SyncResult = {
   failures: SyncFailure[]; // one per failed row — the run continues past failures
   message: string;
   mode: string;            // "live" (real SKY API) | "mock"
+  // Set when the step declares sync_output: the label later SQL reads as
+  // {{sync:<label>}}, and the JSON file the outcome rows were written to.
+  sync_output?: string | null;
+  path?: string | null;
 };
 
 // Returned by run_report_action. Mirrors report::ActionResult.
