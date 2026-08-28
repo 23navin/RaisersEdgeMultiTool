@@ -1,0 +1,734 @@
+openapi: 3.0.1
+info:
+  title: Code Table
+  description: This API supports managing code tables.
+  version: '1.0'
+servers:
+  - url: https://api.sky.blackbaud.com/codetable
+paths:
+  /v1/codetables:
+    post:
+      tags:
+        - Code Table
+      summary: Create a code table (PREVIEW)
+      description: "Creates a new code table.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: CreateCodeTable
+      requestBody:
+        description: The code table to add.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CodeTableCreate'
+            example:
+              name: Committees
+              category: All
+      responses:
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '200':
+          description: Returned when the operation succeeds. The response body contains the new code table ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+              example:
+                id: '987'
+    get:
+      tags:
+        - Code Table
+      summary: Get code table list (PREVIEW)
+      description: "Returns a list of code tables.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: GetCodeTableList
+      parameters:
+        - name: name
+          in: query
+          description: The name of the code table. Looks for an exact match.
+          schema:
+            type: string
+        - name: search
+          in: query
+          description: Fuzzy search for code table names. This will search for code tables that contain the search term in their name.
+          schema:
+            type: string
+        - name: category
+          in: query
+          description: Limit to only a certain category of code tables.
+          schema:
+            $ref: '#/components/schemas/CodeTableCategory'
+        - name: limit
+          in: query
+          schema:
+            maximum: 10000.0
+            minimum: 1.0
+            type: integer
+            format: int32
+        - name: offset
+          in: query
+          schema:
+            maximum: 2147483647.0
+            minimum: 0.0
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '200':
+          description: Returned when the operation succeeds. The response body contains the code table list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CodeTableCollection'
+              example:
+                count: 1
+                value:
+                  - code_tables_id: '43'
+                    name: Constituent code
+                    user_defined: false
+                    has_short_description: true
+                    short_description_length: 6
+                    can_manage: false
+                    category: All
+                    product_flags: 0
+                    country_mask: 0
+                    has_entries: true
+                    is_field_lookup: false
+                    supports_cleanup: false
+  '/v1/codetables/{id}':
+    get:
+      tags:
+        - Code Table
+      summary: Get a code table (PREVIEW)
+      description: "Returns details about a code table.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: GetCodeTable
+      parameters:
+        - name: id
+          in: path
+          description: The code table system ID.
+          required: true
+          schema:
+            type: string
+      responses:
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '200':
+          description: Returned when the operation succeeds. The response body contains the code table.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CodeTable'
+              example:
+                code_tables_id: '43'
+                name: Constituent code
+                user_defined: false
+                has_short_description: true
+                short_description_length: 6
+                can_manage: false
+                category: All
+                product_flags: 0
+                country_mask: 0
+                has_entries: true
+                is_field_lookup: false
+                supports_cleanup: false
+    patch:
+      tags:
+        - Code Table
+      summary: Edit a code table (PREVIEW)
+      description: "Edit the details about a code table.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: EditCodeTable
+      parameters:
+        - name: id
+          in: path
+          description: The code table system ID.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: Description of changes for the code table.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CodeTableEdit'
+            example:
+              name: Assigned committees
+      responses:
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '200':
+          description: Returned when the operation succeeds.
+    delete:
+      tags:
+        - Code Table
+      summary: Delete a code table (PREVIEW)
+      description: "Delete a user defined code table.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: DeleteCodeTable
+      parameters:
+        - name: id
+          in: path
+          description: The code table system ID.
+          required: true
+          schema:
+            type: string
+      responses:
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '200':
+          description: Returned when the operation successfully deletes the code table.
+  '/v1/codetables/{code_table_id}/tableentries/{id}':
+    get:
+      tags:
+        - Table Entries
+      summary: Get a table entry (PREVIEW)
+      description: "Returns details about a table entry.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: GetTableEntry
+      parameters:
+        - name: code_table_id
+          in: path
+          description: The code table ID.
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          description: The table entry system ID.
+          required: true
+          schema:
+            type: string
+      responses:
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '200':
+          description: Returned when the operation succeeds. The response body contains the table entry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TableEntry'
+              example:
+                table_entries_id: '6'
+                is_active: true
+                long_description: Employee
+                short_description: EMP
+                numeric_value: 0
+                sequence: 3
+                is_system_entry: false
+                code_tables_id: '43'
+                date_added: '0001-01-01T12:00:00.0000000+00:00'
+                date_changed: '0001-01-01T12:00:00.0000000+00:00'
+                added_by_id: '12345'
+                last_changed_by_id: '12345'
+                code_tables_name: Constituent Codes
+                phone_format: None
+                phone_type: TelephoneNumber
+    delete:
+      tags:
+        - Table Entries
+      summary: Delete a table entry (PREVIEW)
+      description: "Deletes a table entry.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: DeleteTableEntry
+      parameters:
+        - name: code_table_id
+          in: path
+          description: The code table ID.
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          description: The table entry system ID.
+          required: true
+          schema:
+            type: string
+      responses:
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '200':
+          description: Returned when the operation successfully deletes the table entry.
+    patch:
+      tags:
+        - Table Entries
+      summary: Edit a table entry (PREVIEW)
+      description: "Edit the details about a table entry.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: EditTableEntry
+      parameters:
+        - name: code_table_id
+          in: path
+          description: The code table ID.
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          description: The table entry system ID.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: Description of changes for the table entry.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TableEntryEdit'
+            example:
+              is_active: true
+              long_description: Employee
+              short_description: EMP
+              numeric_value: 0
+              phone_format: None
+              phone_type: TelephoneNumber
+      responses:
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '200':
+          description: Returned when the operation succeeds.
+  '/v1/codetables/{code_table_id}/tableentries':
+    get:
+      tags:
+        - Table Entries
+      summary: Get table entries list (PREVIEW)
+      description: "Returns a list of table entries.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: GetTableEntriesList
+      parameters:
+        - name: code_table_id
+          in: path
+          description: The code table ID.
+          required: true
+          schema:
+            type: string
+        - name: long_description
+          in: query
+          description: Exact match on the long description of the table entry.
+          schema:
+            type: string
+        - name: short_description
+          in: query
+          description: Exact match on the short description of the table entry.
+          schema:
+            type: string
+        - name: numeric_value
+          in: query
+          description: Exact match on the numeric value of the table entry.
+          schema:
+            type: number
+            format: double
+        - name: include_inactive
+          in: query
+          description: Indicates whether to include inactive table entries.
+          schema:
+            type: boolean
+        - name: search
+          in: query
+          description: "Fuzzy search for table entry names. Checks both long description and short description for the search term.\nentries."
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            maximum: 10000.0
+            minimum: 1.0
+            type: integer
+            format: int32
+        - name: offset
+          in: query
+          schema:
+            maximum: 2147483647.0
+            minimum: 0.0
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '200':
+          description: Returned when the operation succeeds. The response body contains the table entry list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TableEntryCollection'
+              example:
+                count: 1
+                value:
+                  - table_entries_id: '6'
+                    is_active: true
+                    long_description: Employee
+                    short_description: EMP
+                    numeric_value: 0
+                    sequence: 3
+                    is_system_entry: false
+                    code_tables_id: '43'
+                    date_added: '0001-01-01T12:00:00.0000000+00:00'
+                    date_changed: '0001-01-01T12:00:00.0000000+00:00'
+                    added_by_id: '12345'
+                    last_changed_by_id: '12345'
+                    code_tables_name: Constituent Codes
+                    phone_format: None
+                    phone_type: TelephoneNumber
+    post:
+      tags:
+        - Table Entries
+      summary: Create a table entry (PREVIEW)
+      description: "Creates a new table entry.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: CreateTableEntry
+      parameters:
+        - name: code_table_id
+          in: path
+          description: The code table ID.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: The table entry to add.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TableEntryCreate'
+            example:
+              is_active: true
+              long_description: Employee
+              short_description: EMP
+              numeric_value: 0
+              phone_format: None
+              phone_type: TelephoneNumber
+      responses:
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '200':
+          description: Returned when the operation succeeds. The response body contains the new table entry ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+              example:
+                id: '987'
+components:
+  schemas:
+    CodeTable:
+      type: object
+      properties:
+        code_tables_id:
+          type: string
+          description: The unique identifier for the code table.
+          nullable: true
+        name:
+          type: string
+          description: The name of the code table.
+          nullable: true
+        user_defined:
+          type: boolean
+          description: Indicates whether the code table is user defined.
+        has_short_description:
+          type: boolean
+          description: Indicates whether the code table supports short description.
+        short_description_length:
+          type: integer
+          description: The length of the short description.
+          format: int32
+        can_manage:
+          type: boolean
+          description: Whether the current user can manage this table.
+        category:
+          $ref: '#/components/schemas/CodeTableCategory'
+        product_flags:
+          type: integer
+          description: The product module ID restriction(s).
+          format: int32
+        country_mask:
+          type: integer
+          description: The countries this code table is valid for.
+          format: int32
+        has_entries:
+          type: boolean
+          description: Whether the code table has any table entries.
+        is_field_lookup:
+          type: boolean
+          description: Whether the table is a field lookup table.
+        supports_cleanup:
+          type: boolean
+          description: Whether the table supports code table cleanup.
+      additionalProperties: false
+      description: A Code Table record.
+    CodeTableCategory:
+      enum:
+        - All
+        - Biographical
+        - Gift
+        - Action
+        - CFA
+        - Solicitor
+        - Education
+        - Membership
+        - Volunteer
+        - Prospect
+        - Events
+        - WorkplaceGiving
+      type: string
+      description: The code table categories available. Certain categories are product module dependent.
+    CodeTableCollection:
+      type: object
+      properties:
+        count:
+          type: integer
+          format: int32
+        value:
+          type: array
+          items:
+            $ref: '#/components/schemas/CodeTable'
+          nullable: true
+      additionalProperties: false
+      description: List of code tables
+    CodeTableCreate:
+      required:
+        - name
+      type: object
+      properties:
+        name:
+          maxLength: 30
+          minLength: 0
+          type: string
+          description: The name of the code table.
+        category:
+          $ref: '#/components/schemas/CodeTableCategory'
+      additionalProperties: false
+      description: New code table to be added
+    CodeTableEdit:
+      required:
+        - name
+      type: object
+      properties:
+        name:
+          maxLength: 30
+          minLength: 0
+          type: string
+          description: The name of the code table.
+      additionalProperties: false
+      description: Code table to edit
+    PhoneFormat:
+      enum:
+        - None
+        - Mask1
+        - Mask2
+        - Mask3
+        - Mask4
+        - Mask5
+        - Mask6
+        - Mask7
+        - Mask8
+        - Mask9
+        - Mask10
+        - Mask11
+      type: string
+      description: <p>Members:</p><ul><li><i>None</i></li><li><i>Mask1</i></li><li><i>Mask2</i></li><li><i>Mask3</i></li><li><i>Mask4</i></li><li><i>Mask5</i></li><li><i>Mask6</i></li><li><i>Mask7</i></li><li><i>Mask8</i></li><li><i>Mask9</i></li><li><i>Mask10</i></li><li><i>Mask11</i></li></ul>
+    PhoneNumberType:
+      enum:
+        - TelephoneNumber
+        - FaxNumber
+        - EmailAddress
+        - WebAddressUrl
+        - Other
+      type: string
+      description: <p>Members:</p><ul><li><i>TelephoneNumber</i></li><li><i>FaxNumber</i></li><li><i>EmailAddress</i></li><li><i>WebAddressUrl</i></li><li><i>Other</i></li></ul>
+    PostResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          nullable: true
+      additionalProperties: false
+    RatingsDataType:
+      enum:
+        - Text
+        - Number
+        - Date
+        - Currency
+        - Boolean
+        - Table
+      type: string
+      description: <p>Members:</p><ul><li><i>Text</i></li><li><i>Number</i></li><li><i>Date</i></li><li><i>Currency</i></li><li><i>Boolean</i></li><li><i>Table</i></li></ul>
+    TableEntry:
+      type: object
+      properties:
+        table_entries_id:
+          type: string
+          description: The ID of the table entry.
+          nullable: true
+        is_active:
+          type: boolean
+          description: The active status of the entry.
+        long_description:
+          type: string
+          description: The long description of the entry.
+          nullable: true
+        short_description:
+          type: string
+          description: 'The short description of the entry. Only supported by entries of certain tables, such as constituent codes.'
+          nullable: true
+        numeric_value:
+          type: number
+          description: The numeric value of the entry. Also known as minimum amount for Gift/Donor table entries.
+          format: double
+          nullable: true
+        sequence:
+          type: integer
+          description: The sequence of the table entry.
+          format: int32
+          nullable: true
+        is_system_entry:
+          type: boolean
+          description: The value indicating whether the entry is a system entry.
+        code_tables_id:
+          type: string
+          description: The ID associated with the record's code table.
+          nullable: true
+        date_added:
+          type: string
+          description: The date on which the record was added.
+          format: date-time
+          nullable: true
+        date_changed:
+          type: string
+          description: The date on which the record was last changed.
+          format: date-time
+          nullable: true
+        added_by_id:
+          type: string
+          description: The ID of the user who added the record.
+          nullable: true
+        last_changed_by_id:
+          type: string
+          description: The ID of the user who last changed the record.
+          nullable: true
+        code_tables_name:
+          type: string
+          description: The name of the code table the table entry belongs to.
+          nullable: true
+        phone_format:
+          $ref: '#/components/schemas/PhoneFormat'
+        phone_type:
+          $ref: '#/components/schemas/PhoneNumberType'
+        ratings_data_type:
+          $ref: '#/components/schemas/RatingsDataType'
+        table_number:
+          type: string
+          description: 'For ratings type table entries that are of table data type, the table used as the possible rating values.'
+          nullable: true
+      additionalProperties: false
+      description: A Table entry record.
+    TableEntryCollection:
+      type: object
+      properties:
+        count:
+          type: integer
+          format: int32
+        value:
+          type: array
+          items:
+            $ref: '#/components/schemas/TableEntry'
+          nullable: true
+      additionalProperties: false
+      description: Defines a collection of table entries.
+    TableEntryCreate:
+      required:
+        - long_description
+      type: object
+      properties:
+        is_active:
+          type: boolean
+          description: The active status of the entry.
+          default: true
+        long_description:
+          maxLength: 100
+          minLength: 0
+          type: string
+          description: The long description of the entry.
+        short_description:
+          type: string
+          description: 'The short description of the entry. Only supported by entries of certain tables, such as constituent codes.'
+          nullable: true
+        numeric_value:
+          type: number
+          description: The numeric value of the entry. Also known as minimum amount for Gift/Donor table entries.
+          format: double
+          nullable: true
+        sequence:
+          type: integer
+          description: The location to insert the new entry in the order.
+          format: int32
+          nullable: true
+        phone_format:
+          $ref: '#/components/schemas/PhoneFormat'
+        phone_type:
+          $ref: '#/components/schemas/PhoneNumberType'
+        ratings_data_type:
+          $ref: '#/components/schemas/RatingsDataType'
+        table_number:
+          type: string
+          description: 'For ratings type table entries that are of table data type, the table used as the possible rating values.'
+          nullable: true
+      additionalProperties: false
+      description: New table entry to add
+    TableEntryEdit:
+      required:
+        - long_description
+      type: object
+      properties:
+        is_active:
+          type: boolean
+          description: The active status of the entry.
+        long_description:
+          maxLength: 100
+          minLength: 0
+          type: string
+          description: The long description of the entry.
+        short_description:
+          type: string
+          description: 'The short description of the entry. Only supported by entries of certain tables, such as constituent codes.'
+          nullable: true
+        numeric_value:
+          type: number
+          description: The numeric value of the entry. Also known as minimum amount for Gift/Donor table entries.
+          format: double
+          nullable: true
+        phone_format:
+          $ref: '#/components/schemas/PhoneFormat'
+        phone_type:
+          $ref: '#/components/schemas/PhoneNumberType'
+        ratings_data_type:
+          $ref: '#/components/schemas/RatingsDataType'
+        table_number:
+          type: string
+          description: 'For ratings type table entries that are of table data type, the table used as the possible rating values.'
+          nullable: true
+      additionalProperties: false
+      description: Table entry to update
+  securitySchemes:
+    apiKeyHeader:
+      type: apiKey
+      name: Bb-Api-Subscription-Key
+      in: header
+    apiKeyQuery:
+      type: apiKey
+      name: subscription-key
+      in: query
+security:
+  - apiKeyHeader: [ ]
+  - apiKeyQuery: [ ]
+tags:
+  - name: CodeTable
+  - name: TableEntry

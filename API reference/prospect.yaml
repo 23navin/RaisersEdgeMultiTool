@@ -1,0 +1,1234 @@
+openapi: 3.0.1
+info:
+  title: Prospect
+  description: 'This API enables you to manage prospects, track cultivation stages, and monitor prospect status to drive fundraising outcomes.'
+  version: '1.0'
+servers:
+  - url: https://api.sky.blackbaud.com/prospect
+paths:
+  '/v1/constituents/{constituent_id}/prospectclassification':
+    get:
+      tags:
+        - ProspectClassification
+      summary: Get a prospect classification (PREVIEW)
+      description: "Returns the prospect classification of a constituent.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: GetConstituentProspectClassification
+      parameters:
+        - name: constituent_id
+          in: path
+          description: The immutable system record ID of the constituent to retrieve the prospect classification for.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProspectClassificationRead'
+              example:
+                constituent_id: '280'
+                classification_id: '3'
+                classification: Major Giving
+    patch:
+      tags:
+        - ProspectClassification
+      summary: Update a prospect classification (PREVIEW)
+      description: "Updates the prospect classification of a constituent.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: EditConstituentProspectClassification
+      parameters:
+        - name: constituent_id
+          in: path
+          description: The immutable system record ID of the constituent to update the prospect classification for.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: The prospect classification details to update.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProspectClassificationWrite'
+            example:
+              classification: Major Giving
+      responses:
+        '200':
+          description: OK
+  '/v1/constituents/{constituent_id}/prospect/financialdata/summary':
+    get:
+      tags:
+        - ProspectFinancialData
+      summary: Get prospect financial data summary (PREVIEW)
+      description: "Returns the financial data summary (aggregated amounts by type) for a constituent.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: GetConstituentProspectFinancialDataSummary
+      parameters:
+        - name: constituent_id
+          in: path
+          description: The immutable system record ID of the constituent.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FinancialDataSummary'
+              example:
+                assets:
+                  - amount: 1500000
+                    info_type_id: '100'
+                    info_type: Real Estate
+                  - amount: 500000
+                    info_type_id: '200'
+                    info_type: Stock Holdings
+  /v1/prospect/financialdata/types:
+    get:
+      tags:
+        - ProspectFinancialData
+      summary: List prospect financial data types (PREVIEW)
+      description: "Returns the available financial data types for the tenant.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: ListProspectFinancialDataTypes
+      parameters:
+        - name: include_inactive
+          in: query
+          description: Whether to include inactive types. Default is false.
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FinancialDataTypeCollection'
+              example:
+                financial_data_types:
+                  - id: '100'
+                    description: Real Estate
+                    is_active: true
+                    sequence: 1
+                  - id: '200'
+                    description: Stock Holdings
+                    is_active: true
+                    sequence: 2
+  /v1/prospect/financialdata/informationsources:
+    get:
+      tags:
+        - ProspectFinancialData
+      summary: List prospect information sources (PREVIEW)
+      description: "Returns the available information sources for the tenant.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: ListProspectInformationSources
+      parameters:
+        - name: include_inactive
+          in: query
+          description: Whether to include inactive sources. Default is false.
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InformationSourceCollection'
+              example:
+                information_sources:
+                  - id: '1'
+                    description: Self-reported
+                    is_active: true
+                    sequence: 1
+                  - id: '2'
+                    description: Public records
+                    is_active: true
+                    sequence: 2
+  '/v1/constituents/{constituent_id}/prospect/financialdata/assets':
+    get:
+      tags:
+        - ProspectFinancialDataAssets
+      summary: List prospect financial data assets (PREVIEW)
+      description: "Returns a paginated list of financial data assets for a constituent.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: ListConstituentProspectFinancialDataAssets
+      parameters:
+        - name: constituent_id
+          in: path
+          description: The immutable system record ID of the constituent.
+          required: true
+          schema:
+            type: string
+        - name: top
+          in: query
+          description: The number of records to return.
+          schema:
+            type: integer
+            format: int32
+        - name: skip
+          in: query
+          description: The number of records to skip.
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProspectFinancialDataAssetCollection'
+              example:
+                count: 2
+                value:
+                  - id: 1
+                    amount: 250000
+                    notes: Primary residence
+                    date_acquired:
+                      y: 2015
+                      m: 6
+                      d: 15
+                    date_assessed:
+                      y: 2024
+                      m: 1
+                    info_type_id: '100'
+                    info_type: Real Estate
+                    info_source_id: '200'
+                    info_source: Public Record
+                    date_added: '2020-03-10T12:00:00.0000000+00:00'
+                    date_last_changed: '2024-01-05T12:00:00.0000000+00:00'
+                  - id: 2
+                    amount: 50000
+                    date_acquired:
+                      y: 2020
+                    date_assessed:
+                      y: 2023
+                      m: 12
+                      d: 1
+                    info_type_id: '101'
+                    info_type: Securities
+                    info_source_id: '201'
+                    info_source: Self-reported
+                    date_added: '2021-05-20T12:00:00.0000000+00:00'
+                    date_last_changed: '2023-12-01T12:00:00.0000000+00:00'
+    post:
+      tags:
+        - ProspectFinancialDataAssets
+      summary: Create a prospect financial data asset (PREVIEW)
+      description: "Creates a new financial data asset for a constituent.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: CreateConstituentProspectFinancialDataAsset
+      parameters:
+        - name: constituent_id
+          in: path
+          description: The immutable system record ID of the constituent.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: The financial data asset to create.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProspectFinancialDataAssetWriteModel'
+            example:
+              amount: 250000
+              notes: Primary residence
+              date_acquired:
+                y: 2015
+                m: 6
+                d: 15
+              date_assessed:
+                y: 2024
+                m: 1
+              info_type_id: '100'
+              info_source_id: '200'
+      responses:
+        '200':
+          description: OK
+  '/v1/constituents/{constituent_id}/prospect/financialdata/assets/{asset_id}':
+    patch:
+      tags:
+        - ProspectFinancialDataAssets
+      summary: Edit a prospect financial data asset (PREVIEW)
+      description: "Updates an existing financial data asset for a constituent.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: EditConstituentProspectFinancialDataAsset
+      parameters:
+        - name: constituent_id
+          in: path
+          description: The immutable system record ID of the constituent.
+          required: true
+          schema:
+            type: string
+        - name: asset_id
+          in: path
+          description: The ID of the financial data asset to update.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: The financial data asset details to update.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProspectFinancialDataAssetWriteModel'
+            example:
+              amount: 250000
+              notes: Primary residence
+              date_acquired:
+                y: 2015
+                m: 6
+                d: 15
+              date_assessed:
+                y: 2024
+                m: 1
+              info_type_id: '100'
+              info_source_id: '200'
+      responses:
+        '200':
+          description: OK
+    delete:
+      tags:
+        - ProspectFinancialDataAssets
+      summary: Delete a prospect financial data asset (PREVIEW)
+      description: "Deletes a financial data asset for a constituent.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: DeleteConstituentProspectFinancialDataAsset
+      parameters:
+        - name: constituent_id
+          in: path
+          description: The immutable system record ID of the constituent.
+          required: true
+          schema:
+            type: string
+        - name: asset_id
+          in: path
+          description: The ID of the financial data asset to delete.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  '/v1/constituents/{constituent_id}/prospect/givingpreferences':
+    get:
+      tags:
+        - ProspectGiving
+      summary: Get prospect giving preferences (PREVIEW)
+      description: "Returns the giving preferences for a constituent, including interests and causes they will not give to.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: GetConstituentProspectGivingPreferences
+      parameters:
+        - name: constituent_id
+          in: path
+          description: The immutable system record ID of the constituent.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProspectGivingPreferences'
+              example:
+                prospect_id: '280'
+                interests:
+                  - description: Arts and Culture
+                    comments: Especially performing arts
+                  - description: Education
+                    comments: Higher education programs
+                will_not_give_to:
+                  - description: Political
+                    comments: No political donations
+  '/v1/constituents/{constituent_id}/prospect/contributionsummary':
+    get:
+      tags:
+        - ProspectGiving
+      summary: Get prospect contribution summary (PREVIEW)
+      description: "Returns the contribution summary for a constituent, including philanthropic, political, and other giving totals.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: GetConstituentProspectContributionSummary
+      parameters:
+        - name: constituent_id
+          in: path
+          description: The immutable system record ID of the constituent.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProspectContributionSummary'
+              example:
+                philanthropic_giving: 25000
+                philanthropic_gift_count: 12
+                political_giving: 5000
+                political_gift_count: 3
+                other_giving: 1500
+                other_gift_count: 2
+  '/v1/constituents/{constituent_id}/prospect/othergifts':
+    get:
+      tags:
+        - ProspectGiving
+      summary: Get prospect other gifts (PREVIEW)
+      description: "Returns a paginated list of gifts to other organizations for a constituent, with an optional giving type filter.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: GetConstituentProspectOtherGifts
+      parameters:
+        - name: constituent_id
+          in: path
+          description: The immutable system record ID of the constituent.
+          required: true
+          schema:
+            type: string
+        - name: top
+          in: query
+          description: The number of records to return.
+          schema:
+            type: integer
+            format: int32
+        - name: skip
+          in: query
+          description: The number of records to skip.
+          schema:
+            type: integer
+            format: int32
+        - name: giving_type
+          in: query
+          description: 'The giving type filter (Philanthropic, Political, or Other).'
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProspectOtherGiftsCollection'
+              example:
+                count: 2
+                value:
+                  - id: '101'
+                    organization_name: United Way
+                    amount_given: 5000
+                    date_given:
+                      y: 2024
+                      m: 3
+                      d: 15
+                    organization_type: Foundation
+                    reason: Annual Campaign
+                    comments: Recurring donation
+                  - id: '102'
+                    organization_name: Red Cross
+                    amount_given: 1000
+                    date_given:
+                      y: 2023
+                      m: 12
+                    organization_type: Nonprofit
+                    reason: Disaster Relief
+  '/v1/constituents/{constituent_id}/prospectstatus':
+    get:
+      tags:
+        - ProspectStatus
+      summary: Get a prospect status (PREVIEW)
+      description: "Returns the current prospect status of a constituent.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: GetConstituentProspectStatus
+      parameters:
+        - name: constituent_id
+          in: path
+          description: The immutable system record ID of the constituent to retrieve the current prospect status for.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProspectStatusRead'
+              example:
+                id: '28'
+                constituent_id: '280'
+                status_id: '1142'
+                status: Cultivation
+                start_date: '2026-05-22T12:00:00.0000000+00:00'
+                days_elapsed: 7
+                comments: They seem interested
+                author_id: 16faa6e3-54ac-4e8e-b42b-1ecab94fe21a
+                author_name: Fundraiser McFundraiser
+                is_past_due: false
+    patch:
+      tags:
+        - ProspectStatus
+      summary: Update a prospect status (PREVIEW)
+      description: "Updates the current prospect status of a constituent.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: EditConstituentProspectStatus
+      parameters:
+        - name: constituent_id
+          in: path
+          description: The immutable system record ID of the constituent to update the current prospect status for.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: The prospect status details to update.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProspectStatusWrite'
+            example:
+              status: Cultivation
+              start_date: '2026-06-01T12:00:00.0000000+00:00'
+              comments: Updated status
+      responses:
+        '200':
+          description: OK
+  '/v1/constituents/{constituent_id}/prospectstatushistories':
+    get:
+      tags:
+        - ProspectStatus
+      summary: List constituent prospect statuses (PREVIEW)
+      description: "Returns a constituent's prospect status history.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: GetConstituentProspectStatusHistories
+      parameters:
+        - name: constituent_id
+          in: path
+          description: The immutable system record ID of the constituent to retrieve information for.
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: The number of records to return. Defaults to 500.
+          schema:
+            maximum: 5000.0
+            minimum: 1.0
+            type: integer
+            format: int32
+        - name: offset
+          in: query
+          description: The number of records to skip. Defaults to 0.
+          schema:
+            maximum: 2147483647.0
+            minimum: 0.0
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProspectStatusHistoryReadApiCollection'
+              example:
+                count: 3
+                value:
+                  - author_id: 16faa6e3-54ac-4e8e-b42b-1ecab94fe21a
+                    author_name: Supervisor
+                    comments: No longer engaging this prospect
+                    constituent_id: '1'
+                    days_elapsed: 295
+                    id: '28'
+                    is_past_due: false
+                    start_date: '2024-01-01T12:00:00.0000000+00:00'
+                    status_id: '1142'
+                    status_description: Closed
+                  - author_id: a1b2c3d4-5678-9abc-def0-1234567890ab
+                    author_name: Blackbaud Prospect Processing
+                    comments: Doing some research on this prospect
+                    constituent_id: '1'
+                    days_elapsed: 365
+                    id: '27'
+                    is_past_due: true
+                    start_date: '2023-01-01T12:00:00.0000000+00:00'
+                    status_id: '1148'
+                    status_description: Research
+                  - author_id: b2c3d4e5-6789-abcd-ef01-234567890abc
+                    author_name: Blackbaud Prospect Processing
+                    constituent_id: '1'
+                    days_elapsed: 108
+                    id: '20'
+                    is_past_due: false
+                    start_date: '2022-09-15T12:00:00.0000000+00:00'
+                    status_id: '1301'
+                    status_description: Strategy
+  '/v1/prospectstatushistories/{id}':
+    get:
+      tags:
+        - ProspectStatusHistory
+      summary: Get a prospect status history record (PREVIEW)
+      description: "Returns a single prospect status history record.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: GetProspectStatusHistory
+      parameters:
+        - name: id
+          in: path
+          description: The immutable system record ID of the prospect status history record.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProspectStatusHistoryRead'
+              example:
+                author_id: 899e035e-91ab-49df-bb15-5dad17bef5b2
+                author_name: John Smith
+                comments: Moved to cultivation phase
+                constituent_id: '280'
+                days_elapsed: 503
+                id: '123'
+                is_past_due: false
+                start_date: '2024-01-15T12:00:00.0000000+00:00'
+                status_id: '2'
+                status_description: Cultivation
+    patch:
+      tags:
+        - ProspectStatusHistory
+      summary: Edit a prospect status history record (PREVIEW)
+      description: "Updates a prospect status history record.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: EditProspectStatusHistory
+      parameters:
+        - name: id
+          in: path
+          description: The immutable system record ID of the prospect status history record.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: The prospect status history details to update.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProspectStatusHistoryWrite'
+            example:
+              status: Cultivation
+              start_date: '2024-01-15T12:00:00.0000000+00:00'
+              comments: Updated status
+      responses:
+        '200':
+          description: OK
+    delete:
+      tags:
+        - ProspectStatusHistory
+      summary: Delete a prospect status history record (PREVIEW)
+      description: "Deletes a prospect status history record.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: DeleteProspectStatusHistory
+      parameters:
+        - name: id
+          in: path
+          description: The immutable system record ID of the prospect status history record.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  '/v1/constituents/{constituent_id}/prospect':
+    get:
+      tags:
+        - ProspectIdentifier
+      summary: Get the prospect identifier for a constituent (PREVIEW)
+      description: "Translates a constituent ID to its associated prospect ID.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: GetProspectIdByConstituentId
+      parameters:
+        - name: constituent_id
+          in: path
+          description: The immutable system record ID of the constituent.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProspectIdRead'
+              example:
+                prospect_id: '28'
+  '/v1/prospects/{prospect_id}/constituent':
+    get:
+      tags:
+        - ProspectIdentifier
+      summary: Get the constituent identifier for a prospect (PREVIEW)
+      description: "Translates a prospect ID to its associated constituent ID.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: GetConstituentIdByProspectId
+      parameters:
+        - name: prospect_id
+          in: path
+          description: The immutable system record ID of the prospect.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConstituentIdRead'
+              example:
+                constituent_id: '280'
+components:
+  schemas:
+    ConstituentIdRead:
+      type: object
+      properties:
+        constituent_id:
+          type: string
+          description: The immutable system record ID of the constituent.
+          nullable: true
+      additionalProperties: false
+      description: Contains the constituent ID associated with a prospect.
+    FinancialDataSummary:
+      type: object
+      properties:
+        assets:
+          type: array
+          items:
+            $ref: '#/components/schemas/FinancialDataSummaryAsset'
+          description: The list of financial data summary assets.
+          nullable: true
+      additionalProperties: false
+      description: Represents the financial data summary for a constituent.
+    FinancialDataSummaryAsset:
+      type: object
+      properties:
+        amount:
+          type: number
+          description: The amount.
+          format: double
+          nullable: true
+        info_type_id:
+          type: string
+          description: The info type identifier.
+          nullable: true
+        info_type:
+          type: string
+          description: The info type description.
+          nullable: true
+      additionalProperties: false
+      description: A single asset in the financial data summary.
+    FinancialDataType:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The identifier.
+          nullable: true
+        description:
+          type: string
+          description: The description.
+          nullable: true
+        is_active:
+          type: boolean
+          description: Whether the type is active.
+          nullable: true
+        sequence:
+          type: integer
+          description: The display sequence.
+          format: int32
+          nullable: true
+      additionalProperties: false
+      description: A single financial data type entry.
+    FinancialDataTypeCollection:
+      type: object
+      properties:
+        financial_data_types:
+          type: array
+          items:
+            $ref: '#/components/schemas/FinancialDataType'
+          description: The list of financial data types.
+          nullable: true
+      additionalProperties: false
+      description: Represents the available financial data types for a tenant.
+    FuzzyDate:
+      type: object
+      properties:
+        y:
+          type: integer
+          description: The year.
+          format: int32
+          nullable: true
+        m:
+          type: integer
+          description: The month.
+          format: int32
+          nullable: true
+        d:
+          type: integer
+          description: The day.
+          format: int32
+          nullable: true
+      additionalProperties: false
+      description: 'Represents a fuzzy date that may contain only a year, year and month, month and day (no year), or a complete date.'
+    InformationSource:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The identifier.
+          nullable: true
+        description:
+          type: string
+          description: The description.
+          nullable: true
+        is_active:
+          type: boolean
+          description: Whether the source is active.
+          nullable: true
+        sequence:
+          type: integer
+          description: The display sequence.
+          format: int32
+          nullable: true
+      additionalProperties: false
+      description: A single information source entry.
+    InformationSourceCollection:
+      type: object
+      properties:
+        information_sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/InformationSource'
+          description: The list of information sources.
+          nullable: true
+      additionalProperties: false
+      description: Represents the available information sources for a tenant.
+    ProspectClassificationRead:
+      type: object
+      properties:
+        constituent_id:
+          type: string
+          description: The immutable system record ID of the constituent associated with the prospect classification.
+          nullable: true
+        classification_id:
+          type: string
+          description: The identifier of the prospect classification code table entry.
+          nullable: true
+        classification:
+          type: string
+          description: The classification description.
+          nullable: true
+      additionalProperties: false
+      description: The prospect classification for a constituent.
+    ProspectClassificationWrite:
+      required:
+        - classification
+      type: object
+      properties:
+        classification:
+          minLength: 1
+          type: string
+          description: 'The prospect classification description (e.g. ''Major Gifts'', ''Planned Giving'').'
+      additionalProperties: false
+      description: Model for updating a prospect classification.
+    ProspectContributionSummary:
+      type: object
+      properties:
+        philanthropic_giving:
+          type: number
+          description: The total philanthropic giving amount.
+          format: double
+        philanthropic_gift_count:
+          type: integer
+          description: The philanthropic gift count.
+          format: int32
+        political_giving:
+          type: number
+          description: The total political giving amount.
+          format: double
+        political_gift_count:
+          type: integer
+          description: The political gift count.
+          format: int32
+        other_giving:
+          type: number
+          description: The total other giving amount.
+          format: double
+        other_gift_count:
+          type: integer
+          description: The other gift count.
+          format: int32
+      additionalProperties: false
+      description: Represents a constituent's prospect contribution summary.
+    ProspectFinancialDataAssetCollection:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: The total number of records available.
+          format: int32
+        value:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProspectFinancialDataAssetRead'
+          description: The collection of financial data assets.
+          nullable: true
+      additionalProperties: false
+      description: Represents a paginated collection of financial data assets.
+    ProspectFinancialDataAssetRead:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: The identifier of the financial data asset.
+          format: int32
+          nullable: true
+        amount:
+          type: number
+          description: The amount of the financial data asset.
+          format: double
+          nullable: true
+        notes:
+          type: string
+          description: Notes about the financial data asset.
+          nullable: true
+        date_acquired:
+          $ref: '#/components/schemas/FuzzyDate'
+        date_assessed:
+          $ref: '#/components/schemas/FuzzyDate'
+        info_type_id:
+          type: string
+          description: The info type identifier.
+          nullable: true
+        info_type:
+          type: string
+          description: The info type description.
+          nullable: true
+        info_source_id:
+          type: string
+          description: The info source identifier.
+          nullable: true
+        info_source:
+          type: string
+          description: The info source description.
+          nullable: true
+        date_added:
+          type: string
+          description: The date the record was added.
+          format: date-time
+          nullable: true
+        date_last_changed:
+          type: string
+          description: The date the record was last changed.
+          format: date-time
+          nullable: true
+      additionalProperties: false
+      description: Represents a single financial data asset.
+    ProspectFinancialDataAssetWriteModel:
+      required:
+        - info_type_id
+      type: object
+      properties:
+        amount:
+          type: number
+          description: The amount of the financial data asset.
+          format: double
+          nullable: true
+        notes:
+          type: string
+          description: Notes about the financial data asset.
+          nullable: true
+        date_acquired:
+          $ref: '#/components/schemas/FuzzyDate'
+        date_assessed:
+          $ref: '#/components/schemas/FuzzyDate'
+        info_type_id:
+          minLength: 1
+          type: string
+          description: The info type identifier.
+        info_source_id:
+          minLength: 1
+          type: string
+          description: The info source identifier.
+          nullable: true
+      additionalProperties: false
+      description: Write model for creating or updating a financial data asset.
+    ProspectGivingPreference:
+      type: object
+      properties:
+        description:
+          type: string
+          description: The description of the giving preference.
+          nullable: true
+        comments:
+          type: string
+          description: Comments about the giving preference.
+          nullable: true
+      additionalProperties: false
+      description: Represents a single giving preference entry.
+    ProspectGivingPreferences:
+      type: object
+      properties:
+        prospect_id:
+          type: string
+          description: The immutable system record ID of the prospect.
+          nullable: true
+        interests:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProspectGivingPreference'
+          description: The list of the constituent's giving interests.
+          nullable: true
+        will_not_give_to:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProspectGivingPreference'
+          description: The list of causes the constituent will not give to.
+          nullable: true
+      additionalProperties: false
+      description: Represents a constituent's prospect giving preferences.
+    ProspectIdRead:
+      type: object
+      properties:
+        prospect_id:
+          type: string
+          description: The immutable system record ID of the prospect.
+          nullable: true
+      additionalProperties: false
+      description: Contains the prospect ID associated with a constituent.
+    ProspectOtherGiftRead:
+      required:
+        - id
+      type: object
+      properties:
+        id:
+          type: string
+          description: The immutable system record ID of the gift.
+          nullable: true
+        organization_name:
+          type: string
+          description: The name of the organization given to.
+          nullable: true
+        organization_id:
+          type: integer
+          description: The system record ID of the organization.
+          format: int32
+          nullable: true
+        amount_given:
+          type: number
+          description: The amount given.
+          format: double
+          nullable: true
+        date_given:
+          $ref: '#/components/schemas/FuzzyDate'
+        organization_type:
+          type: string
+          description: The type of the organization.
+          nullable: true
+        organization_type_id:
+          type: integer
+          description: The ID of the organization type.
+          format: int32
+          nullable: true
+        reason:
+          type: string
+          description: "The reason for the gift (e.g. Philanthropic Gift, Federal Election Commission, Other,\nor free-text). This is the single source of truth for both the \"Reason\" and any\n\"Gift Type\" concept referenced elsewhere — there is no separate Gift Type field."
+          nullable: true
+        comments:
+          type: string
+          description: Comments about the gift.
+          nullable: true
+      additionalProperties: false
+      description: Represents a single gift to another organization.
+    ProspectOtherGiftsCollection:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: The total number of records available.
+          format: int32
+        value:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProspectOtherGiftRead'
+          description: The collection of other gifts.
+          nullable: true
+      additionalProperties: false
+      description: Represents a paginated collection of gifts to other organizations.
+    ProspectStatusHistoryRead:
+      type: object
+      properties:
+        author_id:
+          type: string
+          description: The author ID of the status history record.
+          nullable: true
+        author_name:
+          type: string
+          description: The author name of the status history record.
+          nullable: true
+        comments:
+          type: string
+          description: The comments for the prospect status history.
+          nullable: true
+        constituent_id:
+          type: string
+          description: The constituent identifier for the prospect status history.
+          nullable: true
+        days_elapsed:
+          type: integer
+          description: The number of days elapsed in this prospect status.
+          format: int32
+        id:
+          type: string
+          description: The primary identifier for the prospect status history.
+          nullable: true
+        is_past_due:
+          type: boolean
+          description: Whether the status is past due.
+        start_date:
+          type: string
+          description: The status start date for the prospect status history.
+          format: date-time
+          nullable: true
+        status_id:
+          type: string
+          description: The status identifier for the prospect status history.
+          nullable: true
+        status_description:
+          type: string
+          description: The status description for the prospect status history.
+          nullable: true
+      additionalProperties: false
+      description: A specific part of a prospect's status history.
+    ProspectStatusHistoryReadApiCollection:
+      required:
+        - count
+        - value
+      type: object
+      properties:
+        count:
+          type: integer
+          description: The total number of records available.
+          format: int32
+        next_link:
+          type: string
+          description: 'For paginated responses, the URI for the next page of results.'
+          nullable: true
+        value:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProspectStatusHistoryRead'
+          description: The returned records.
+          nullable: true
+      additionalProperties: false
+      description: A paged SKY API collection response.
+    ProspectStatusHistoryWrite:
+      required:
+        - start_date
+        - status
+      type: object
+      properties:
+        status:
+          minLength: 1
+          type: string
+          description: 'The prospect status description (e.g. "Active", "Cultivation").'
+        start_date:
+          type: string
+          description: The start date of the status.
+          format: date-time
+        comments:
+          type: string
+          description: Comments about the status.
+          nullable: true
+      additionalProperties: false
+      description: Represents a write model for updating a prospect status history record.
+    ProspectStatusRead:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The immutable system record ID of the prospect status.
+          nullable: true
+        constituent_id:
+          type: string
+          description: The immutable system record ID of the constituent associated with the prospect status.
+          nullable: true
+        status_id:
+          type: string
+          description: The identifier of the prospect status code table entry.
+          nullable: true
+        status:
+          type: string
+          description: The constituent's current prospect status.
+          nullable: true
+        start_date:
+          type: string
+          description: The start date of the prospect status.
+          format: date-time
+          nullable: true
+        days_elapsed:
+          type: integer
+          description: The total number of days in the current prospect status.
+          format: int32
+          nullable: true
+        comments:
+          type: string
+          description: The comments on the prospect status.
+          nullable: true
+        author_id:
+          type: string
+          description: The immutable system record ID of the author who set this status.
+          nullable: true
+        author_name:
+          type: string
+          description: The display name of the author who set this status.
+          nullable: true
+        is_past_due:
+          type: boolean
+          description: Indicates whether the current status is past due.
+      additionalProperties: false
+      description: Prospect statuses indicate milestones in a constituent's relationship with your organization.
+    ProspectStatusWrite:
+      required:
+        - status
+      type: object
+      properties:
+        status:
+          minLength: 1
+          type: string
+          description: 'The prospect status description (e.g. "Active", "Cultivation").'
+        start_date:
+          type: string
+          description: The start date of the status.
+          format: date-time
+          nullable: true
+        comments:
+          type: string
+          description: Comments about the status change.
+          nullable: true
+      additionalProperties: false
+      description: Represents a write model for updating a prospect's current status.
+  securitySchemes:
+    apiKeyHeader:
+      type: apiKey
+      name: Bb-Api-Subscription-Key
+      in: header
+    apiKeyQuery:
+      type: apiKey
+      name: subscription-key
+      in: query
+security:
+  - apiKeyHeader: [ ]
+  - apiKeyQuery: [ ]
+tags:
+  - name: ProspectStatus
+    description: Prospect Status
+  - name: ProspectClassification
+    description: Prospect Classification
+  - name: ProspectFinancialData
+    description: Prospect Financial Data
+  - name: ProspectFinancialDataAssets
+    description: Prospect Financial Data Assets
+  - name: ProspectGiving
+    description: Prospect Giving
+  - name: ProspectStatusHistory
+    description: Prospect Status History
+  - name: ProspectIdentifier
+    description: Prospect Identifier

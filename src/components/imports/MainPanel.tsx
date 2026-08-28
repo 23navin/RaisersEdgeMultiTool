@@ -5,11 +5,13 @@
 
 import { CheckIcon } from "lucide-react";
 import type { LoadedProfile, Step } from "../../types";
-import type { FileEntry, GenEntry } from "../../App";
+import type { FileEntry, GenEntry, SyncEntry, QueryEntry } from "../../App";
 import { refLabel, stepTransforms } from "../../lib/profile-utils";
 import { StepSelectFiles } from "./steps/StepSelectFiles";
 import { StepGenerateFile } from "./steps/StepGenerateFile";
 import { StepImport } from "./steps/StepImport";
+import { StepCodeTableSync } from "./steps/StepCodeTableSync";
+import { StepQuery } from "./steps/StepQuery";
 
 type MainPanelProps = {
   loadedProfile: LoadedProfile | null;
@@ -21,6 +23,10 @@ type MainPanelProps = {
   onClearFile: (inputLabel: string) => void;
   onGenerate: (stepLabel: string, transformIdx: number) => void;
   onDownload: (stepLabel: string, transformIdx: number, outputLabel: string) => void;
+  syncs: Record<string, SyncEntry>;
+  onCodeTableSync: (stepLabel: string) => void;
+  queries: Record<string, QueryEntry>;
+  onRunQuery: (stepLabel: string) => void;
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -68,6 +74,10 @@ export function MainPanel({
   onClearFile,
   onGenerate,
   onDownload,
+  syncs,
+  onCodeTableSync,
+  queries,
+  onRunQuery,
 }: MainPanelProps) {
   if (!loadedProfile) {
     return (
@@ -116,6 +126,10 @@ export function MainPanel({
               onClearFile={onClearFile}
               onGenerate={onGenerate}
               onDownload={onDownload}
+              syncs={syncs}
+              onCodeTableSync={onCodeTableSync}
+              queries={queries}
+              onRunQuery={onRunQuery}
             />
           ))}
         </div>
@@ -149,6 +163,10 @@ function StepSection({
   onClearFile,
   onGenerate,
   onDownload,
+  syncs,
+  onCodeTableSync,
+  queries,
+  onRunQuery,
 }: StepSectionProps) {
   const name = `${stepNumber}. ${stepDisplayName(step.label, instructions)}`;
   const heading = <StepHeading name={name} done={done} />;
@@ -188,7 +206,35 @@ function StepSection({
         const inputs = inputRefs.map((r) => {
           const lbl = refLabel(r);
           const f = files[lbl];
-          return { label: lbl, ready: f?.status === "valid" };
+          return { label: lbl, ready: f?.status === "valid", kind: "file" as const };
+        });
+        // Query results this transform declared via query_input show as inputs
+        // too — they feed the SQL exactly like a file does. Ready means the
+        // re_query step that produces the label has been run.
+        const queryInputs = (t.query_input ?? []).map((label) => {
+          const producer = structure.steps.find(
+            (s) => s.type === "re_query" && s.query_output === label,
+          );
+          return {
+            label,
+            ready: producer
+              ? queries[producer.label]?.status === "done"
+              : false,
+            kind: "query" as const,
+          };
+        });
+        // Same for code_table_sync outcomes declared via sync_input. Ready
+        // means the sync step ran — including a run that pushed zero rows,
+        // which is a legitimate "nothing was missing" result.
+        const syncInputs = (t.sync_input ?? []).map((label) => {
+          const producer = structure.steps.find(
+            (s) => s.type === "code_table_sync" && s.sync_output === label,
+          );
+          return {
+            label,
+            ready: producer ? syncs[producer.label]?.status === "done" : false,
+            kind: "sync" as const,
+          };
         });
         const outputs = (t.output ?? []).map((label) => ({
           label,
@@ -202,7 +248,7 @@ function StepSection({
           return !f || f.status === "valid";
         });
         return {
-          inputs,
+          inputs: [...inputs, ...queryInputs, ...syncInputs],
           outputs,
           canGenerate,
           generateStatus: gen?.status ?? ("idle" as const),
@@ -218,6 +264,73 @@ function StepSection({
         <section id={`step-${step.label}`} className="scroll-mt-[18px]">
           {heading}
           <StepGenerateFile transforms={transformRows} />
+        </section>
+      );
+    }
+    case "re_query": {
+      const state = queries[step.label];
+      const inputRefs = step.input ?? [];
+      const inputs = inputRefs.map((r) => {
+        const lbl = refLabel(r);
+        return { label: lbl, ready: files[lbl]?.status === "valid" };
+      });
+      // Same readiness rule as a transform: every required input valid.
+      const canRun = inputRefs.every((r) => {
+        const lbl = refLabel(r);
+        const def = structure.inputs.find((i) => i.label === lbl);
+        const f = files[lbl];
+        if (def?.required) return f?.status === "valid";
+        return !f || f.status === "valid";
+      });
+      return (
+        <section id={`step-${step.label}`} className="scroll-mt-[18px]">
+          {heading}
+          <StepQuery
+            description={stepBody(instructions[step.label])}
+            query={{
+              queryOutput: step.query_output ?? "(unnamed)",
+              inputs,
+              canRun,
+              status: state?.status ?? "idle",
+              result: state?.result,
+              error: state?.error,
+              onRun: () => onRunQuery(step.label),
+            }}
+          />
+        </section>
+      );
+    }
+    case "code_table_sync": {
+      const state = syncs[step.label];
+      const inputRefs = step.input ?? [];
+      const inputs = inputRefs.map((r) => {
+        const lbl = refLabel(r);
+        return { label: lbl, ready: files[lbl]?.status === "valid" };
+      });
+      // Same readiness rule as a transform: every required input valid.
+      const canRun = inputRefs.every((r) => {
+        const lbl = refLabel(r);
+        const def = structure.inputs.find((i) => i.label === lbl);
+        const f = files[lbl];
+        if (def?.required) return f?.status === "valid";
+        return !f || f.status === "valid";
+      });
+      return (
+        <section id={`step-${step.label}`} className="scroll-mt-[18px]">
+          {heading}
+          <StepCodeTableSync
+            description={stepBody(instructions[step.label])}
+            sync={{
+              operation: step.operation ?? "create",
+              codeTable: step.code_table ?? step.code_table_id ?? "(unspecified)",
+              inputs,
+              canRun,
+              status: state?.status ?? "idle",
+              result: state?.result,
+              error: state?.error,
+              onRun: () => onCodeTableSync(step.label),
+            }}
+          />
         </section>
       );
     }

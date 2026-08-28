@@ -1,0 +1,79 @@
+---
+id: code_table_demo
+name: Code Table Demo
+version: 1.0.0
+min_app_version: 0.2.0
+
+# ── Code tables ───────────────────────────────────────────────────────────────
+# Pulled from RE before any SQL runs. Each `output` becomes a
+# {{codetable:<output>}} placeholder that DuckDB reads with read_json_auto.
+# Address the table by `name` (exact match, resolved to its id with one extra
+# call) or by `code_table_id` when you already know the id.
+#
+# Columns available to SQL are the API's TableEntry fields: table_entries_id,
+# long_description, short_description, numeric_value, sequence, is_active,
+# is_system_entry, code_tables_id, code_tables_name.
+#
+# Mock mode reads fixtures/codetables/<output>.json instead, so this profile
+# runs offline.
+code_tables:
+  - id: constituent_codes
+    name: "Constituent Codes"
+    include_inactive: false
+    output: ConstituentCodes
+
+inputs:
+  - label: Classification
+    type: csv
+    required: true
+    validation:
+      - label: ID
+        required: true
+        type: number
+        digits: 5
+      - label: name
+        required: true
+        type: string
+      - label: class
+        required: true
+        type: string
+
+outputs:
+  - label: Update_Records
+    type: csv
+
+steps:
+  - label: AddSourceFiles
+    type: file_input
+    input:
+      - label: Classification
+        validate: true
+
+  # Reads the live code table and joins it against the vendor file — the
+  # everyday use for a pulled code table.
+  - label: CreateImportFile
+    type: sql_transform
+    input:
+      - Classification
+    sql: primary_transform.sql
+    output:
+      - Update_Records
+    notices:
+      - label: "Classes missing from RE"
+        sql: missing_codes.sql
+        description: >
+          These class values have no matching entry in the Constituent Codes
+          table. Add them with the next step, or the import will reject those rows.
+
+  # The write half: every row this SQL returns becomes one create against the
+  # code table. operation may be create, update, or delete.
+  - label: AddMissingCodes
+    type: code_table_sync
+    code_table: "Constituent Codes"
+    operation: create
+    input:
+      - Classification
+    sql: missing_codes.sql
+
+  - label: Import
+    type: manual_instruction

@@ -10,6 +10,11 @@ use serde::Serialize;
 use tauri::{AppHandle, Manager};
 use crate::profile::{self, ProfileSummary, LoadedProfile, NoticeQuery, ProfileFileEntry};
 use crate::db::{self, ValidationResult, TransformResult, NoticeInput};
+use crate::report::{self, ReportRunResult, ActionResult};
+use crate::code_tables;
+use crate::query_step;
+use crate::re_calls::Transport;
+use crate::sky_auth;
 use crate::validate::{self, ValidationReport};
 
 // Combined return for create / duplicate / save — the frontend wants both
@@ -100,11 +105,40 @@ pub fn validate_file(
 // transform has exactly one input).
 
 #[tauri::command]
-pub fn run_profile(
+pub async fn run_profile(
+    app: AppHandle,
     file_paths: HashMap<String, String>,  // input_label → file_path
+    query_paths: HashMap<String, String>, // query_output label → result JSON path
+    sync_paths: HashMap<String, String>,  // sync_output label → outcome JSON path
     sql_file: String,                     // filename e.g. "primary_transform.sql"
     zip_path: String,                     // temp dir path — profile already extracted
     output_labels: Vec<String>,           // every output declared on this transform
+) -> Result<TransformResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        run_profile_blocking(
+            &app,
+            file_paths,
+            query_paths,
+            sync_paths,
+            sql_file,
+            zip_path,
+            output_labels,
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// The body of run_profile, off the async runtime — pulling code tables does
+// blocking network I/O (reqwest::blocking panics inside a Tokio context).
+fn run_profile_blocking(
+    app: &AppHandle,
+    file_paths: HashMap<String, String>,
+    query_paths: HashMap<String, String>,
+    sync_paths: HashMap<String, String>,
+    sql_file: String,
+    zip_path: String,
+    output_labels: Vec<String>,
 ) -> Result<TransformResult, String> {
     let loaded = profile::load_from_dir(Path::new(&zip_path))
         .map_err(|e| e.to_string())?;
@@ -127,8 +161,103 @@ pub fn run_profile(
         })
         .collect();
 
-    db::run_transform(&file_paths, sql, &output_labels, &notices)
+    // Pull any code tables the profile declares so {{codetable:Label}} resolves.
+    // No-ops (and costs nothing) for the profiles that declare none.
+    let code_table_paths = if loaded.structure.code_tables.is_empty() {
+        HashMap::new()
+    } else {
+        let transport = resolve_transport(app)?;
+        let run_dir = std::env::temp_dir().join(format!("codetables-{}", loaded.structure.id));
+        code_tables::fetch_all(&loaded, &transport, &run_dir).map_err(|e| e.to_string())?
+    };
+
+    // Everything the SQL body may reference beyond {{input:}} / {{output:}}.
+    // One registry, so a new placeholder family is a line here rather than a
+    // new parameter on run_transform.
+    let sources = db::SqlSources::new()
+        .with(db::KIND_CODETABLE, &code_table_paths)
+        .with(db::KIND_QUERY, &query_paths)
+        .with(db::KIND_SYNC, &sync_paths);
+
+    db::run_transform(&file_paths, &sources, sql, &output_labels, &notices)
         .map_err(|e| e.to_string())
+}
+
+// ── run_re_query ──────────────────────────────────────────────────────────────
+// Called by: the Imports tab when the user runs an `re_query` step.
+// Runs the step's params SQL over the uploaded files, substitutes the values
+// into the query template, executes it against RE (live or mock), and writes the
+// rows to a temp file. The returned path is what the frontend hands to whichever
+// later transform declared this step's `query_output` in its `query_input`.
+
+#[tauri::command]
+pub async fn run_re_query(
+    app: AppHandle,
+    file_paths: HashMap<String, String>,
+    step_label: String,
+    zip_path: String,
+) -> Result<query_step::QueryStepResult, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<query_step::QueryStepResult, String> {
+        let loaded = profile::load_from_dir(Path::new(&zip_path)).map_err(|e| e.to_string())?;
+        let step = loaded
+            .structure
+            .steps
+            .iter()
+            .find(|s| s.label == step_label && s.step_type == "re_query")
+            .ok_or_else(|| format!("No re_query step labelled '{}'", step_label))?;
+
+        let transport = resolve_transport(&app)?;
+        let run_dir = std::env::temp_dir().join(format!("queries-{}", loaded.structure.id));
+
+        // A params query may join against code tables, so pull them first.
+        let ct_dir = std::env::temp_dir().join(format!("codetables-{}", loaded.structure.id));
+        let code_table_paths = code_tables::fetch_all(&loaded, &transport, &ct_dir)
+            .map_err(|e| e.to_string())?;
+
+        query_step::run_query(
+            &loaded,
+            step,
+            &file_paths,
+            &code_table_paths,
+            &transport,
+            &run_dir,
+        )
+        .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ── run_code_table_sync ───────────────────────────────────────────────────────
+// Called by: the Imports tab when the user runs a `code_table_sync` step.
+// Runs the step's SQL over the uploaded files, then pushes one create / update /
+// delete per returned row to RE's Code Table API. Writes are live only when
+// connected (and RE_NXT_MOCK unset) — otherwise they are stubbed like any other
+// mock-mode call.
+
+#[tauri::command]
+pub async fn run_code_table_sync(
+    app: AppHandle,
+    file_paths: HashMap<String, String>,
+    step_label: String,
+    zip_path: String,
+) -> Result<code_tables::SyncResult, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<code_tables::SyncResult, String> {
+        let loaded = profile::load_from_dir(Path::new(&zip_path)).map_err(|e| e.to_string())?;
+        let step = loaded
+            .structure
+            .steps
+            .iter()
+            .find(|s| s.label == step_label && s.step_type == "code_table_sync")
+            .ok_or_else(|| format!("No code_table_sync step labelled '{}'", step_label))?;
+
+        let transport = resolve_transport(&app)?;
+        let run_dir = std::env::temp_dir().join(format!("codetables-{}", loaded.structure.id));
+        code_tables::run_sync(&loaded, step, &file_paths, &transport, &run_dir)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 // Returns the NoticeQuery list attached to the first transform whose `sql`
@@ -151,6 +280,67 @@ fn find_notices_for_sql<'a>(loaded: &'a LoadedProfile, sql_file: &str) -> Vec<&'
         }
     }
     Vec::new()
+}
+
+// Pick the RE transport for a report run. Live when connected to RE NXT, unless
+// RE_NXT_MOCK is set (forces the fixture path for offline dev). Blocking — call
+// from a blocking thread.
+fn resolve_transport(app: &AppHandle) -> Result<Transport, String> {
+    let force_mock = std::env::var("RE_NXT_MOCK")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    if !force_mock && sky_auth::has_connection(app) {
+        let (access_token, subscription_key) =
+            sky_auth::live_credentials(app).map_err(|e| e.to_string())?;
+        Ok(Transport::Live { access_token, subscription_key })
+    } else {
+        Ok(Transport::Mock)
+    }
+}
+
+// ── run_report ────────────────────────────────────────────────────────────────
+// Called by: the Reports tab on Refresh.
+// Runs the report pipeline — RE queries (live SKY API when connected, else mock
+// fixtures) → DuckDB transforms → in-memory result sets keyed by transform
+// output (what visualizations bind to). `zip_path` is the extracted temp dir,
+// like run_profile. async + spawn_blocking because the live path does network
+// I/O (reqwest::blocking would panic on the async runtime).
+
+#[tauri::command]
+pub async fn run_report(
+    app: AppHandle,
+    zip_path: String,
+    param_values: HashMap<String, serde_json::Value>,
+) -> Result<ReportRunResult, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<ReportRunResult, String> {
+        let loaded = profile::load_from_dir(Path::new(&zip_path)).map_err(|e| e.to_string())?;
+        let transport = resolve_transport(&app)?;
+        report::run_report(&loaded, &param_values, &transport).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ── run_report_action ───────────────────────────────────────────────────────────
+// Called by: the Reports tab when the user clicks an action button (e.g. "Create
+// Query in RE"). Re-runs the pipeline and performs the write-back (live POST or
+// mock stub).
+
+#[tauri::command]
+pub async fn run_report_action(
+    app: AppHandle,
+    zip_path: String,
+    action_id: String,
+    param_values: HashMap<String, serde_json::Value>,
+) -> Result<ActionResult, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<ActionResult, String> {
+        let loaded = profile::load_from_dir(Path::new(&zip_path)).map_err(|e| e.to_string())?;
+        let transport = resolve_transport(&app)?;
+        report::run_report_action(&loaded, &action_id, &param_values, &transport)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 // ── save_output ───────────────────────────────────────────────────────────────

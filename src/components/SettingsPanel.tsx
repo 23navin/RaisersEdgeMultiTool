@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 import { XIcon } from "lucide-react";
 import { cn } from "../lib/utils";
 import { ImportTab } from "./settings/imports/ImportTab";
+import { GeneralTab } from "./settings/general/GeneralTab";
 
 type Props = {
   open: boolean;
@@ -56,7 +57,7 @@ export function SettingsPanel({ open, onClose }: Props) {
       <div
         aria-hidden={!open}
         className={cn(
-          "absolute inset-[28px] z-50 flex flex-col bg-white rounded-[12px] border border-neutral-200 shadow-2xl overflow-hidden origin-center",
+          "absolute inset-[0px] z-50 flex flex-col bg-white rounded-[12px] border border-neutral-200 shadow-2xl overflow-hidden origin-center",
           "transition-[opacity,filter,transform] duration-200 ease-out",
           open
             ? "opacity-100 blur-0 scale-100 pointer-events-auto"
@@ -133,8 +134,4 @@ function TabButton({
       />
     </button>
   );
-}
-
-function GeneralTab() {
-  return <div className="px-[24px] py-[16px]" />;
 }

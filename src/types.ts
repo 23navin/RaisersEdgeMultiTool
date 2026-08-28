@@ -15,6 +15,7 @@ export type ProfileSummary = {
   version: string;
   zip_path: string;        // user: full fs path. builtin: "builtin://<filename>" sentinel.
   source: ProfileSource;
+  kind?: string | null;    // undefined/"import" => import workflow. "report" => report.
 };
 
 // ── Structure.yaml types ──────────────────────────────────────────────────────
@@ -67,16 +68,49 @@ export type SqlTransform = {
   sql: string;
   output?: string[];
   notices?: NoticeQuery[];
+  query_input?: string[];   // query outputs this transform reads
+  sync_input?: string[];    // code_table_sync outcomes this transform reads
 };
 
 export type Step = {
   label: string;
-  type: string;            // "file_input" | "sql_transform" | "manual_instruction"
+  // "file_input" | "sql_transform" | "re_query" | "code_table_sync"
+  // | "manual_instruction"
+  type: string;
   input?: StepInputRef[];  // file_input: one upload row per entry. sql_transform: single-transform shortcut.
-  sql?: string;            // sql_transform single-transform shortcut
+  sql?: string;            // sql_transform single-transform shortcut; code_table_sync: rows to push
   output?: string[];       // sql_transform single-transform shortcut
   notices?: NoticeQuery[]; // sql_transform single-transform shortcut
   transforms?: SqlTransform[]; // sql_transform multi-transform form
+  // code_table_sync fields
+  code_table?: string;     // code table name...
+  code_table_id?: string;  // ...or its id, skipping the name lookup
+  operation?: string;      // "create" | "update" | "delete"
+  // Names this step's outcome rows -> {{sync:<label>}} downstream. Optional:
+  // a sync nothing reads needs no label.
+  sync_output?: string;
+  // re_query fields
+  ref?: string;            // central registry call, e.g. re.query.execute
+  template?: unknown;      // inline ExecuteQueryDefinition
+  bind?: Record<string, unknown>;
+  params_sql?: string;     // SQL whose rows fill {{rows:}} / {{value:}}
+  query_output?: string;   // names the result -> {{query:<label>}} downstream
+  // sql_transform: query outputs this transform reads. Distinct from `output`,
+  // which means "a declared file with a Download button".
+  query_input?: string[];
+  // sql_transform: code_table_sync outcomes this transform reads as
+  // {{sync:<label>}}.
+  sync_input?: string[];
+};
+
+// A code table pulled from RE before SQL runs, exposed to it as
+// {{codetable:<output>}}. Mirrors profile::CodeTableRef. Both profile kinds.
+export type CodeTableRef = {
+  id: string;
+  name?: string | null;
+  code_table_id?: string | null;
+  include_inactive?: boolean | null;
+  output: string;
 };
 
 // One row in a file_input step's validation-errors table. Most fields are
@@ -125,9 +159,138 @@ export type ProfileStructure = {
   name: string;
   version: string;
   min_app_version: string;
+  kind?: string;           // undefined/"import" => import workflow. "report" => report sections.
+  // Import sections — always present for import profiles, empty arrays for reports.
   inputs: InputDefinition[];
   outputs: OutputDefinition[];
   steps: Step[];
+  // Shared section — RE code tables available to SQL in either profile kind.
+  code_tables: CodeTableRef[];
+  // Report sections — populated only when kind === "report". See REPORT_PROFILES.md.
+  parameters: Parameter[];
+  queries: QueryRef[];
+  transforms: ReportTransform[];
+  visualizations: Visualization[];
+  actions: Action[];
+};
+
+// ── Report profile types ──────────────────────────────────────────────────────
+// Mirror the report-specific structs in profile.rs. Free-form fields
+// (default/config/template/bind values) are arbitrary JSON. Deserialize-only on
+// the backend for now — nothing executes these yet.
+
+// A UI input control rendered in the Inputs panel.
+export type Parameter = {
+  id: string;
+  label: string;
+  type: string;            // "date" | "date_range" | "select" | "text" | "number"
+  required?: boolean;
+  options?: string[];      // allowed values for "select"
+  default?: unknown;       // shape varies by type (e.g. { preset: "last_30_days" })
+};
+
+// A reference to an RE API call (hybrid library). `ref` names a central registry
+// entry; `template` inlines a bundle-local definition. `bind` maps params/
+// literals into the call; `output` names the JSON result transforms read via
+// {{query:Label}}.
+export type QueryRef = {
+  id: string;
+  ref?: string;
+  template?: unknown;
+  bind?: Record<string, unknown>;
+  output: string;
+};
+
+// SQL over query outputs. `input` lists query output labels; `output` is the
+// in-memory result-set label a visualization binds to.
+export type ReportTransform = {
+  id: string;
+  input?: string[];
+  sql: string;            // filename inside the bundle's sql/ folder
+  output: string;
+};
+
+// A visualization bound to a transform output, rendered by the shared viz
+// library keyed on `type`.
+export type Visualization = {
+  id: string;
+  type: string;           // "table" | "bar" | "line" | "pie" | "kpi"
+  title?: string;
+  data: string;           // transform output label feeding it
+  config?: unknown;       // viz-specific config (e.g. column definitions)
+};
+
+// An on-demand write-back. Resolves through the API library like QueryRef;
+// `input` names the result set whose rows feed the call.
+export type Action = {
+  id: string;
+  label: string;
+  ref?: string;
+  template?: unknown;
+  input?: string;
+  bind?: Record<string, unknown>;
+};
+
+// A processed result set produced by a report transform and consumed by a
+// visualization. Same shape as Notice (columns + stringified rows).
+export type ResultSet = {
+  columns: string[];
+  rows: string[][];
+};
+
+// One query's resolved request + outcome — surfaced so the UI can show/debug
+// the param→request merge. Mirrors report::QueryDebug.
+export type QueryDebug = {
+  id: string;
+  call_ref?: string | null;
+  resolved_request: unknown;   // the request after {{param:...}} substitution
+  row_count: number;
+};
+
+// Returned by run_report. `data` is keyed by transform output label — exactly
+// what a visualization's `data` field binds to. Mirrors report::ReportRunResult.
+export type ReportRunResult = {
+  data: Record<string, ResultSet>;
+  queries: QueryDebug[];
+  generated_at: string;
+  mode: string;            // "live" (real SKY API) | "mock" (fixtures)
+};
+
+// Returned by run_re_query. Mirrors query_step::QueryStepResult.
+export type QueryStepResult = {
+  query_output: string;    // the label later SQL uses as {{query:<label>}}
+  path: string;            // JSON file the rows were written to
+  row_count: number;
+  mode: string;            // "live" (real SKY API) | "mock"
+  resolved_request: unknown; // request after {{rows:}}/{{value:}} substitution
+};
+
+// Returned by run_code_table_sync. Mirrors code_tables::SyncResult.
+export type SyncFailure = {
+  row: number;
+  identifier: string;      // long_description or entry id — a human-readable pointer
+  error: string;
+};
+
+export type SyncResult = {
+  ok: boolean;             // false when any row failed
+  operation: string;       // "create" | "update" | "delete"
+  code_table: string;      // how the table was addressed, for display
+  attempted: number;
+  succeeded: number;
+  failures: SyncFailure[]; // one per failed row — the run continues past failures
+  message: string;
+  mode: string;            // "live" (real SKY API) | "mock"
+  // Set when the step declares sync_output: the label later SQL reads as
+  // {{sync:<label>}}, and the JSON file the outcome rows were written to.
+  sync_output?: string | null;
+  path?: string | null;
+};
+
+// Returned by run_report_action. Mirrors report::ActionResult.
+export type ActionResult = {
+  ok: boolean;
+  message: string;
 };
 
 // ── Loaded profile ────────────────────────────────────────────────────────────
@@ -191,5 +354,17 @@ export type ValidationReport = {
   warning_count: number;
   info_count: number;
   fixable_count: number;
+};
+
+// ── Raiser's Edge NXT connection ───────────────────────────────────────────────
+// Mirrors sky_auth::ConnectionStatus. Tokens/secret are never sent to the
+// frontend — only what the UI needs to show connection state. Returned by
+// connect_re_nxt and re_nxt_status.
+
+export type ReNxtConnectionStatus = {
+  connected: boolean;
+  environment_id?: string | null;
+  environment_name?: string | null;
+  expires_at?: number | null;   // unix seconds until the access token expires
 };
 

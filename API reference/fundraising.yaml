@@ -1,0 +1,3357 @@
+openapi: 3.0.1
+info:
+  title: Fundraising
+  description: 'This API manages information contained within the fundraising hierarchy and related entities such as campaigns, funds, and appeals.'
+  version: '1.0'
+servers:
+  - url: https://api.sky.blackbaud.com/fundraising/v1
+paths:
+  '/appeals/{appeal_id}':
+    get:
+      tags:
+        - Appeal
+      summary: Appeal (Get)
+      description: Returns information about the appeal with the specified ID.
+      operationId: GetAppeal
+      parameters:
+        - name: appeal_id
+          in: path
+          description: The immutable system record ID of the appeal for which information is to be retrieved.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the specified <a href='https://developer.blackbaud.com/skyapi/api/entity-reference/fundraising#Appeal'>appeal</a> entity.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppealRead'
+              example:
+                id: '26'
+                category: Annual
+                date_added: '2001-11-16T11:26:53.5200000+00:00'
+                date_modified: '2017-03-23T13:10:46.6400000+00:00'
+                description: Direct Mailing
+                end_date: '2004-12-31T00:00:00.0000000+00:00'
+                goal:
+                  value: 0
+                inactive: false
+                lookup_id: DIRECT MAIL
+                start_date: '2004-01-01T00:00:00.0000000+00:00'
+        '400':
+          description: Returned when the specified appeal ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to view the appeal.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified appeal is not found.
+          content:
+            application/json: { }
+  /appeals:
+    get:
+      tags:
+        - Appeal
+      summary: Appeal list
+      description: "Returns a paginated list of appeals.\r\n<p />\r\nThe default sorting behavior is to list appeals in ascending order based on when they were created.\r\n<p />\r\nHowever, the <code>last_modified</code> parameter overrides the default sorting behavior to list appeals in ascending order based on when they were last modified. The <code>last_modified</code> parameter also adds the <code>sort_token</code> parameter to the <code>next_link</code> URL to ensure that appeals are stably sorted and that order persists when changes occur while working through a paginated list.\r\n<p />\r\nIf the <code>last_modified</code> and <code>date_added</code> parameters are both specified, the sorting behavior is to list appeals based on when they were last modified.\r\n<p />"
+      operationId: ListAppeals
+      parameters:
+        - name: date_added
+          in: query
+          description: 'Represents a filter for appeals created on or after the specified date. The filter respects time offsets from UTC per the ISO-8601 format: 2016-05-05T17:59:31.1600745-04:00.'
+          schema:
+            type: string
+            format: date-time
+        - name: last_modified
+          in: query
+          description: 'Represents a filter for appeals modified on or after the specified date. The filter respects time offsets from UTC per the ISO-8601 format: 2016-05-05T17:59:31.1600745-04:00.'
+          schema:
+            type: string
+            format: date-time
+        - name: sort_token
+          in: query
+          description: Represents a token filter to provide the next stable-sorted list of appeals. This will be provided on the next_link collection response property when last_modified or sort_token filters are specified on the request.
+          schema:
+            type: string
+        - name: include_inactive
+          in: query
+          description: Set this parameter to "true" to include inactive appeals in the response.
+          schema:
+            type: boolean
+        - name: appeal_id
+          in: query
+          description: 'Represents a list of appeal identifiers. Returns appeals if any of the specified appeal identifiers match any of their appeals.  For example, "appeal_id=280&amp;appeal_id=1232" returns appeals with either "280" or "1232" appeal identifiers.'
+          schema:
+            type: array
+            items:
+              type: string
+        - name: limit
+          in: query
+          description: Represents the number of records to return. The default is 500. The maximum is 5000.
+          schema:
+            maximum: 5000
+            minimum: 0
+            type: integer
+            format: int32
+        - name: offset
+          in: query
+          description: Represents the number of records to skip. For use with pagination.
+          schema:
+            maximum: 2147483647
+            minimum: 0
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/constituent#Collection">collection</a> of <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/fundraising#Appeal">appeal</a> entities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_AppealRead_'
+              example:
+                count: 23
+                next_link: https://api.sky.blackbaud.com/fundraising/v1/appeals?offset=3&limit=3
+                value:
+                  - id: '1'
+                    category: Annual
+                    date_added: '1999-06-25T11:59:57.0000000+00:00'
+                    date_modified: '2007-06-18T14:44:52.6230000+00:00'
+                    description: Annual Newsletter
+                    goal:
+                      value: 250000
+                    inactive: false
+                    lookup_id: NEWSLETTER
+                  - id: '2'
+                    category: Capital
+                    date_added: '1999-05-19T15:18:25.0000000+00:00'
+                    date_modified: '2007-06-18T14:40:31.8630000+00:00'
+                    description: Celebrity Auction
+                    end_date: '2004-12-31T00:00:00.0000000+00:00'
+                    goal:
+                      value: 100000
+                    inactive: false
+                    lookup_id: AUCTION
+                    start_date: '2004-01-01T00:00:00.0000000+00:00'
+                  - id: '3'
+                    date_added: '1999-06-25T12:04:15.0000000+00:00'
+                    date_modified: '2007-06-18T13:58:06.2370000+00:00'
+                    description: Year End Appeal
+                    goal:
+                      value: 500000
+                    inactive: false
+                    lookup_id: YEAREND
+        '400':
+          description: Returned when the specified request parameters are not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to view the appeals.
+          content:
+            application/json: { }
+  /appeals/categories:
+    get:
+      tags:
+        - Appeal
+      summary: Appeal categories
+      description: Returns a list of appeal categories.
+      operationId: ListAppealCategories
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/fundraising/#Collection">collection</a> of string.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_String_'
+              example:
+                count: 10
+                value:
+                  - Annual
+                  - Capital
+                  - Continuous
+                  - Direct Mail
+                  - Event
+                  - Major Donors
+                  - Membership
+                  - NotAnnual
+                  - Prospect
+                  - Semi-Annual
+        '403':
+          description: Returned when the user does not have permission to view the appeal categories.
+          content:
+            application/json: { }
+  '/appeals/{appeal_id}/customfields':
+    get:
+      tags:
+        - Appeal
+      summary: Appeal custom field list (Single appeal)
+      description: Returns a list of custom fields for the appeal with the specified ID.
+      operationId: ListAppealCustomFieldsSingleAppeal
+      parameters:
+        - name: appeal_id
+          in: path
+          description: The immutable system record ID of the appeal for which the custom fields are to be retrieved.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/constituent#Collection">collection</a> of <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/constituent#CustomField">custom field</a> entities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_CustomFieldRead_'
+              example:
+                count: 6
+                value:
+                  - id: '72'
+                    category: Anniversary
+                    parent_id: '123'
+                    type: Date
+                    value: '1986-11-21T10:29:43.0000000+00:00'
+                  - id: '73'
+                    category: Committees
+                    comment: A comment
+                    parent_id: '129'
+                    date: '2016-11-21T10:29:43.0000000+00:00'
+                    type: CodeTableEntry
+                    value: Strategic Planning
+                  - id: '74'
+                    category: Interests
+                    parent_id: '150'
+                    type: CodeTableEntry
+                    value: Golf
+                  - id: '75'
+                    category: Interests
+                    parent_id: '993'
+                    type: CodeTableEntry
+                    value: Photography
+                  - id: '76'
+                    category: Committees
+                    comment: Another comment
+                    parent_id: '1058'
+                    date: '2005-11-21T10:29:43.0000000+00:00'
+                    type: CodeTableEntry
+                    value: Future Visioning
+                  - id: '77'
+                    category: Origin
+                    parent_id: '1499'
+                    type: CodeTableEntry
+                    value: Personal reference
+        '400':
+          description: Returned when the specified appeal ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to view the custom fields.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified appeal is not found.
+          content:
+            application/json: { }
+  /appeals/customfields:
+    post:
+      tags:
+        - Appeal
+      summary: Appeal custom field (Create)
+      description: Adds a new custom field.
+      operationId: CreateAppealCustomField
+      requestBody:
+        description: An object representing the custom field to add.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomFieldAdd'
+            example:
+              category: Major Donors Only?
+              comment: a comment
+              date: '2016-01-22T00:00:00.0000000+00:00'
+              parent_id: '2'
+              value: 'true'
+      responses:
+        '200':
+          description: Returned when the operation succeeds and a new custom field has been created. The response body contains the ID of the newly added custom field.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+              example:
+                id: '1281'
+        '400':
+          description: Returned when the request body is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to create the custom field.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified appeal is not found.
+          content:
+            application/json: { }
+  '/appeals/customfields/{custom_field_id}':
+    delete:
+      tags:
+        - Appeal
+      summary: Appeal custom field (Delete)
+      description: Deletes the custom field with the specified ID.
+      operationId: DeleteAppealCustomField
+      parameters:
+        - name: custom_field_id
+          in: path
+          description: The immutable system record ID of the custom field to be deleted.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds and the custom field has been deleted.
+          content:
+            application/json: { }
+        '400':
+          description: Returned when the specified custom field ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to delete the custom field.
+          content:
+            application/json: { }
+    patch:
+      tags:
+        - Appeal
+      summary: Appeal custom field (Edit)
+      description: Edits an existing custom field.
+      operationId: EditAppealCustomField
+      parameters:
+        - name: custom_field_id
+          in: path
+          description: The immutable system record ID of the custom field to be edited.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: An object representing updated properties of the custom field to add.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomFieldEdit'
+            example:
+              comment: a comment
+              date: '2016-01-22T00:00:00.0000000+00:00'
+              value: strategic planning
+      responses:
+        '200':
+          description: Returned when the operation succeeds and the custom field has been edited.
+          content:
+            application/json: { }
+        '400':
+          description: Returned when the request body is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to edit the custom field.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified custom field is not found.
+          content:
+            application/json: { }
+  /appeals/customfields/categories:
+    get:
+      tags:
+        - Appeal
+      summary: Appeal custom field categories
+      description: Gets the list of custom field categories.
+      operationId: ListAppealCustomFieldCategories
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/fundraising#Collection">collection</a> of <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/fundraising#CustomFieldCategory">custom field category</a> entities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_CustomFieldCategoryRead_'
+              example:
+                count: 2
+                value:
+                  - name: Donor list used?
+                    type: Boolean
+                  - name: Priority
+                    type: CodeTableEntry
+  /appeals/customfields/categories/values:
+    get:
+      tags:
+        - Appeal
+      summary: Appeal custom field category values
+      description: Gets the list of custom field category values.
+      operationId: ListAppealCustomFieldCategoryValues
+      parameters:
+        - name: category_name
+          in: query
+          description: The name of the category for which the values should be returned.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/constituent#Collection">collection</a> of string custom field category values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_String_'
+              example:
+                count: 5
+                value:
+                  - Very High
+                  - High
+                  - Medium
+                  - Low
+                  - Very Low
+  '/appeals/{appeal_id}/attachments':
+    get:
+      tags:
+        - Appeal
+      summary: Appeal attachment list (Single appeal)
+      description: Returns a list of attachments for an appeal.
+      operationId: ListAppealAttachmentsSingleAppeal
+      parameters:
+        - name: appeal_id
+          in: path
+          description: The immutable system record ID of the appeal to retrieve attachments for.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/fundraising#Collection">collection</a> of <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/fundraising#Attachment">attachment</a> entities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_AttachmentRead_'
+              example:
+                count: 4
+                value:
+                  - id: 53b9a13d-3e01-4d76-a6d4-ea99a7c4e0e0
+                    date: '2015-01-25T04:00:00.0000000+00:00'
+                    name: Pledge Thank You Letter
+                    parent_id: '2396'
+                    tags:
+                      - Letter
+                    type: Link
+                    url: http://file.com/
+                  - id: 3cd91f4b-9cf9-4c06-b7de-42dc41e6d82e
+                    date: '2014-03-21T04:00:00.0000000+00:00'
+                    name: Donation Notes
+                    parent_id: '2396'
+                    tags:
+                      - Notes
+                    type: Link
+                    url: http://file2.com/
+                  - id: fbdddc29-1737-48a2-93e7-cc86648f05b4
+                    date: '2011-11-08T04:00:00.0000000+00:00'
+                    name: Yearly Notes
+                    parent_id: '2396'
+                    tags: [ ]
+                    type: Link
+                    url: http://file3.com/
+                  - id: 65bcc390-ca33-4ad8-bb49-a02cee414e73
+                    content_type: image/jpeg
+                    date: '2015-01-22T04:00:00.0000000+00:00'
+                    file_id: 65bcc390-ca33-4ad8-bb49-a02cee414e73
+                    file_name: fundraisers_group_photo.jpg
+                    file_size: 705069
+                    name: fundraisers_group_photo
+                    parent_id: '2396'
+                    thumbnail_id: 04265191-08a0-4eef-9306-ebb29e9590af
+                    thumbnail_url: http://prodsarnxdocmn002blkbrdo.blob.core.windows.net/blackbauddocumentsvc/tenants/a486g1de-73f5-4a81-a4b1-ff353509fbde/documents/04265191-08a0-4eef-9306-ebb29e9590af/thumbnail_fundraisers_group_photo.jpg?sv=2015-05-17&sr=b&sig=HI0UTKNjiCVB6AtGHBVuCdhgnETbRPYegwb7%2FQyjI%2FU%3D&se=2015-10-15T18%3A25%3A30Z&sp=r
+                    type: Physical
+                    url: http://prodsarnxdocmn002blkbrdo.blob.core.windows.net/blackbauddocumentsvc/tenants/a486g1de-73f5-4a81-a4b1-ff353509fbde/documents/65bcc390-ca33-4ad8-bb49-a02cee414e73/fundraisers_group_photo.jpg?sv=2015-05-17&sr=b&sig=HI0UTKNjiCVB6AtGHBVuCdhgnETbRPYegwb7%2FQyjI%2FU%3D&se=2015-10-15T18%3A25%3A30Z&sp=r
+        '400':
+          description: Returned when the specified ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to view the attachments.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified appeal is not found.
+          content:
+            application/json: { }
+  /appeals/attachments:
+    post:
+      tags:
+        - Appeal
+      summary: Appeal attachment (Create)
+      description: Creates an appeal attachment.
+      operationId: CreateAppealAttachment
+      requestBody:
+        description: An object that represents the attachment to add.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttachmentAdd'
+            example:
+              date: '2015-01-25T04:00:00.0000000+00:00'
+              name: Pledge Thank You Letter
+              parent_id: '2396'
+              tags:
+                - Letter
+              type: Link
+              url: http://file.com/
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the ID of the new attachment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+              example:
+                id: '1281'
+        '400':
+          description: Returned when the request body is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to create the attachment.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified appeal is not found.
+          content:
+            application/json: { }
+  '/appeals/attachments/{attachment_id}':
+    delete:
+      tags:
+        - Appeal
+      summary: Appeal attachment (Delete)
+      description: Deletes an appeal attachment.
+      operationId: DeleteAppealAttachment
+      parameters:
+        - name: attachment_id
+          in: path
+          description: The immutable system record ID of the attachment to delete.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation successfully deletes the attachment.
+          content:
+            application/json: { }
+        '400':
+          description: Returned when the specified attachment ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to delete the attachment.
+          content:
+            application/json: { }
+    patch:
+      tags:
+        - Appeal
+      summary: Appeal attachment (Edit)
+      description: Edits an appeal attachment.
+      operationId: EditAppealAttachment
+      parameters:
+        - name: attachment_id
+          in: path
+          description: The immutable system record ID of the attachment to edit.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: An object that represents the attachment to edit.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttachmentEdit'
+            example:
+              date: '2015-01-25T04:00:00.0000000+00:00'
+              name: Pledge Thank You Letter
+              tags:
+                - Letter
+              url: http://example.com/
+      responses:
+        '200':
+          description: Returned when the operation successfully edits the attachment.
+          content:
+            application/json: { }
+        '400':
+          description: Returned when the specified attachment ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to edit the attachment.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified attachment is not found.
+          content:
+            application/json: { }
+  '/fundraisers/{fundraiser_id}/assignments':
+    get:
+      tags:
+        - Assignment
+      summary: Fundraiser assignment list (Single fundraiser)
+      description: Returns a list of fundraiser assignments for a fundraiser.
+      operationId: ListFundraiserAssignmentsSingleFundraiser
+      parameters:
+        - name: fundraiser_id
+          in: path
+          description: The immutable system record ID of the fundraiser to retrieve the assignments for.
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Represents the number of records to return. The default is 500. The maximum is 5000.
+          schema:
+            maximum: 5000
+            minimum: 0
+            type: integer
+            format: int32
+        - name: offset
+          in: query
+          description: Represents the number of records to skip. For use with pagination.
+          schema:
+            maximum: 2147483647
+            minimum: 0
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/fundraising#Collection">collection</a> of <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/fundraising#FundraiserAssignment">fundraiser assignment</a> entities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_FundraiserAssignmentRead_'
+              example:
+                count: 3
+                value:
+                  - id: '108'
+                    amount:
+                      value: 5000
+                    campaign_id: '8'
+                    constituent_id: '186'
+                    fund_id: '11'
+                    fundraiser_id: '635'
+                    type: Major Donor
+                  - id: '103'
+                    amount:
+                      value: 7500
+                    appeal_id: '2'
+                    campaign_id: '4'
+                    constituent_id: '186'
+                    fundraiser_id: '213'
+                    type: Fund
+                  - id: '102'
+                    amount:
+                      value: 50
+                    campaign_id: '2'
+                    constituent_id: '186'
+                    end: '2001-11-16T11:26:53.5200000+00:00'
+                    fund_id: '6'
+                    fundraiser_id: '185'
+                    start: '1995-11-16T11:26:53.5200000+00:00'
+                    type: Volunteer
+        '400':
+          description: Returned when the specified ID is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to view the fundraiser assignments.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified fundraiser is not found.
+          content:
+            application/json: { }
+  /fundraisers/types:
+    get:
+      tags:
+        - Assignment
+      summary: Fundraiser types
+      description: Gets the list of active fundraiser types.
+      operationId: ListFundraiserTypes
+      responses:
+        '200':
+          description: Returned when the operation is successful. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/fundraising#Collection">collection</a> of string fundraiser types.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_String_'
+              example:
+                count: 4
+                value:
+                  - Event
+                  - Volunteer
+                  - Staff
+                  - Fund
+  /fundraisers/assignments:
+    post:
+      tags:
+        - Assignment
+      summary: Fundraiser assignment (Create)
+      description: Creates a fundraiser assignment.
+      operationId: CreateFundraiserAssignment
+      requestBody:
+        description: An object that represents the fundraising assignment to create.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FundraiserAssignmentAdd'
+            example:
+              amount:
+                value: 1000
+              appeal_id: '4'
+              campaign_id: '1'
+              constituent_id: '280'
+              end: '2000-02-22T09:23:08.4130000+00:00'
+              fund_id: '6'
+              fundraiser_id: '230'
+              start: '1995-02-22T09:23:08.4130000+00:00'
+              type: Staff
+      responses:
+        '200':
+          description: Returned when the operation successfully creates an assignment. The response body contains the ID of the new assignment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+              example:
+                id: '1281'
+        '400':
+          description: Returned when the request body is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to create the assignment.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified constituent is not found.
+          content:
+            application/json: { }
+  '/fundraisers/assignments/{assignment_id}':
+    delete:
+      tags:
+        - Assignment
+      summary: Fundraiser assignment (Delete)
+      description: Deletes a fundraiser assignment.
+      operationId: DeleteFundraiserAssignment
+      parameters:
+        - name: assignment_id
+          in: path
+          description: The immutable system record ID of the fundraiser assignment to delete.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation successfully deletes the fundraiser assignment.
+          content:
+            application/json: { }
+        '400':
+          description: Returned when the specified assignment ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to delete the fundraiser assignment.
+          content:
+            application/json: { }
+    patch:
+      tags:
+        - Assignment
+      summary: Fundraiser assignment (Edit)
+      description: Edits a fundraiser assignment.
+      operationId: EditFundraiserAssignment
+      parameters:
+        - name: assignment_id
+          in: path
+          description: The immutable system record ID of the fundraiser assignment to edit.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: An object that represents the properties of the fundraiser assignment to edit.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FundraiserAssignmentEdit'
+            example:
+              amount:
+                value: 10000
+              campaign_id: '45'
+              type: Campaign
+      responses:
+        '200':
+          description: Returned when the operation successfully edits the fundraiser assignment.
+          content:
+            application/json: { }
+        '400':
+          description: Returned when the specified fundraiser assignment ID in the request URL or the specified request parameters are not in the appropriate format.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified fundraiser assignment is not found.
+          content:
+            application/json: { }
+  /attachmenttags:
+    get:
+      tags:
+        - AttachmentTags
+      summary: Attachment tags
+      description: Returns a list of available attachment tags.
+      operationId: ListAttachmentTags
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/constituent#Collection">collection</a> of string attachment tags.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_String_'
+              example:
+                count: 7
+                value:
+                  - Certificate
+                  - Document
+                  - Logo
+                  - PDF
+                  - Photo
+                  - Slideshow
+                  - Spreadsheet
+        '403':
+          description: Returned when the user does not have permission to view the attachment tags.
+          content:
+            application/json: { }
+  '/campaigns/{campaign_id}':
+    get:
+      tags:
+        - Campaign
+      summary: Campaign (Get)
+      description: Returns information about the campaign with the specified ID.
+      operationId: GetCampaign
+      parameters:
+        - name: campaign_id
+          in: path
+          description: The immutable system record ID of the campaign for which information is to be retrieved.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the specified <a href='https://developer.blackbaud.com/skyapi/api/entity-reference/fundraising#Campaign'>campaign</a> entity.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignRead'
+              example:
+                id: '3'
+                category: Annual
+                date_added: '2001-11-16T11:26:53.5200000+00:00'
+                date_modified: '2017-03-23T13:10:46.6400000+00:00'
+                description: Disaster Relief Campaign
+                end_date: '2004-12-31T00:00:00.0000000+00:00'
+                goal:
+                  value: 0
+                inactive: false
+                lookup_id: RELIEF
+                start_date: '2004-01-01T00:00:00.0000000+00:00'
+        '400':
+          description: Returned when the specified campaign ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to view the campaign.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified campaign is not found.
+          content:
+            application/json: { }
+  /campaigns:
+    get:
+      tags:
+        - Campaign
+      summary: Campaign list
+      description: "Returns a paginated list of campaigns.\r\n<p />\r\nThe default sorting behavior is to list campaigns in ascending order based on when they were created.\r\n<p />\r\nHowever, the <code>last_modified</code> parameter overrides the default sorting behavior to list campaigns in ascending order based on when they were last modified. The <code>last_modified</code> parameter also adds the <code>sort_token</code> parameter to the <code>next_link</code> URL to ensure that campaigns are stably sorted and that order persists when changes occur while working through a paginated list.\r\n<p />\r\nIf the <code>last_modified</code> and <code>date_added</code> parameters are both specified, the sorting behavior is to list campaigns based on when they were last modified.\r\n<p />"
+      operationId: ListCampaigns
+      parameters:
+        - name: date_added
+          in: query
+          description: 'Represents a filter for campaigns created on or after the specified date. The filter respects time offsets from UTC per the ISO-8601 format: 2016-05-05T17:59:31.1600745-04:00.'
+          schema:
+            type: string
+            format: date-time
+        - name: last_modified
+          in: query
+          description: 'Represents a filter for campaigns modified on or after the specified date. The filter respects time offsets from UTC per the ISO-8601 format: 2016-05-05T17:59:31.1600745-04:00.'
+          schema:
+            type: string
+            format: date-time
+        - name: sort_token
+          in: query
+          description: Represents a token filter to provide the next stable-sorted list of campaigns. This will be provided on the next_link collection response property when last_modified or sort_token filters are specified on the request.
+          schema:
+            type: string
+        - name: include_inactive
+          in: query
+          description: Set this parameter to "true" to include inactive campaigns in the response.
+          schema:
+            type: boolean
+        - name: campaign_id
+          in: query
+          description: 'Represents a list of campaign identifiers. Returns campaigns if any of the specified campaign identifiers match any of their campaigns.  For example, "campaign_id=280&amp;campaign_id=1232" returns campaigns with either "280" or "1232" campaign identifiers.'
+          schema:
+            type: array
+            items:
+              type: string
+        - name: limit
+          in: query
+          description: Represents the number of records to return. The default is 500. The maximum is 5000.
+          schema:
+            maximum: 5000
+            minimum: 0
+            type: integer
+            format: int32
+        - name: offset
+          in: query
+          description: Represents the number of records to skip. For use with pagination.
+          schema:
+            maximum: 2147483647
+            minimum: 0
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/constituent#Collection">collection</a> of <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/fundraising#Campaign">campaign</a> entities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_CampaignRead_'
+              example:
+                count: 8
+                next_link: https://api.sky.blackbaud.com/fundraising/v1/campaigns?offset=3&limit=3
+                value:
+                  - id: '1'
+                    category: Annual
+                    date_added: '1999-06-25T10:25:50.0000000+00:00'
+                    date_modified: '2017-01-19T15:45:48.5470000+00:00'
+                    description: Annual Campaign
+                    end_date: '2020-12-31T00:00:00.0000000+00:00'
+                    goal:
+                      value: 2000000
+                    inactive: false
+                    lookup_id: ANNUAL_01
+                    start_date: '2000-01-01T00:00:00.0000000+00:00'
+                  - id: '2'
+                    category: Capital
+                    date_added: '1999-06-25T10:26:06.0000000+00:00'
+                    date_modified: '2008-02-07T08:52:42.4300000+00:00'
+                    description: Capital Campaign
+                    end_date: '2025-12-31T00:00:00.0000000+00:00'
+                    goal:
+                      value: 10000000
+                    inactive: false
+                    lookup_id: CAPITAL
+                    start_date: '2000-01-01T00:00:00.0000000+00:00'
+                  - id: '4'
+                    date_added: '1999-05-19T14:56:00.0000000+00:00'
+                    date_modified: '2007-06-18T14:48:41.3500000+00:00'
+                    description: Endowment Campaign
+                    end_date: '2020-12-31T00:00:00.0000000+00:00'
+                    goal:
+                      value: 50000000
+                    inactive: false
+                    lookup_id: ENDOW
+                    start_date: '2000-01-01T00:00:00.0000000+00:00'
+        '400':
+          description: Returned when the specified request parameters are not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to view the campaigns.
+          content:
+            application/json: { }
+  /campaigns/categories:
+    get:
+      tags:
+        - Campaign
+      summary: Campaign categories
+      description: Returns a list of campaign categories.
+      operationId: ListCampaignCategories
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/fundraising/#Collection">collection</a> of string.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_String_'
+              example:
+                count: 5
+                value:
+                  - Annual
+                  - Capital
+                  - Event
+                  - Operating
+                  - Unrestricted
+        '403':
+          description: Returned when the user does not have permission to view the campaign categories.
+          content:
+            application/json: { }
+  '/campaigns/{campaign_id}/customfields':
+    get:
+      tags:
+        - Campaign
+      summary: Campaign custom field list (Single campaign)
+      description: Returns a list of custom fields for the campaign with the specified ID.
+      operationId: ListCampaignCustomFieldsSingleCampaign
+      parameters:
+        - name: campaign_id
+          in: path
+          description: The immutable system record ID of the campaign for which the custom fields are to be retrieved.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/constituent#Collection">collection</a> of <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/constituent#CustomField">custom field</a> entities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_CustomFieldRead_'
+              example:
+                count: 6
+                value:
+                  - id: '72'
+                    category: Anniversary
+                    parent_id: '123'
+                    type: Date
+                    value: '1986-11-21T10:29:43.0000000+00:00'
+                  - id: '73'
+                    category: Committees
+                    comment: A comment
+                    parent_id: '129'
+                    date: '2016-11-21T10:29:43.0000000+00:00'
+                    type: CodeTableEntry
+                    value: Strategic Planning
+                  - id: '74'
+                    category: Interests
+                    parent_id: '150'
+                    type: CodeTableEntry
+                    value: Golf
+                  - id: '75'
+                    category: Interests
+                    parent_id: '993'
+                    type: CodeTableEntry
+                    value: Photography
+                  - id: '76'
+                    category: Committees
+                    comment: Another comment
+                    parent_id: '1058'
+                    date: '2005-11-21T10:29:43.0000000+00:00'
+                    type: CodeTableEntry
+                    value: Future Visioning
+                  - id: '77'
+                    category: Origin
+                    parent_id: '1499'
+                    type: CodeTableEntry
+                    value: Personal reference
+        '400':
+          description: Returned when the specified campaign ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to view the custom fields.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified campaign is not found.
+          content:
+            application/json: { }
+  /campaigns/customfields:
+    post:
+      tags:
+        - Campaign
+      summary: Campaign custom field (Create)
+      description: Adds a new custom field.
+      operationId: CreateCampaignCustomField
+      requestBody:
+        description: An object representing the custom field to add.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomFieldAdd'
+            example:
+              category: Major Donors Only?
+              comment: a comment
+              date: '2016-01-22T00:00:00.0000000+00:00'
+              parent_id: '2'
+              value: 'true'
+      responses:
+        '200':
+          description: Returned when the operation succeeds and a new custom field has been created. The response body contains the ID of the newly added custom field.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+              example:
+                id: '1281'
+        '400':
+          description: Returned when the request body is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to create the custom field.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified campaign is not found.
+          content:
+            application/json: { }
+  '/campaigns/customfields/{custom_field_id}':
+    delete:
+      tags:
+        - Campaign
+      summary: Campaign custom field (Delete)
+      description: Deletes the custom field with the specified ID.
+      operationId: DeleteCampaignCustomField
+      parameters:
+        - name: custom_field_id
+          in: path
+          description: The immutable system record ID of the custom field to be deleted.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds and the custom field has been deleted.
+          content:
+            application/json: { }
+        '400':
+          description: Returned when the specified custom field ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to delete the custom field.
+          content:
+            application/json: { }
+    patch:
+      tags:
+        - Campaign
+      summary: Campaign custom field (Edit)
+      description: Edits an existing custom field.
+      operationId: EditCampaignCustomField
+      parameters:
+        - name: custom_field_id
+          in: path
+          description: The immutable system record ID of the custom field to be edited.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: An object representing updated properties of the custom field to add.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomFieldEdit'
+            example:
+              comment: a comment
+              date: '2016-01-22T00:00:00.0000000+00:00'
+              value: strategic planning
+      responses:
+        '200':
+          description: Returned when the operation succeeds and the custom field has been edited.
+          content:
+            application/json: { }
+        '400':
+          description: Returned when the request body is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to edit the custom field.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified custom field is not found.
+          content:
+            application/json: { }
+  /campaigns/customfields/categories:
+    get:
+      tags:
+        - Campaign
+      summary: Campaign custom field categories
+      description: Gets the list of custom field categories.
+      operationId: ListCampaignCustomFieldCategories
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/fundraising#Collection">collection</a> of <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/fundraising#CustomFieldCategory">custom field category</a> entities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_CustomFieldCategoryRead_'
+              example:
+                count: 3
+                value:
+                  - name: Campaign Manager
+                    type: ConstituentId
+                  - name: Major Donors Only?
+                    type: Boolean
+                  - name: Priority
+                    type: CodeTableEntry
+  /campaigns/customfields/categories/values:
+    get:
+      tags:
+        - Campaign
+      summary: Campaign custom field category values
+      description: Gets the list of custom field category values.
+      operationId: ListCampaignCustomFieldCategoryValues
+      parameters:
+        - name: category_name
+          in: query
+          description: The name of the category for which the values should be returned.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/constituent#Collection">collection</a> of string custom field category values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_String_'
+              example:
+                count: 5
+                value:
+                  - Very High
+                  - High
+                  - Medium
+                  - Low
+                  - Very Low
+  '/campaigns/{campaign_id}/attachments':
+    get:
+      tags:
+        - Campaign
+      summary: Campaign attachment list (Single campaign)
+      description: Returns a list of attachments for a campaign.
+      operationId: ListCampaignAttachmentsSingleCampaign
+      parameters:
+        - name: campaign_id
+          in: path
+          description: The immutable system record ID of the campaign to retrieve attachments for.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/fundraising#Collection">collection</a> of <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/fundraising#Attachment">attachment</a> entities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_AttachmentRead_'
+              example:
+                count: 4
+                value:
+                  - id: 53b9a13d-3e01-4d76-a6d4-ea99a7c4e0e0
+                    date: '2015-01-25T04:00:00.0000000+00:00'
+                    name: Pledge Thank You Letter
+                    parent_id: '2396'
+                    tags:
+                      - Letter
+                    type: Link
+                    url: http://file.com/
+                  - id: 3cd91f4b-9cf9-4c06-b7de-42dc41e6d82e
+                    date: '2014-03-21T04:00:00.0000000+00:00'
+                    name: Donation Notes
+                    parent_id: '2396'
+                    tags:
+                      - Notes
+                    type: Link
+                    url: http://file2.com/
+                  - id: fbdddc29-1737-48a2-93e7-cc86648f05b4
+                    date: '2011-11-08T04:00:00.0000000+00:00'
+                    name: Yearly Notes
+                    parent_id: '2396'
+                    tags: [ ]
+                    type: Link
+                    url: http://file3.com/
+                  - id: 65bcc390-ca33-4ad8-bb49-a02cee414e73
+                    content_type: image/jpeg
+                    date: '2015-01-22T04:00:00.0000000+00:00'
+                    file_id: 65bcc390-ca33-4ad8-bb49-a02cee414e73
+                    file_name: fundraisers_group_photo.jpg
+                    file_size: 705070
+                    name: fundraisers_group_photo
+                    parent_id: '2396'
+                    thumbnail_id: 04265191-08a0-4eef-9306-ebb29e9590af
+                    thumbnail_url: http://prodsarnxdocmn002blkbrdo.blob.core.windows.net/blackbauddocumentsvc/tenants/a486g1de-73f5-4a81-a4b1-ff353509fbde/documents/04265191-08a0-4eef-9306-ebb29e9590af/thumbnail_fundraisers_group_photo.jpg?sv=2015-05-17&sr=b&sig=HI0UTKNjiCVB6AtGHBVuCdhgnETbRPYegwb7%2FQyjI%2FU%3D&se=2015-10-15T18%3A25%3A30Z&sp=r
+                    type: Physical
+                    url: http://prodsarnxdocmn002blkbrdo.blob.core.windows.net/blackbauddocumentsvc/tenants/a486g1de-73f5-4a81-a4b1-ff353509fbde/documents/65bcc390-ca33-4ad8-bb49-a02cee414e73/fundraisers_group_photo.jpg?sv=2015-05-17&sr=b&sig=HI0UTKNjiCVB6AtGHBVuCdhgnETbRPYegwb7%2FQyjI%2FU%3D&se=2015-10-15T18%3A25%3A30Z&sp=r
+        '400':
+          description: Returned when the specified ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to view the attachments.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified campaign is not found.
+          content:
+            application/json: { }
+  /campaigns/attachments:
+    post:
+      tags:
+        - Campaign
+      summary: Campaign attachment (Create)
+      description: Creates a campaign attachment.
+      operationId: CreateCampaignAttachment
+      requestBody:
+        description: An object that represents the attachment to add.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttachmentAdd'
+            example:
+              date: '2015-01-25T04:00:00.0000000+00:00'
+              name: Pledge Thank You Letter
+              parent_id: '2396'
+              tags:
+                - Letter
+              type: Link
+              url: http://file.com/
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the ID of the new attachment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+              example:
+                id: '1281'
+        '400':
+          description: Returned when the request body is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to create the attachment.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified campaign is not found.
+          content:
+            application/json: { }
+  '/campaigns/attachments/{attachment_id}':
+    delete:
+      tags:
+        - Campaign
+      summary: Campaign attachment (Delete)
+      description: Deletes a campaign attachment.
+      operationId: DeleteCampaignAttachment
+      parameters:
+        - name: attachment_id
+          in: path
+          description: The immutable system record ID of the attachment to delete.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation successfully deletes the attachment.
+          content:
+            application/json: { }
+        '400':
+          description: Returned when the specified attachment ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to delete the attachment.
+          content:
+            application/json: { }
+    patch:
+      tags:
+        - Campaign
+      summary: Campaign attachment (Edit)
+      description: Edits a campaign attachment.
+      operationId: EditCampaignAttachment
+      parameters:
+        - name: attachment_id
+          in: path
+          description: The immutable system record ID of the attachment to edit.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: An object that represents the attachment to edit.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttachmentEdit'
+            example:
+              date: '2015-01-25T04:00:00.0000000+00:00'
+              name: Pledge Thank You Letter
+              tags:
+                - Letter
+              url: http://example.com/
+      responses:
+        '200':
+          description: Returned when the operation successfully edits the attachment.
+          content:
+            application/json: { }
+        '400':
+          description: Returned when the specified attachment ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to edit the attachment.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified attachment is not found.
+          content:
+            application/json: { }
+  /documents:
+    post:
+      tags:
+        - Document
+      summary: Document (Create)
+      description: Creates a document upload location and unique document identifier for physical attachments.
+      operationId: CreateDocument
+      requestBody:
+        description: An object that represents the document to upload.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewDocumentInfo'
+            example:
+              file_name: fundraisers_group_photo.jpg
+              upload_thumbnail: true
+      responses:
+        '200':
+          description: Returned when the operation successfully posts a document. The response body contains the <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/fundraising#FileDefinition">properties</a> of the posted document.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileDefinition'
+              example:
+                file_id: 65bcc390-ca33-4ad8-bb49-a02cee414e73
+                file_upload_request:
+                  headers:
+                    - name: x-ms-blob-type
+                      value: BlockBlob
+                    - name: x-ms-version
+                      value: '2015-12-11'
+                  method: PUT
+                  url: http://prodsarnxdocmn002blkbrdo.blob.core.windows.net/blackbauddocumentsvc/tenants/a486g1de-73f5-4a81-a4b1-ff353509fbde/documents/65bcc390-ca33-4ad8-bb49-a02cee414e73/fundraisers_group_photo.jpg?sv=2015-05-17&sr=b&sig=HI0UTKNjiCVB6AtGHBVuCdhgnETbRPYegwb7%2FQyjI%2FU%3D&se=2015-10-15T18%3A25%3A30Z&sp=rw
+                thumbnail_id: 04265191-08a0-4eef-9306-ebb29e9590af
+                thumbnail_upload_request:
+                  headers:
+                    - name: x-ms-blob-type
+                      value: BlockBlob
+                    - name: x-ms-version
+                      value: '2015-12-11'
+                  method: PUT
+                  url: http://prodsarnxdocmn002blkbrdo.blob.core.windows.net/blackbauddocumentsvc/tenants/a486g1de-73f5-4a81-a4b1-ff353509fbde/documents/04265191-08a0-4eef-9306-ebb29e9590af/thumbnail_fundraisers_group_photo.jpg?sv=2015-05-17&sr=b&sig=HI0UTKNjiCVB6AtGHBVuCdhgnETbRPYegwb7%2FQyjI%2FU%3D&se=2015-10-15T18%3A25%3A30Z&sp=rw
+        '400':
+          description: Returned when the request body is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to upload the document.
+          content:
+            application/json: { }
+  '/funds/{fund_id}':
+    get:
+      tags:
+        - Fund
+      summary: Fund (Get)
+      description: Returns information about the fund with the specified ID.
+      operationId: GetFund
+      parameters:
+        - name: fund_id
+          in: path
+          description: The immutable system record ID of the fund for which information is to be retrieved.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the specified <a href='https://developer.blackbaud.com/skyapi/api/entity-reference/fundraising#Fund'>fund</a> entity.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FundRead'
+              example:
+                id: '26'
+                category: Annual
+                date_added: '2001-11-16T11:26:53.5200000+00:00'
+                date_modified: '2017-03-23T13:10:46.6400000+00:00'
+                description: 2004 Annual Fund
+                end_date: '2004-12-31T00:00:00.0000000+00:00'
+                goal:
+                  value: 500000
+                inactive: false
+                lookup_id: 2004ANNUAL
+                start_date: '2004-01-01T00:00:00.0000000+00:00'
+                type: Donor Advised Fund
+        '400':
+          description: Returned when the specified fund ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to view the fund.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified fund is not found.
+          content:
+            application/json: { }
+  /funds:
+    get:
+      tags:
+        - Fund
+      summary: Fund list
+      description: "Returns a paginated list of funds.\r\n<p />\r\nThe default sorting behavior is to list funds in ascending order based on when they were created.\r\n<p />\r\nHowever, the <code>last_modified</code> parameter overrides the default sorting behavior to list funds in ascending order based on when they were last modified. The <code>last_modified</code> parameter also adds the <code>sort_token</code> parameter to the <code>next_link</code> URL to ensure that funds are stably sorted and that order persists when changes occur while working through a paginated list.\r\n<p />\r\nIf the <code>last_modified</code> and <code>date_added</code> parameters are both specified, the sorting behavior is to list funds based on when they were last modified.\r\n<p />"
+      operationId: ListFunds
+      parameters:
+        - name: date_added
+          in: query
+          description: 'Represents a filter for funds created on or after the specified date. The filter respects time offsets from UTC per the ISO-8601 format: 2016-05-05T17:59:31.1600745-04:00.'
+          schema:
+            type: string
+            format: date-time
+        - name: last_modified
+          in: query
+          description: 'Represents a filter for funds modified on or after the specified date. The filter respects time offsets from UTC per the ISO-8601 format: 2016-05-05T17:59:31.1600745-04:00.'
+          schema:
+            type: string
+            format: date-time
+        - name: sort_token
+          in: query
+          description: Represents a token filter to provide the next stable-sorted list of funds. This will be provided on the next_link collection response property when last_modified or sort_token filters are specified on the request.
+          schema:
+            type: string
+        - name: include_inactive
+          in: query
+          description: Set this parameter to "true" to include inactive funds in the response.
+          schema:
+            type: boolean
+        - name: fund_id
+          in: query
+          description: 'Represents a list of fund identifiers. Returns funds if any of the specified fund identifiers match any of their funds.  For example, "fund_id=280&amp;fund_id=1232" returns funds with either "280" or "1232" fund identifiers.'
+          schema:
+            type: array
+            items:
+              type: string
+        - name: limit
+          in: query
+          description: Represents the number of records to return. The default is 500. The maximum is 5000.
+          schema:
+            maximum: 5000
+            minimum: 0
+            type: integer
+            format: int32
+        - name: offset
+          in: query
+          description: Represents the number of records to skip. For use with pagination.
+          schema:
+            maximum: 2147483647
+            minimum: 0
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/constituent#Collection">collection</a> of <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/fundraising#Fund">fund</a> entities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_FundRead_'
+              example:
+                count: 52
+                next_link: https://api.sky.blackbaud.com/fundraising/v1/funds?offset=3&limit=3
+                value:
+                  - id: '2'
+                    category: Annual
+                    date_added: '1999-06-25T10:30:09.0000000+00:00'
+                    date_modified: '2000-08-30T16:05:17.9700000+00:00'
+                    description: 1999 Annual Fund
+                    end_date: '1999-12-31T00:00:00.0000000+00:00'
+                    goal:
+                      value: 100000
+                    inactive: false
+                    lookup_id: 99ANNUAL
+                    start_date: '1999-01-01T00:00:00.0000000+00:00'
+                    type: Donor Advised Fund
+                  - id: '3'
+                    category: Capital
+                    date_added: '1999-06-25T10:30:54.0000000+00:00'
+                    date_modified: '2004-01-30T10:05:10.2330000+00:00'
+                    description: 2000 Annual Fund
+                    end_date: '2000-12-31T00:00:00.0000000+00:00'
+                    goal:
+                      value: 100000
+                    inactive: false
+                    lookup_id: 2000ANNUAL
+                    start_date: '2000-01-01T00:00:00.0000000+00:00'
+                  - id: '4'
+                    date_added: '1999-06-25T10:31:28.0000000+00:00'
+                    date_modified: '2002-07-30T14:33:30.4630000+00:00'
+                    description: Acquisition Fund
+                    goal:
+                      value: 500000
+                    inactive: false
+                    lookup_id: ACQUISITION
+                    start_date: '2000-01-01T00:00:00.0000000+00:00'
+        '400':
+          description: Returned when the specified request parameters are not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to view the funds.
+          content:
+            application/json: { }
+  /funds/categories:
+    get:
+      tags:
+        - Fund
+      summary: Fund categories
+      description: Returns a list of fund categories.
+      operationId: ListFundCategories
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/fundraising/#Collection">collection</a> of string.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_String_'
+              example:
+                count: 9
+                value:
+                  - Annual
+                  - Capital
+                  - Endowment
+                  - Event
+                  - Membership
+                  - Operating
+                  - Restricted
+                  - Scholarship
+                  - Unrestricted
+        '403':
+          description: Returned when the user does not have permission to view the fund categories.
+          content:
+            application/json: { }
+  '/funds/{fund_id}/customfields':
+    get:
+      tags:
+        - Fund
+      summary: Fund custom field list (Single fund)
+      description: Returns a list of custom fields for the fund with the specified ID.
+      operationId: ListFundCustomFieldsSingleFund
+      parameters:
+        - name: fund_id
+          in: path
+          description: The immutable system record ID of the fund for which the custom fields are to be retrieved.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/constituent#Collection">collection</a> of <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/constituent#CustomField">custom field</a> entities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_CustomFieldRead_'
+              example:
+                count: 6
+                value:
+                  - id: '72'
+                    category: Anniversary
+                    parent_id: '123'
+                    type: Date
+                    value: '1986-11-21T10:29:43.0000000+00:00'
+                  - id: '73'
+                    category: Committees
+                    comment: A comment
+                    parent_id: '129'
+                    date: '2016-11-21T10:29:43.0000000+00:00'
+                    type: CodeTableEntry
+                    value: Strategic Planning
+                  - id: '74'
+                    category: Interests
+                    parent_id: '150'
+                    type: CodeTableEntry
+                    value: Golf
+                  - id: '75'
+                    category: Interests
+                    parent_id: '993'
+                    type: CodeTableEntry
+                    value: Photography
+                  - id: '76'
+                    category: Committees
+                    comment: Another comment
+                    parent_id: '1058'
+                    date: '2005-11-21T10:29:43.0000000+00:00'
+                    type: CodeTableEntry
+                    value: Future Visioning
+                  - id: '77'
+                    category: Origin
+                    parent_id: '1499'
+                    type: CodeTableEntry
+                    value: Personal reference
+        '400':
+          description: Returned when the specified fund ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to view the custom fields.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified fund is not found.
+          content:
+            application/json: { }
+  /funds/customfields:
+    post:
+      tags:
+        - Fund
+      summary: Fund custom field (Create)
+      description: Adds a new custom field.
+      operationId: CreateFundCustomField
+      requestBody:
+        description: An object representing the custom field to add.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomFieldAdd'
+            example:
+              category: Major Donors Only?
+              comment: a comment
+              date: '2016-01-22T00:00:00.0000000+00:00'
+              parent_id: '2'
+              value: 'true'
+      responses:
+        '200':
+          description: Returned when the operation succeeds and a new custom field has been created. The response body contains the ID of the newly added custom field.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+              example:
+                id: '1281'
+        '400':
+          description: Returned when the request body is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to create the custom field.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified fund is not found.
+          content:
+            application/json: { }
+  '/funds/customfields/{custom_field_id}':
+    delete:
+      tags:
+        - Fund
+      summary: Fund custom field (Delete)
+      description: Deletes the custom field with the specified ID.
+      operationId: DeleteFundCustomField
+      parameters:
+        - name: custom_field_id
+          in: path
+          description: The immutable system record ID of the custom field to be deleted.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds and the custom field has been deleted.
+          content:
+            application/json: { }
+        '400':
+          description: Returned when the specified custom field ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to delete the custom field.
+          content:
+            application/json: { }
+    patch:
+      tags:
+        - Fund
+      summary: Fund custom field (Edit)
+      description: Edits an existing custom field.
+      operationId: EditFundCustomField
+      parameters:
+        - name: custom_field_id
+          in: path
+          description: The immutable system record ID of the custom field to be edited.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: An object representing updated properties of the custom field to add.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomFieldEdit'
+            example:
+              comment: a comment
+              date: '2016-01-22T00:00:00.0000000+00:00'
+              value: strategic planning
+      responses:
+        '200':
+          description: Returned when the operation succeeds and the custom field has been edited.
+          content:
+            application/json: { }
+        '400':
+          description: Returned when the request body is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to edit the custom field.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified custom field is not found.
+          content:
+            application/json: { }
+  /funds/customfields/categories:
+    get:
+      tags:
+        - Fund
+      summary: Fund custom field categories
+      description: Gets the list of custom field categories.
+      operationId: ListFundCustomFieldCategories
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/fundraising#Collection">collection</a> of <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/fundraising#CustomFieldCategory">custom field category</a> entities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_CustomFieldCategoryRead_'
+              example:
+                count: 2
+                value:
+                  - name: Restrictions
+                    type: Text
+                  - name: Priority
+                    type: CodeTableEntry
+  /funds/customfields/categories/values:
+    get:
+      tags:
+        - Fund
+      summary: Fund custom field category values
+      description: Gets the list of custom field category values.
+      operationId: ListFundCustomFieldCategoryValues
+      parameters:
+        - name: category_name
+          in: query
+          description: The name of the category for which the values should be returned.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/constituent#Collection">collection</a> of string custom field category values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_String_'
+              example:
+                count: 5
+                value:
+                  - Very High
+                  - High
+                  - Medium
+                  - Low
+                  - Very Low
+  '/funds/{fund_id}/attachments':
+    get:
+      tags:
+        - Fund
+      summary: Fund attachment list (Single fund)
+      description: Returns a list of attachments for a fund.
+      operationId: ListFundAttachmentsSingleFund
+      parameters:
+        - name: fund_id
+          in: path
+          description: The immutable system record ID of the fund to retrieve attachments for.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/fundraising#Collection">collection</a> of <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/fundraising#Attachment">attachment</a> entities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_AttachmentRead_'
+              example:
+                count: 4
+                value:
+                  - id: 53b9a13d-3e01-4d76-a6d4-ea99a7c4e0e0
+                    date: '2015-01-25T04:00:00.0000000+00:00'
+                    name: Pledge Thank You Letter
+                    parent_id: '2396'
+                    tags:
+                      - Letter
+                    type: Link
+                    url: http://file.com/
+                  - id: 3cd91f4b-9cf9-4c06-b7de-42dc41e6d82e
+                    date: '2014-03-21T04:00:00.0000000+00:00'
+                    name: Donation Notes
+                    parent_id: '2396'
+                    tags:
+                      - Notes
+                    type: Link
+                    url: http://file2.com/
+                  - id: fbdddc29-1737-48a2-93e7-cc86648f05b4
+                    date: '2011-11-08T04:00:00.0000000+00:00'
+                    name: Yearly Notes
+                    parent_id: '2396'
+                    tags: [ ]
+                    type: Link
+                    url: http://file3.com/
+                  - id: 65bcc390-ca33-4ad8-bb49-a02cee414e73
+                    content_type: image/jpeg
+                    date: '2015-01-22T04:00:00.0000000+00:00'
+                    file_id: 65bcc390-ca33-4ad8-bb49-a02cee414e73
+                    file_name: fundraisers_group_photo.jpg
+                    file_size: 705071
+                    name: fundraisers_group_photo
+                    parent_id: '2396'
+                    thumbnail_id: 04265191-08a0-4eef-9306-ebb29e9590af
+                    thumbnail_url: http://prodsarnxdocmn002blkbrdo.blob.core.windows.net/blackbauddocumentsvc/tenants/a486g1de-73f5-4a81-a4b1-ff353509fbde/documents/04265191-08a0-4eef-9306-ebb29e9590af/thumbnail_fundraisers_group_photo.jpg?sv=2015-05-17&sr=b&sig=HI0UTKNjiCVB6AtGHBVuCdhgnETbRPYegwb7%2FQyjI%2FU%3D&se=2015-10-15T18%3A25%3A30Z&sp=r
+                    type: Physical
+                    url: http://prodsarnxdocmn002blkbrdo.blob.core.windows.net/blackbauddocumentsvc/tenants/a486g1de-73f5-4a81-a4b1-ff353509fbde/documents/65bcc390-ca33-4ad8-bb49-a02cee414e73/fundraisers_group_photo.jpg?sv=2015-05-17&sr=b&sig=HI0UTKNjiCVB6AtGHBVuCdhgnETbRPYegwb7%2FQyjI%2FU%3D&se=2015-10-15T18%3A25%3A30Z&sp=r
+        '400':
+          description: Returned when the specified ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to view the attachments.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified fund is not found.
+          content:
+            application/json: { }
+  /funds/attachments:
+    post:
+      tags:
+        - Fund
+      summary: Fund attachment (Create)
+      description: Creates a fund attachment.
+      operationId: CreateFundAttachment
+      requestBody:
+        description: An object that represents the attachment to add.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttachmentAdd'
+            example:
+              date: '2015-01-25T04:00:00.0000000+00:00'
+              name: Pledge Thank You Letter
+              parent_id: '2396'
+              tags:
+                - Letter
+              type: Link
+              url: http://file.com/
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the ID of the new attachment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+              example:
+                id: '1281'
+        '400':
+          description: Returned when the request body is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to create the attachment.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified fund is not found.
+          content:
+            application/json: { }
+  '/funds/attachments/{attachment_id}':
+    delete:
+      tags:
+        - Fund
+      summary: Fund attachment (Delete)
+      description: Deletes a fund attachment.
+      operationId: DeleteFundAttachment
+      parameters:
+        - name: attachment_id
+          in: path
+          description: The immutable system record ID of the attachment to delete.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation successfully deletes the attachment.
+          content:
+            application/json: { }
+        '400':
+          description: Returned when the specified attachment ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to delete the attachment.
+          content:
+            application/json: { }
+    patch:
+      tags:
+        - Fund
+      summary: Fund attachment (Edit)
+      description: Edits a fund attachment.
+      operationId: EditFundAttachment
+      parameters:
+        - name: attachment_id
+          in: path
+          description: The immutable system record ID of the attachment to edit.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: An object that represents the attachment to edit.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttachmentEdit'
+            example:
+              date: '2015-01-25T04:00:00.0000000+00:00'
+              name: Pledge Thank You Letter
+              tags:
+                - Letter
+              url: http://example.com/
+      responses:
+        '200':
+          description: Returned when the operation successfully edits the attachment.
+          content:
+            application/json: { }
+        '400':
+          description: Returned when the specified attachment ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to edit the attachment.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified attachment is not found.
+          content:
+            application/json: { }
+  /fundraisers/goals:
+    post:
+      tags:
+        - Goal
+      summary: Fundraiser goal (Create)
+      description: Creates a fundraiser goal.
+      operationId: CreateFundraiserGoal
+      requestBody:
+        description: An object that represents the fundraiser goal to create.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoalAdd'
+            example:
+              amount:
+                value: 10000
+              campaign_id: '44'
+              fundraiser_id: '280'
+              type: Campaign
+      responses:
+        '200':
+          description: Returned when the operation successfully creates a fundraiser goal. The response body contains the ID of the new fundraiser goal.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+              example:
+                id: '1281'
+        '400':
+          description: Returned when the request body is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to create the fundraiser goal.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified constituent is not found.
+          content:
+            application/json: { }
+  /fundraisers/goals/categories:
+    get:
+      tags:
+        - Goal
+      summary: Fundraiser goal categories
+      description: Returns a list of active fundraiser goal categories.
+      operationId: ListFundraiserGoalCategories
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/constituent#Collection">collection</a> of string fundraiser goal categories.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_String_'
+              example:
+                count: 10
+                value:
+                  - On-boarding
+                  - Stretch
+                  - Miscellaneous
+        '403':
+          description: Returned when the user does not have permission to view fundraiser goal categories.
+          content:
+            application/json: { }
+  '/fundraisers/{fundraiser_id}/goals':
+    get:
+      tags:
+        - Goal
+      summary: Fundraiser goal list (Single fundraiser)
+      description: Returns a list of fundraiser goals for a fundraiser.
+      operationId: ListFundraiserGoalsSingleFundraiser
+      parameters:
+        - name: fundraiser_id
+          in: path
+          description: The immutable system record ID of the fundraiser to retrieve the goals for.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/fundraising#Collection">collection</a> of <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/fundraising#FundraiserGoal">fundraiser goal</a> entities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_GoalRead_'
+              example:
+                count: 4
+                value:
+                  - id: '8'
+                    amount: 10000
+                    campaign_id: '5'
+                    fundraiser_id: '280'
+                    type: Campaign
+                  - id: '131'
+                    amount: 1000
+                    fund_id: '24'
+                    fundraiser_id: '280'
+                    type: Fund
+                  - id: '132'
+                    amount: 2000
+                    appeal_id: '15'
+                    fundraiser_id: '280'
+                    type: Appeal
+                  - id: '133'
+                    amount: 500
+                    fundraiser_id: '280'
+                    type: UnspecifiedCategory
+                    unspecified_category_name: Short term
+        '400':
+          description: Returned when the specified ID is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to view the fundraiser goals.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified fundraiser is not found.
+          content:
+            application/json: { }
+  '/fundraisers/goals/{goal_id}':
+    delete:
+      tags:
+        - Goal
+      summary: Fundraiser goal (Delete)
+      description: Deletes a fundraiser goal.
+      operationId: DeleteFundraiserGoal
+      parameters:
+        - name: goal_id
+          in: path
+          description: The immutable system record ID of the fundraiser goal to delete.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation successfully deletes the fundraiser goal.
+          content:
+            application/json: { }
+        '400':
+          description: Returned when the specified goal ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to delete the fundraiser goal.
+          content:
+            application/json: { }
+    patch:
+      tags:
+        - Goal
+      summary: Fundraiser goal (Edit)
+      description: Edits a fundraiser goal.
+      operationId: EditFundraiserGoal
+      parameters:
+        - name: goal_id
+          in: path
+          description: The immutable system record ID of the fundraiser goal to edit.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: An object that represents the properties of the fundraiser goal to edit.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoalEdit'
+            example:
+              amount:
+                value: 10000
+              campaign_id: '45'
+              type: Campaign
+      responses:
+        '200':
+          description: Returned when the operation successfully edits the fundraiser goal.
+          content:
+            application/json: { }
+        '400':
+          description: Returned when the specified fundraiser goal ID in the request URL or the specified request parameters are not in the appropriate format.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified fundraiser goal is not found.
+          content:
+            application/json: { }
+  '/packages/{package_id}':
+    get:
+      tags:
+        - Package
+      summary: Package (Get)
+      description: Returns information about the package with the specified ID.
+      operationId: GetPackage
+      parameters:
+        - name: package_id
+          in: path
+          description: The immutable system record ID of the package for which information is to be retrieved.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains the specified <a href='https://developer.blackbaud.com/skyapi/api/entity-reference/fundraising#Package'>package</a> entity.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageRead'
+              example:
+                id: '2'
+                appeal_id: '8'
+                default_gift_amount:
+                  value: 0
+                description: Millennium Letter
+                end: '2000-12-31T00:00:00.0000000+00:00'
+                goal:
+                  value: 0
+                inactive: false
+                lookup_id: 2000 Letter
+                notes: Millennium Letter from the Director of Development.
+                recipient_count: 0
+                start: '2000-01-01T00:00:00.0000000+00:00'
+        '400':
+          description: Returned when the specified package ID in the request URL is not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to view the package.
+          content:
+            application/json: { }
+        '404':
+          description: Returned when the specified package is not found.
+          content:
+            application/json: { }
+  /packages:
+    get:
+      tags:
+        - Package
+      summary: Package list
+      description: "Returns a paginated list of packages.\r\n<p />\r\nThe default sorting behavior is to list packages in ascending order based on when they were created.\r\n<p />\r\nHowever, the <code>last_modified</code> parameter overrides the default sorting behavior to list packages in ascending order based on when they were last modified. The <code>last_modified</code> parameter also adds the <code>sort_token</code> parameter to the <code>next_link</code> URL to ensure that packages are stably sorted and that order persists when changes occur while working through a paginated list.\r\n<p />\r\nIf the <code>last_modified</code> and <code>date_added</code> parameters are both specified, the sorting behavior is to list packages based on when they were last modified.\r\n<p />"
+      operationId: ListPackages
+      parameters:
+        - name: appeal_id
+          in: query
+          description: 'Represents a list of appeal identifiers. Returns packages if any of the specified appeal identifiers match any of the package''s associated constituents. For example, "appeal_id=280&amp;appeal_id=1232" returns packages with either "280" or "1232" appeal identifiers.'
+          schema:
+            type: array
+            items:
+              type: string
+        - name: date_added
+          in: query
+          description: 'Represents a filter for packages created on or after the specified date. The filter respects time offsets from UTC per the ISO-8601 format: 2016-05-05T17:59:31.1600745-04:00.'
+          schema:
+            type: string
+            format: date-time
+        - name: include_inactive
+          in: query
+          description: Set this parameter to "true" to include inactive appeals in the response.
+          schema:
+            type: boolean
+        - name: last_modified
+          in: query
+          description: 'Represents a filter for packages modified on or after the specified date. The filter respects time offsets from UTC per the ISO-8601 format: 2016-05-05T17:59:31.1600745-04:00.'
+          schema:
+            type: string
+            format: date-time
+        - name: sort_token
+          in: query
+          description: Represents a token filter to provide the next stable-sorted list of packages. This will be provided on the next_link collection response property when last_modified or sort_token filters are specified on the request.
+          schema:
+            type: string
+        - name: package_id
+          in: query
+          description: 'Represents a list of package identifiers. Returns packages if any of the specified package identifiers match any of their packages.  For example, "package_id=280&amp;package_id=1232" returns packages with either "280" or "1232" package identifiers.'
+          schema:
+            type: array
+            items:
+              type: string
+        - name: limit
+          in: query
+          description: Represents the number of records to return. The default is 500. The maximum is 5000.
+          schema:
+            maximum: 5000
+            minimum: 0
+            type: integer
+            format: int32
+        - name: offset
+          in: query
+          description: Represents the number of records to skip. For use with pagination.
+          schema:
+            maximum: 2147483647
+            minimum: 0
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Returned when the operation succeeds. The response body contains a <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/constituent#Collection">collection</a> of <a href="https://developer.blackbaud.com/skyapi/api/entity-reference/fundraising#Package">package</a> entities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCollection_PackageRead_'
+              example:
+                count: 17
+                next_link: https://api.sky.blackbaud.com/fundraising/v1/packages?offset=3&limit=3
+                value:
+                  - id: '1'
+                    appeal_id: '17'
+                    date_added: '2000-02-22T13:23:08.4130000+00:00'
+                    date_modified: '2003-01-15T20:12:12.7330000+00:00'
+                    default_gift_amount:
+                      value: 0
+                    description: Newsletter Envelope
+                    goal:
+                      value: 0
+                    inactive: false
+                    lookup_id: Newsletter
+                    notes: Include special membership forms in the newsletter mailing.  Responses will be marked with NWSLT.
+                    recipient_count: 3
+                  - id: '2'
+                    appeal_id: '8'
+                    date_added: '2001-12-22T06:21:18.4220000+00:00'
+                    date_modified: '2004-01-15T20:12:11.1330000+00:00'
+                    default_gift_amount:
+                      value: 0
+                    description: Millennium Letter
+                    end: '2000-12-31T00:00:00.0000000+00:00'
+                    goal:
+                      value: 0
+                    inactive: false
+                    lookup_id: 2000 Letter
+                    notes: Millennium Letter from the Director of Development.
+                    recipient_count: 0
+                    start: '2000-01-01T00:00:00.0000000+00:00'
+                  - id: '4'
+                    appeal_id: '7'
+                    date_added: '2004-02-22T13:23:08.4130000+00:00'
+                    date_modified: '2009-01-15T20:12:12.7330000+00:00'
+                    default_gift_amount:
+                      value: 0
+                    description: Electronic Invitation to the Open House
+                    goal:
+                      value: 0
+                    inactive: false
+                    lookup_id: eInvite Open House
+                    recipient_count: 1
+        '400':
+          description: Returned when the specified request parameters are not in the appropriate format.
+          content:
+            application/json: { }
+        '403':
+          description: Returned when the user does not have permission to view the packages.
+          content:
+            application/json: { }
+components:
+  schemas:
+    AppealRead:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The immutable system record ID of the appeal.
+        category:
+          type: string
+          description: The category of the appeal. Available values are the entries in the <b>Appeal Category</b> table.
+        date_added:
+          type: string
+          description: 'The date when the appeal was created. Includes an offset from UTC in <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>1969-11-21T10:29:43-04:00</i>.'
+          format: date-time
+          x-supports-datetime-offset: true
+        date_modified:
+          type: string
+          description: 'The date when the appeal was last modified. Includes an offset from UTC in <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>1969-11-21T10:29:43-04:00</i>.'
+          format: date-time
+          x-supports-datetime-offset: true
+        description:
+          type: string
+          description: The display name of the appeal.
+        end_date:
+          type: string
+          description: 'The end date of the appeal. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>1969-12-25T10:29:43</i>.'
+          format: date-time
+          x-supports-datetime-offset: false
+        goal:
+          $ref: '#/components/schemas/Currency'
+        inactive:
+          type: boolean
+          description: This computed field indicates that the appeal is active if the current date is after any <code>start_date</code> and before any <code>end_date</code>.
+        lookup_id:
+          type: string
+          description: The user-defined identifier for the appeal.
+        start_date:
+          type: string
+          description: 'The start date of the appeal. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>1969-11-21T10:29:43</i>.'
+          format: date-time
+          x-supports-datetime-offset: false
+      description: 'Appeals are solicitations to generate gifts, such as direct mailings, online donation pages, phonathons, auctions, and events.'
+      x-display-name: Appeal
+      x-display-id: Appeal
+    Currency:
+      type: object
+      properties:
+        value:
+          type: number
+          description: The monetary value.
+          format: double
+      description: 'For consistency, currency is configured at the organization level. This ensures that all monetary amounts are consistent, regardless of where they are entered or viewed.'
+    ApiCollection_AppealRead_:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: 'The number of items available for retrieval into the collection after applying any request parameters. The <b>limit</b> and <b>offset</b> parameters do not affect the <b>count</b>, but to facilitate paging, they may affect the number of items in the <b>value</b> result set.'
+          format: int32
+        next_link:
+          type: string
+          description: 'For paginated responses, the URI for the next page of results.'
+        value:
+          type: array
+          items:
+            $ref: '#/components/schemas/AppealRead'
+          description: The set of items included in the response. This may be a subset of the items in the collection.
+      description: Fetching data all at once quickly becomes unmanageable. The collection entity helps by returning paginated chunks of large data sets. This entity includes helpful metadata and properties to paginate and iterate through the data.
+      x-hidden: true
+      x-base-type: '#/definitions/ApiCollection'
+      x-apim-schema-name: 'ApiCollection[AppealRead]'
+    ApiCollection_String_:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: 'The number of items available for retrieval into the collection after applying any request parameters. The <b>limit</b> and <b>offset</b> parameters do not affect the <b>count</b>, but to facilitate paging, they may affect the number of items in the <b>value</b> result set.'
+          format: int32
+        next_link:
+          type: string
+          description: 'For paginated responses, the URI for the next page of results.'
+        value:
+          type: array
+          items:
+            type: string
+          description: The set of items included in the response. This may be a subset of the items in the collection.
+      description: Fetching data all at once quickly becomes unmanageable. The collection entity helps by returning paginated chunks of large data sets. This entity includes helpful metadata and properties to paginate and iterate through the data.
+      x-hidden: true
+      x-base-type: '#/definitions/ApiCollection'
+      x-apim-schema-name: 'ApiCollection[String]'
+    ApiCollection_CustomFieldRead_:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: 'The number of items available for retrieval into the collection after applying any request parameters. The <b>limit</b> and <b>offset</b> parameters do not affect the <b>count</b>, but to facilitate paging, they may affect the number of items in the <b>value</b> result set.'
+          format: int32
+        next_link:
+          type: string
+          description: 'For paginated responses, the URI for the next page of results.'
+        value:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomFieldRead'
+          description: The set of items included in the response. This may be a subset of the items in the collection.
+      description: Fetching data all at once quickly becomes unmanageable. The collection entity helps by returning paginated chunks of large data sets. This entity includes helpful metadata and properties to paginate and iterate through the data.
+      x-hidden: true
+      x-base-type: '#/definitions/ApiCollection'
+      x-apim-schema-name: 'ApiCollection[CustomFieldRead]'
+    CustomFieldRead:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The immutable system record ID of the custom field.
+        category:
+          type: string
+          description: The custom field category. Available values are the entries in the <b>Custom Field Categories</b> table of the parent object.
+        comment:
+          type: string
+          description: The comment on the custom field.
+        date:
+          type: string
+          description: The date on the custom field. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format:</a><i>1969-11-21T10:29:43</i>.
+          format: date-time
+          x-supports-datetime-offset: false
+        date_added:
+          type: string
+          description: The date when the custom field was created. The date includes an offset from UTC in <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format:</a><i>1969-11-21T10:29:43-04:00</i>.
+          format: date-time
+          x-supports-datetime-offset: true
+        date_modified:
+          type: string
+          description: The date when the custom field was last modified. The date includes an offset from UTC in <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format:</a><i>1969-11-21T10:29:43-04:00</i>.
+          format: date-time
+          x-supports-datetime-offset: true
+        parent_id:
+          type: string
+          description: The parent object's immutable system record ID.
+        type:
+          enum:
+            - Text
+            - Number
+            - Date
+            - Currency
+            - Boolean
+            - CodeTableEntry
+            - ConstituentId
+            - FuzzyDate
+          type: string
+          description: The type of data that the custom field represents. Available values are listed below.
+        value:
+          type: object
+          description: The value of the custom field. The <code>type</code> property determines the format.
+      description: 'While records provide many fields to track information, organizations often require additional details. To track this specialized information, use custom fields.'
+      x-display-name: Custom field
+      x-display-id: CustomField
+      x-additional-info: "<a name=\"CustomFieldTypes\"></a>\r\n<p>&nbsp;</p>\r\n<p>\r\n    Available values for the <b>type</b> of a <b>custom field</b>:\r\n</p>\r\n\r\n<div class=\"table-responsive\">\r\n    <table class=\"table table-striped table-hover\">\r\n        <thead>\r\n            <tr>\r\n                <th class=\"col-xs-3\"><strong>Type</strong></th>\r\n                <th class=\"col-xs-9\"><strong>Description</strong></th>\r\n            </tr>\r\n        </thead>\r\n        <tbody>\r\n            <tr>\r\n                <td>Boolean</td>\r\n                <td>Defines the custom field as a boolean value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>CodeTableEntry</td>\r\n                <td>Defines the custom field as a string value that represents a code table entry description.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>ConstituentId</td>\r\n                <td>Defines the custom field as a constituent identifier value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>Currency</td>\r\n                <td>Defines the custom field as a decimal value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>Date</td>\r\n                <td>\r\n                    Defines the custom field as a date value in <a href=\"https://tools.ietf.org/html/rfc3339\">ISO-8601 format:</a> <i>1969-11-21T10:29:43</i>.\r\n                </td>\r\n            </tr>\r\n            <tr>\r\n                <td>FuzzyDate</td>\r\n                <td>\r\n                    Defines the custom field as a fuzzy date value.\r\n                </td>\r\n            </tr>\r\n            <tr>\r\n                <td>Number</td>\r\n                <td>Defines the custom field as an integer value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>Text</td>\r\n                <td>Defines the custom field as a string value. Character limit: 255.</td>\r\n            </tr>\r\n        </tbody>\r\n    </table>\r\n</div>"
+    CustomFieldAdd:
+      required:
+        - category
+      type: object
+      properties:
+        category:
+          type: string
+          description: The custom field category. Available values are the entries in the <b>Custom Field Categories</b> table of the parent object.
+        comment:
+          maxLength: 50
+          minLength: 0
+          type: string
+          description: 'The comment on the custom field. Character limit: 50.'
+        date:
+          type: string
+          description: The date on the custom field. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format:</a><i>1969-11-21T10:29:43</i>.
+          format: date-time
+          x-supports-datetime-offset: false
+        parent_id:
+          type: string
+          description: The parent object's immutable system record ID.
+        value:
+          type: object
+          description: The value of the custom field. The <code>type</code> property determines the format. Character limit depends on data type. Number types only support values greater than 0.
+      description: 'While records provide many fields to track information, organizations often require additional details. To track this specialized information, use custom fields.'
+      x-hidden: true
+      x-display-name: Create custom field
+      x-display-id: CreateCustomField
+      x-additional-info: "<a name=\"CustomFieldTypes\"></a>\r\n<p>&nbsp;</p>\r\n<p>\r\n    Available values for the <b>type</b> of a <b>custom field</b>:\r\n</p>\r\n\r\n<div class=\"table-responsive\">\r\n    <table class=\"table table-striped table-hover\">\r\n        <thead>\r\n            <tr>\r\n                <th class=\"col-xs-3\"><strong>Type</strong></th>\r\n                <th class=\"col-xs-9\"><strong>Description</strong></th>\r\n            </tr>\r\n        </thead>\r\n        <tbody>\r\n            <tr>\r\n                <td>Boolean</td>\r\n                <td>Defines the custom field as a boolean value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>CodeTableEntry</td>\r\n                <td>Defines the custom field as a string value that represents a code table entry description.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>ConstituentId</td>\r\n                <td>Defines the custom field as a constituent identifier value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>Currency</td>\r\n                <td>Defines the custom field as a decimal value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>Date</td>\r\n                <td>\r\n                    Defines the custom field as a date value in <a href=\"https://tools.ietf.org/html/rfc3339\">ISO-8601 format:</a> <i>1969-11-21T10:29:43</i>.\r\n                </td>\r\n            </tr>\r\n            <tr>\r\n                <td>FuzzyDate</td>\r\n                <td>\r\n                    Defines the custom field as a fuzzy date value.\r\n                </td>\r\n            </tr>\r\n            <tr>\r\n                <td>Number</td>\r\n                <td>Defines the custom field as an integer value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>Text</td>\r\n                <td>Defines the custom field as a string value. Character limit: 255.</td>\r\n            </tr>\r\n        </tbody>\r\n    </table>\r\n</div>"
+    PostResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The newly created ID
+      description: Defines the shape of a post response object.
+      x-hidden: true
+    CustomFieldEdit:
+      type: object
+      properties:
+        comment:
+          maxLength: 50
+          minLength: 0
+          type: string
+          description: 'The comment on the custom field. Character limit: 50.'
+        date:
+          type: string
+          description: The date on the custom field. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format:</a><i>1969-11-21T10:29:43</i>.
+          format: date-time
+          x-supports-datetime-offset: false
+        value:
+          type: object
+          description: The value of the custom field. The <code>type</code> property determines the format. Character limit depends on data type.
+      description: 'While records provide many fields to track information, organizations often require additional details. To track this specialized information, use custom fields.'
+      x-hidden: true
+      x-display-name: Edit custom field
+      x-display-id: EditCustomField
+      x-additional-info: "<a name=\"CustomFieldTypes\"></a>\r\n<p>&nbsp;</p>\r\n<p>\r\n    Available values for the <b>type</b> of a <b>custom field</b>:\r\n</p>\r\n\r\n<div class=\"table-responsive\">\r\n    <table class=\"table table-striped table-hover\">\r\n        <thead>\r\n            <tr>\r\n                <th class=\"col-xs-3\"><strong>Type</strong></th>\r\n                <th class=\"col-xs-9\"><strong>Description</strong></th>\r\n            </tr>\r\n        </thead>\r\n        <tbody>\r\n            <tr>\r\n                <td>Boolean</td>\r\n                <td>Defines the custom field as a boolean value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>CodeTableEntry</td>\r\n                <td>Defines the custom field as a string value that represents a code table entry description.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>ConstituentId</td>\r\n                <td>Defines the custom field as a constituent identifier value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>Currency</td>\r\n                <td>Defines the custom field as a decimal value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>Date</td>\r\n                <td>\r\n                    Defines the custom field as a date value in <a href=\"https://tools.ietf.org/html/rfc3339\">ISO-8601 format:</a> <i>1969-11-21T10:29:43</i>.\r\n                </td>\r\n            </tr>\r\n            <tr>\r\n                <td>FuzzyDate</td>\r\n                <td>\r\n                    Defines the custom field as a fuzzy date value.\r\n                </td>\r\n            </tr>\r\n            <tr>\r\n                <td>Number</td>\r\n                <td>Defines the custom field as an integer value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>Text</td>\r\n                <td>Defines the custom field as a string value. Character limit: 255.</td>\r\n            </tr>\r\n        </tbody>\r\n    </table>\r\n</div>"
+    ApiCollection_CustomFieldCategoryRead_:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: 'The number of items available for retrieval into the collection after applying any request parameters. The <b>limit</b> and <b>offset</b> parameters do not affect the <b>count</b>, but to facilitate paging, they may affect the number of items in the <b>value</b> result set.'
+          format: int32
+        next_link:
+          type: string
+          description: 'For paginated responses, the URI for the next page of results.'
+        value:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomFieldCategoryRead'
+          description: The set of items included in the response. This may be a subset of the items in the collection.
+      description: Fetching data all at once quickly becomes unmanageable. The collection entity helps by returning paginated chunks of large data sets. This entity includes helpful metadata and properties to paginate and iterate through the data.
+      x-hidden: true
+      x-base-type: '#/definitions/ApiCollection'
+      x-apim-schema-name: 'ApiCollection[CustomFieldCategoryRead]'
+    CustomFieldCategoryRead:
+      type: object
+      properties:
+        name:
+          type: string
+          description: The name of the custom field category.
+        type:
+          enum:
+            - Text
+            - Number
+            - Date
+            - Currency
+            - Boolean
+            - CodeTableEntry
+            - ConstituentId
+            - FuzzyDate
+          type: string
+          description: The type of data that custom fields with this category represent. Available values are listed below.
+        code_table_id:
+          type: string
+          description: The code table identifier when the custom field category DataType is CodeTableEntry.
+        one_per_record:
+          type: boolean
+          description: Flag indicating that only one value for the custom field category is allowed per record.
+      description: The system includes many different types of custom fields. Custom field categories store the metadata to appropriately match how you use a given custom field with an available type.
+      x-display-name: Custom field category
+      x-display-id: CustomFieldCategory
+      x-additional-info: "<a name=\"CustomFieldTypes\"></a>\r\n<p>&nbsp;</p>\r\n<p>\r\n    Available values for the <b>type</b> of a <b>custom field</b>:\r\n</p>\r\n\r\n<div class=\"table-responsive\">\r\n    <table class=\"table table-striped table-hover\">\r\n        <thead>\r\n            <tr>\r\n                <th class=\"col-xs-3\"><strong>Type</strong></th>\r\n                <th class=\"col-xs-9\"><strong>Description</strong></th>\r\n            </tr>\r\n        </thead>\r\n        <tbody>\r\n            <tr>\r\n                <td>Boolean</td>\r\n                <td>Defines the custom field as a boolean value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>CodeTableEntry</td>\r\n                <td>Defines the custom field as a string value that represents a code table entry description.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>ConstituentId</td>\r\n                <td>Defines the custom field as a constituent identifier value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>Currency</td>\r\n                <td>Defines the custom field as a decimal value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>Date</td>\r\n                <td>\r\n                    Defines the custom field as a date value in <a href=\"https://tools.ietf.org/html/rfc3339\">ISO-8601 format:</a> <i>1969-11-21T10:29:43</i>.\r\n                </td>\r\n            </tr>\r\n            <tr>\r\n                <td>FuzzyDate</td>\r\n                <td>\r\n                    Defines the custom field as a fuzzy date value.\r\n                </td>\r\n            </tr>\r\n            <tr>\r\n                <td>Number</td>\r\n                <td>Defines the custom field as an integer value.</td>\r\n            </tr>\r\n            <tr>\r\n                <td>Text</td>\r\n                <td>Defines the custom field as a string value. Character limit: 255.</td>\r\n            </tr>\r\n        </tbody>\r\n    </table>\r\n</div>"
+    ApiCollection_AttachmentRead_:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: 'The number of items available for retrieval into the collection after applying any request parameters. The <b>limit</b> and <b>offset</b> parameters do not affect the <b>count</b>, but to facilitate paging, they may affect the number of items in the <b>value</b> result set.'
+          format: int32
+        next_link:
+          type: string
+          description: 'For paginated responses, the URI for the next page of results.'
+        value:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttachmentRead'
+          description: The set of items included in the response. This may be a subset of the items in the collection.
+      description: Fetching data all at once quickly becomes unmanageable. The collection entity helps by returning paginated chunks of large data sets. This entity includes helpful metadata and properties to paginate and iterate through the data.
+      x-hidden: true
+      x-base-type: '#/definitions/ApiCollection'
+      x-apim-schema-name: 'ApiCollection[AttachmentRead]'
+    AttachmentRead:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The immutable system record ID of the attachment.
+        content_type:
+          type: string
+          description: The content type. For physical attachments only.
+        date:
+          type: string
+          description: The date of the attachment. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format:</a><i>1969-11-21T10:29:43-04:00</i>.
+          format: date-time
+          x-supports-datetime-offset: true
+        file_id:
+          type: string
+          description: The identifier of the file.
+        file_name:
+          type: string
+          description: The file name. For physical attachments only.
+        file_size:
+          type: integer
+          description: The file size in bytes. For physical attachments only.
+          format: int64
+        name:
+          type: string
+          description: The name of the attachment.
+        parent_id:
+          type: string
+          description: The parent object's immutable system record ID.
+        tags:
+          type: array
+          items:
+            type: string
+          description: The tags associated with the attachment. Tags supplement the attachment’s name and description and identify it based on how an organization categorizes attachments. Available values are the entries in the <b>Document Tags</b> table.
+        thumbnail_id:
+          maxLength: 36
+          minLength: 0
+          type: string
+          description: The identifier of the thumbnail. For physical attachments that are images only.
+        thumbnail_url:
+          type: string
+          description: The URL for a thumbnail. For physical attachments that are images only. Contains a time-bound signature that limits access to 30 minutes.
+        type:
+          enum:
+            - Link
+            - Physical
+          type: string
+          description: 'The attachment type. Available values are <i>Link</i> and <i>Physical</i>. Physical attachments are uploaded files such as images, PDFs, or Word documents that are saved locally or on the network. They are stored and managed in the system. Link attachments are links to files such as images, blog posts, or YouTube videos that are online or in a cloud storage account. They are stored and managed externally.'
+        url:
+          type: string
+          description: The URL for the attachment. The URL for a physical attachment contains a time-bound signature that limits access to 30 minutes.
+      description: 'Many cultivation activities collect related collateral, such as correspondence and prospect research. Attachments can save this data on the appropriate record to maintain a complete view of those activities.'
+      x-display-name: Attachment
+      x-display-id: Attachment
+    AttachmentAdd:
+      required:
+        - parent_id
+        - type
+      type: object
+      properties:
+        date:
+          type: string
+          description: The date of the attachment. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format:</a><i>1969-11-21T10:29:43-04:00</i>. This property defaults to the current date and time if not supplied.
+          format: date-time
+          x-supports-datetime-offset: true
+        file_id:
+          maxLength: 36
+          minLength: 0
+          type: string
+          description: 'The identifier of the file. Character limit: 36. For physical attachments only.'
+        file_name:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: 'The name of the file. Character limit: 255. For physical attachments only.'
+        name:
+          maxLength: 150
+          minLength: 0
+          type: string
+          description: 'The name of the attachment. Character limit: 150.'
+        parent_id:
+          type: string
+          description: The parent object's immutable system record ID.
+        tags:
+          type: array
+          items:
+            type: string
+          description: 'The tags associated with the attachment. Tags supplement the attachment’s name and description and identify it based on how an organization categorizes attachments. Available values are the entries in the <b>Document Tags</b> table. Character limit: 100.'
+        thumbnail_id:
+          maxLength: 36
+          minLength: 0
+          type: string
+          description: 'The identifier of the thumbnail. Character limit: 36. For physical attachments only.'
+        type:
+          enum:
+            - Link
+            - Physical
+          type: string
+          description: 'The attachment type. Available values are <i>Link</i> and <i>Physical</i>. Physical attachments are uploaded files such as images, PDFs, or Word documents that are saved locally or on the network. They are stored and managed in the system. Link attachments are links to files such as images, blog posts, or YouTube videos that are online or in a cloud storage account. They are stored and managed externally.'
+        url:
+          type: string
+          description: The URL for the attachment. This is required for link attachments but does not apply to physical attachments.
+      description: 'Many cultivation activities collect related collateral, such as correspondence and prospect research. Attachments can save this data on the appropriate record to maintain a complete view of those activities.'
+      x-hidden: true
+      x-display-name: Add attachment
+      x-display-id: AddAttachment
+    AttachmentEdit:
+      type: object
+      properties:
+        date:
+          type: string
+          description: The date of the attachment. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format:</a><i>1969-11-21T10:29:43-04:00</i>. This property cannot be set to null.
+          format: date-time
+          x-supports-datetime-offset: true
+        name:
+          maxLength: 150
+          minLength: 0
+          type: string
+          description: 'The name of the attachment. Character limit: 150.'
+        tags:
+          type: array
+          items:
+            type: string
+          description: 'The tags associated with the attachment. Tags supplement the attachment’s name and description and identify it based on how an organization categorizes attachments. Available values are the entries in the <b>Document Tags</b> table. Character limit: 100.'
+        url:
+          type: string
+          description: The URL for the attachment. You can only edit the URL for link attachments. This property cannot be set to null.
+      description: 'Many cultivation activities collect related collateral, such as correspondence and prospect research. Attachments can save this data on the appropriate record to maintain a complete view of those activities.'
+      x-hidden: true
+      x-display-name: Edit attachment
+      x-display-id: EditAttachment
+    ApiCollection_FundraiserAssignmentRead_:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: 'The number of items available for retrieval into the collection after applying any request parameters. The <b>limit</b> and <b>offset</b> parameters do not affect the <b>count</b>, but to facilitate paging, they may affect the number of items in the <b>value</b> result set.'
+          format: int32
+        next_link:
+          type: string
+          description: 'For paginated responses, the URI for the next page of results.'
+        value:
+          type: array
+          items:
+            $ref: '#/components/schemas/FundraiserAssignmentRead'
+          description: The set of items included in the response. This may be a subset of the items in the collection.
+      description: Fetching data all at once quickly becomes unmanageable. The collection entity helps by returning paginated chunks of large data sets. This entity includes helpful metadata and properties to paginate and iterate through the data.
+      x-hidden: true
+      x-base-type: '#/definitions/ApiCollection'
+      x-apim-schema-name: 'ApiCollection[FundraiserAssignmentRead]'
+    FundraiserAssignmentRead:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The immutable system record ID of the given assignment.
+        amount:
+          $ref: '#/components/schemas/Currency'
+        appeal_id:
+          type: string
+          description: The immutable system record ID of the appeal the fundraiser should use to request gifts.
+        campaign_id:
+          type: string
+          description: The immutable system record ID of the campaign to apply resulting gifts to.
+        constituent_id:
+          type: string
+          description: The immutable system record ID of the target constituent.
+        end:
+          type: string
+          description: 'The fundraiser end date. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>2017-05-17T00:00:00</i>.'
+          format: date-time
+          x-supports-datetime-offset: false
+        fund_id:
+          type: string
+          description: 'The immutable system record ID of the fund any resulting gifts should be applied to. If a restricted fund is selected, only campaigns and appeals associated with that fund may be selected.'
+        fundraiser_id:
+          type: string
+          description: The immutable system record ID of the fundraiser assigned to the constituent.
+        start:
+          type: string
+          description: 'The fundraiser start date. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>2017-01-29T00:00:00</i>.'
+          format: date-time
+          x-supports-datetime-offset: false
+        type:
+          type: string
+          description: The type of fundraiser. Available values are the entries in the <a href="https://developer.sky.blackbaud.com/docs/services/58bdd6c8d7dcde06046081d7/operations/ListFundraiserTypes"><b>Solicitor Type</b></a> table.
+      description: Fundraiser constituents interact with other constituents on behalf of your organization to cultivate relationships and request donations. Fundraiser assignments allow you to assign specific constituents to fundraisers for solicitation purposes.
+      x-display-name: Fundraiser assignment
+      x-display-id: FundraiserAssignment
+    FundraiserAssignmentAdd:
+      required:
+        - constituent_id
+        - fundraiser_id
+      type: object
+      properties:
+        amount:
+          $ref: '#/components/schemas/Currency'
+        appeal_id:
+          type: string
+          description: The immutable system record ID of the appeal the fundraiser should use to request gifts.
+        campaign_id:
+          type: string
+          description: The immutable system record ID of the campaign to apply resulting gifts to.
+        constituent_id:
+          type: string
+          description: The immutable system record ID of the target constituent.
+        end:
+          type: string
+          description: 'The fundraiser end date. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>2017-05-17T00:00:00</i>.'
+          format: date-time
+          x-supports-datetime-offset: false
+        fund_id:
+          type: string
+          description: 'The immutable system record ID of the fund any resulting gifts should be applied to. If a restricted fund is selected, only campaigns and appeals associated with that fund may be selected.'
+        fundraiser_id:
+          type: string
+          description: The immutable system record ID of the fundraiser assigned to the constituent.
+        start:
+          type: string
+          description: 'The fundraiser start date. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>2017-01-29T00:00:00</i>.'
+          format: date-time
+          x-supports-datetime-offset: false
+        type:
+          type: string
+          description: The type of fundraiser. Available values are the entries in the <a href="https://developer.sky.blackbaud.com/docs/services/58bdd6c8d7dcde06046081d7/operations/ListFundraiserTypes"><b>Solicitor Type</b></a> table.
+      description: Fundraiser constituents interact with other constituents on behalf of your organization to cultivate relationships and request donations. Fundraiser assignments allow you to assign specific constituents to fundraisers for solicitation purposes.
+      x-hidden: true
+      x-display-name: Create fundraiser assignment
+      x-display-id: CreateFundraiserAssignment
+    FundraiserAssignmentEdit:
+      type: object
+      properties:
+        amount:
+          $ref: '#/components/schemas/Currency'
+        appeal_id:
+          type: string
+          description: The immutable system record ID of the appeal the fundraiser should use to request gifts.
+        campaign_id:
+          type: string
+          description: The immutable system record ID of the campaign to apply resulting gifts to.
+        end:
+          type: string
+          description: 'The fundraiser end date. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>2017-05-17T00:00:00</i>.'
+          format: date-time
+          x-supports-datetime-offset: false
+        fund_id:
+          type: string
+          description: 'The immutable system record ID of the fund any resulting gifts should be applied to. If a restricted fund is selected, only campaigns and appeals associated with that fund may be selected.'
+        start:
+          type: string
+          description: 'The fundraiser start date. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>2017-01-29T00:00:00</i>.'
+          format: date-time
+          x-supports-datetime-offset: false
+        type:
+          type: string
+          description: The type of fundraiser. Available values are the entries in the <a href="https://developer.sky.blackbaud.com/docs/services/58bdd6c8d7dcde06046081d7/operations/ListFundraiserTypes"><b>Solicitor Type</b></a> table.
+      description: Fundraiser constituents interact with other constituents on behalf of your organization to cultivate relationships and request donations. Fundraiser assignments allow you to assign specific constituents to fundraisers for solicitation purposes.
+      x-hidden: true
+      x-display-name: Edit fundraiser assignment
+      x-display-id: EditFundraiserAssignment
+    CampaignRead:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The immutable system record ID of the campaign.
+        category:
+          type: string
+          description: The category of the campaign. Available values are the entries in the <b>Campaign Category</b> table.
+        date_added:
+          type: string
+          description: 'The date when the campaign was created. Includes an offset from UTC in <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>1969-11-21T10:29:43-04:00</i>.'
+          format: date-time
+          x-supports-datetime-offset: true
+        date_modified:
+          type: string
+          description: 'The date when the campaign was last modified. Includes an offset from UTC in <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>1969-11-21T10:29:43-04:00</i>.'
+          format: date-time
+          x-supports-datetime-offset: true
+        description:
+          type: string
+          description: The display name of the campaign.
+        end_date:
+          type: string
+          description: 'The end date of the campaign. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>1969-12-25T10:29:43</i>.'
+          format: date-time
+          x-supports-datetime-offset: false
+        goal:
+          $ref: '#/components/schemas/Currency'
+        inactive:
+          type: boolean
+          description: This computed field indicates that the campaign is active if the current date is after any <code>start_date</code> and before any <code>end_date</code>.
+        lookup_id:
+          type: string
+          description: The user-defined identifier for the campaign.
+        start_date:
+          type: string
+          description: 'The start date of the campaign. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>1969-11-21T10:29:43</i>.'
+          format: date-time
+          x-supports-datetime-offset: false
+      description: 'Campaigns are your organization’s overall fundraising efforts or initiatives, such as operating expenses, new buildings, and endowments.'
+      x-display-name: Campaign
+      x-display-id: Campaign
+    ApiCollection_CampaignRead_:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: 'The number of items available for retrieval into the collection after applying any request parameters. The <b>limit</b> and <b>offset</b> parameters do not affect the <b>count</b>, but to facilitate paging, they may affect the number of items in the <b>value</b> result set.'
+          format: int32
+        next_link:
+          type: string
+          description: 'For paginated responses, the URI for the next page of results.'
+        value:
+          type: array
+          items:
+            $ref: '#/components/schemas/CampaignRead'
+          description: The set of items included in the response. This may be a subset of the items in the collection.
+      description: Fetching data all at once quickly becomes unmanageable. The collection entity helps by returning paginated chunks of large data sets. This entity includes helpful metadata and properties to paginate and iterate through the data.
+      x-hidden: true
+      x-base-type: '#/definitions/ApiCollection'
+      x-apim-schema-name: 'ApiCollection[CampaignRead]'
+    NewDocumentInfo:
+      type: object
+      properties:
+        file_name:
+          type: string
+          description: The file name. For physical attachments only.
+        upload_thumbnail:
+          type: boolean
+          description: Indicates that a thumbnail needs to be created.
+      description: 'Cultivation activities often result in physical collateral such as images, PDFs, or Word files. The New Document entity allows you to upload these files to maintain a holistic view of target constituents.'
+      x-display-name: New document info
+      x-display-id: NewDocumentInfo
+    FileDefinition:
+      type: object
+      properties:
+        file_id:
+          type: string
+          description: The identifier of the file.
+        file_upload_request:
+          $ref: '#/components/schemas/RequestMetaData'
+        thumbnail_id:
+          type: string
+          description: The identifier of the thumbnail.
+        thumbnail_upload_request:
+          $ref: '#/components/schemas/RequestMetaData'
+      description: Contains metadata for uploading a document and unique document identifier for physical attachments.
+      x-display-name: File definition
+      x-display-id: FileDefinition
+    RequestMetaData:
+      type: object
+      properties:
+        headers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Header'
+          description: The headers to supply when making the request.
+        method:
+          type: string
+          description: The http method to use for the request.
+        url:
+          type: string
+          description: The url to use for the request.
+      description: 'The RequestMetadata entity specifies metadata for requests to upload physical attachments, including the URL for files, headers and the HTTP method to use.'
+      x-display-name: Request meta data
+      x-display-id: RequestMetaData
+    Header:
+      type: object
+      properties:
+        name:
+          type: string
+          description: The name for the header.
+        value:
+          type: string
+          description: The value for the header.
+      description: Request header used for uploading the physical attachment.
+    FundRead:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The immutable system record ID of the fund.
+        category:
+          type: string
+          description: The category of the fund. Available values are the entries in the <b>Fund Categories</b> table.
+        date_added:
+          type: string
+          description: 'The date when the fund was created. Includes an offset from UTC in <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>1969-11-21T10:29:43-04:00</i>.'
+          format: date-time
+          x-supports-datetime-offset: true
+        date_modified:
+          type: string
+          description: 'The date when the fund was last modified. Includes an offset from UTC in <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>1969-11-21T10:29:43-04:00</i>.'
+          format: date-time
+          x-supports-datetime-offset: true
+        description:
+          type: string
+          description: The display name of the fund.
+        end_date:
+          type: string
+          description: 'The end date of the fund. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>1969-12-25T10:29:43</i>.'
+          format: date-time
+          x-supports-datetime-offset: false
+        goal:
+          $ref: '#/components/schemas/Currency'
+        inactive:
+          type: boolean
+          description: This computed field indicates that the fund is active if the current date is after any <code>start_date</code> and before any <code>end_date</code>.
+        lookup_id:
+          type: string
+          description: The user-defined identifier for the fund.
+        start_date:
+          type: string
+          description: 'The start date of the fund. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>1969-11-21T10:29:43</i>.'
+          format: date-time
+          x-supports-datetime-offset: false
+        type:
+          type: string
+          description: The type of the fund. Available values are the entries in the <b>Fund Types</b> table.
+      description: Funds represent how donors expect you to use their gifts. Funds can designate gifts for specific causes or earmark them for specific financial purposes.
+      x-display-name: Fund
+      x-display-id: Fund
+    ApiCollection_FundRead_:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: 'The number of items available for retrieval into the collection after applying any request parameters. The <b>limit</b> and <b>offset</b> parameters do not affect the <b>count</b>, but to facilitate paging, they may affect the number of items in the <b>value</b> result set.'
+          format: int32
+        next_link:
+          type: string
+          description: 'For paginated responses, the URI for the next page of results.'
+        value:
+          type: array
+          items:
+            $ref: '#/components/schemas/FundRead'
+          description: The set of items included in the response. This may be a subset of the items in the collection.
+      description: Fetching data all at once quickly becomes unmanageable. The collection entity helps by returning paginated chunks of large data sets. This entity includes helpful metadata and properties to paginate and iterate through the data.
+      x-hidden: true
+      x-base-type: '#/definitions/ApiCollection'
+      x-apim-schema-name: 'ApiCollection[FundRead]'
+    GoalAdd:
+      required:
+        - fundraiser_id
+        - type
+      type: object
+      properties:
+        amount:
+          $ref: '#/components/schemas/Currency'
+        appeal_id:
+          type: string
+          description: The immutable system record ID of the appeal associated with the fundraiser goal.
+        campaign_id:
+          type: string
+          description: The immutable system record ID of the campaign associated with the fundraiser goal.
+        fund_id:
+          type: string
+          description: The immutable system record ID of the fund associated with the fundraiser goal.
+        fundraiser_id:
+          type: string
+          description: The immutable system record ID of the fundraiser associated with the fundraiser goal.
+        type:
+          enum:
+            - Campaign
+            - Fund
+            - UnspecifiedCategory
+            - Appeal
+          type: string
+          description: 'The fundraiser goal type. Available values are <i>Campaign</i>, <i>Fund</i>, <i>UnspecifiedCategory</i>, and <i>Appeal</i>'
+        unspecified_category_name:
+          type: string
+          description: The unspecified category name for the fundraiser goal. Available values are the active entries in the <a href="https://developer.sky.blackbaud.com/docs/services/58bdd6c8d7dcde06046081d7/operations/ListFundraiserGoalCategories"><b>Solicitor Goal Categories</b></a> table.
+      description: 'To help motivate fundraisers and track their effectiveness, your organization may set goal amounts to raise toward funds, campaigns, or appeals.'
+      x-hidden: true
+      x-display-name: Create fundraiser goal
+      x-display-id: CreateFundraiserGoal
+    ApiCollection_GoalRead_:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: 'The number of items available for retrieval into the collection after applying any request parameters. The <b>limit</b> and <b>offset</b> parameters do not affect the <b>count</b>, but to facilitate paging, they may affect the number of items in the <b>value</b> result set.'
+          format: int32
+        next_link:
+          type: string
+          description: 'For paginated responses, the URI for the next page of results.'
+        value:
+          type: array
+          items:
+            $ref: '#/components/schemas/GoalRead'
+          description: The set of items included in the response. This may be a subset of the items in the collection.
+      description: Fetching data all at once quickly becomes unmanageable. The collection entity helps by returning paginated chunks of large data sets. This entity includes helpful metadata and properties to paginate and iterate through the data.
+      x-hidden: true
+      x-base-type: '#/definitions/ApiCollection'
+      x-apim-schema-name: 'ApiCollection[GoalRead]'
+    GoalRead:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The immutable system record ID of the fundraiser goal.
+        amount:
+          $ref: '#/components/schemas/Currency'
+        appeal_id:
+          type: string
+          description: The immutable system record ID of the appeal associated with the fundraiser goal.
+        campaign_id:
+          type: string
+          description: The immutable system record ID of the campaign associated with the fundraiser goal.
+        fund_id:
+          type: string
+          description: The immutable system record ID of the fund associated with the fundraiser goal.
+        fundraiser_id:
+          type: string
+          description: The immutable system record ID of the fundraiser associated with the fundraiser goal.
+        type:
+          enum:
+            - Campaign
+            - Fund
+            - UnspecifiedCategory
+            - Appeal
+          type: string
+          description: 'The fundraiser goal type. Available values are <i>Campaign</i>, <i>Fund</i>, <i>UnspecifiedCategory</i>, and <i>Appeal</i>'
+        unspecified_category_name:
+          type: string
+          description: The unspecified category name for the fundraiser goal. Available values are the active entries in the <a href="https://developer.sky.blackbaud.com/docs/services/58bdd6c8d7dcde06046081d7/operations/ListFundraiserGoalCategories"><b>Solicitor Goal Categories</b></a> table.
+      description: 'To help motivate fundraisers and track their effectiveness, your organization may set goal amounts to raise toward funds, campaigns, or appeals.'
+      x-display-name: Fundraiser goal
+      x-display-id: FundraiserGoal
+    GoalEdit:
+      type: object
+      properties:
+        amount:
+          $ref: '#/components/schemas/Currency'
+        appeal_id:
+          type: string
+          description: The immutable system record ID of the appeal associated with the fundraiser goal.
+        campaign_id:
+          type: string
+          description: The immutable system record ID of the campaign associated with the fundraiser goal.
+        fund_id:
+          type: string
+          description: The immutable system record ID of the fund associated with the fundraiser goal.
+        type:
+          enum:
+            - Campaign
+            - Fund
+            - UnspecifiedCategory
+            - Appeal
+          type: string
+          description: 'The fundraiser goal type. Available values are <i>Campaign</i>, <i>Fund</i>, <i>UnspecifiedCategory</i>, and <i>Appeal</i>.  This property cannot be set to null.'
+        unspecified_category_name:
+          type: string
+          description: The unspecified category name for the fundraiser goal. Available values are the active entries in the <a href="https://developer.sky.blackbaud.com/docs/services/58bdd6c8d7dcde06046081d7/operations/ListFundraiserGoalCategories"><b>Solicitor Goal Categories</b></a> table.
+      description: 'To help motivate fundraisers and track their effectiveness, your organization may set goal amounts to raise toward funds, campaigns, or appeals.'
+      x-hidden: true
+      x-display-name: Edit fundraiser goal
+      x-display-id: EditFundraiserGoal
+    PackageRead:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The immutable system record ID of the package.
+        appeal_id:
+          type: string
+          description: The immutable system record ID of the appeal associated with this package.
+        category:
+          type: string
+          description: The category of the package.
+        date_added:
+          type: string
+          description: 'The date when the package was created. Includes an offset from UTC in <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>1969-11-21T10:29:43-04:00</i>.'
+          format: date-time
+          x-supports-datetime-offset: true
+        date_modified:
+          type: string
+          description: 'The date when the package was last modified. Includes an offset from UTC in <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>1969-11-21T10:29:43-04:00</i>.'
+          format: date-time
+          x-supports-datetime-offset: true
+        default_gift_amount:
+          $ref: '#/components/schemas/Currency'
+        description:
+          type: string
+          description: The display name of the package.
+        end:
+          type: string
+          description: 'The end date of the package. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>1969-12-25T10:29:43</i>.'
+          format: date-time
+          x-supports-datetime-offset: false
+        goal:
+          $ref: '#/components/schemas/Currency'
+        inactive:
+          type: boolean
+          description: This computed field indicates that the package is active if the current date is after any <code>start</code> and before any <code>end</code>.
+        lookup_id:
+          type: string
+          description: The user-defined identifier for the package.
+        notes:
+          type: string
+          description: The notes on the package.
+        recipient_count:
+          type: integer
+          description: The number of recipients of the package.
+          format: int32
+        start:
+          type: string
+          description: 'The start date of the package. Uses <a href="https://tools.ietf.org/html/rfc3339">ISO-8601 format: </a><i>1969-11-21T10:29:43</i>.'
+          format: date-time
+          x-supports-datetime-offset: false
+      description: Packages contain content and other items for the appeals that organizations use to solicit gifts.
+      x-display-name: Package
+      x-display-id: Package
+    ApiCollection_PackageRead_:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: 'The number of items available for retrieval into the collection after applying any request parameters. The <b>limit</b> and <b>offset</b> parameters do not affect the <b>count</b>, but to facilitate paging, they may affect the number of items in the <b>value</b> result set.'
+          format: int32
+        next_link:
+          type: string
+          description: 'For paginated responses, the URI for the next page of results.'
+        value:
+          type: array
+          items:
+            $ref: '#/components/schemas/PackageRead'
+          description: The set of items included in the response. This may be a subset of the items in the collection.
+      description: Fetching data all at once quickly becomes unmanageable. The collection entity helps by returning paginated chunks of large data sets. This entity includes helpful metadata and properties to paginate and iterate through the data.
+      x-hidden: true
+      x-base-type: '#/definitions/ApiCollection'
+      x-apim-schema-name: 'ApiCollection[PackageRead]'
+    ApiCollection:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: 'The number of items available for retrieval into the collection after applying any request parameters. The <b>limit</b> and <b>offset</b> parameters do not affect the <b>count</b>, but to facilitate paging, they may affect the number of items in the <b>value</b> result set.'
+          format: int32
+        next_link:
+          type: string
+          description: 'For paginated responses, the URI for the next page of results.'
+        value:
+          type: array
+          items:
+            type: object
+          description: 'The result set of items after applying any request parameters. To facilitate paging, this may be a subset of all available items.'
+      description: Fetching data all at once quickly becomes unmanageable. The collection entity helps by returning paginated chunks of large data sets. This entity includes helpful metadata and properties to paginate and iterate through the data.
+      x-display-name: Collection
+      x-display-id: Collection
+  securitySchemes:
+    apiKeyHeader:
+      type: apiKey
+      name: Bb-Api-Subscription-Key
+      in: header
+    apiKeyQuery:
+      type: apiKey
+      name: subscription-key
+      in: query
+security:
+  - apiKeyHeader: [ ]
+  - apiKeyQuery: [ ]
+tags:
+  - name: Appeal
+  - name: Assignment
+  - name: AttachmentTags
+  - name: Campaign
+  - name: Document
+  - name: Fund
+  - name: Goal
+  - name: Package

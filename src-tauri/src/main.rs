@@ -4,8 +4,13 @@
 mod errors;
 mod profile;
 mod db;
+mod code_tables;
+mod query_step;
+mod re_calls;
+mod report;
 mod validate;
 mod commands;
+mod sky_auth;
 
 fn main() {
     tauri::Builder::default()
@@ -15,6 +20,10 @@ fn main() {
             commands::load_profile,
             commands::validate_file,
             commands::run_profile,
+            commands::run_code_table_sync,
+            commands::run_re_query,
+            commands::run_report,
+            commands::run_report_action,
             commands::save_output,
             commands::save_profile,
             commands::new_profile,
@@ -22,6 +31,10 @@ fn main() {
             commands::delete_profile,
             commands::validate_profile,
             commands::scaffold_missing,
+            sky_auth::connect_re_nxt,
+            sky_auth::re_nxt_status,
+            sky_auth::disconnect_re_nxt,
+            sky_auth::re_nxt_access_token,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -57,6 +57,16 @@ pub struct TransformResult {
     pub notices: Vec<Notice>,
 }
 
+// In-memory result of a SELECT — every cell stringified so the frontend gets
+// uniform JSON regardless of the underlying DuckDB column type. Used by the
+// report pipeline (report.rs) to feed visualizations directly, with no CSV
+// round-trip. Same shape as Notice (minus the label/description).
+#[derive(Debug, Serialize)]
+pub struct ResultSet {
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<String>>,
+}
+
 // Passed in from commands.rs — already-resolved SQL content for one notice.
 pub struct NoticeInput<'a> {
     pub label: &'a str,
@@ -288,6 +298,7 @@ fn normalize_col(s: &str) -> String {
 
 pub fn run_transform(
     file_paths: &HashMap<String, String>,
+    sources: &SqlSources,
     sql_content: &str,
     output_labels: &[String],
     notices: &[NoticeInput<'_>],
@@ -345,6 +356,7 @@ pub fn run_transform(
         let only_path = normalized.values().next().unwrap();
         sql = sql.replace("{{input_file}}", only_path);
     }
+    sql = sources.apply(&sql);
     let mut multi_output_mode = false;
     for (label, path) in &outputs {
         let placeholder = format!("{{{{output:{}}}}}", label);
@@ -408,13 +420,100 @@ pub fn run_transform(
     // label) rather than failing the whole transform.
     let notice_results: Vec<Notice> = notices
         .iter()
-        .map(|n| run_notice(&conn, n, &normalized))
+        .map(|n| run_notice(&conn, n, &normalized, sources))
         .collect();
 
     Ok(TransformResult {
         outputs: output_files,
         notices: notice_results,
     })
+}
+
+// ── RE-sourced placeholders ───────────────────────────────────────────────────
+// Every placeholder family besides {{input:}} / {{output:}} resolves to a JSON
+// file produced before the SQL runs, all read with read_json_auto:
+//   {{codetable:Label}} — one code table's entries      (code_tables.rs)
+//   {{query:Label}}     — one re_query step's results   (query_step.rs)
+//   {{sync:Label}}      — one code_table_sync's outcome (code_tables.rs)
+// Kept separate from {{input:Label}} so a profile can tell "a file the user
+// picked" apart from "data produced by an earlier step" at a glance.
+
+pub fn substitute_labeled_paths(
+    sql: &str,
+    kind: &str,
+    paths: &HashMap<String, String>,
+) -> String {
+    let mut out = sql.to_string();
+    for (label, path) in paths {
+        let placeholder = format!("{{{{{}:{}}}}}", kind, label);
+        out = out.replace(&placeholder, &path.replace('\\', "/"));
+    }
+    out
+}
+
+// The kinds in use. All resolve to a JSON file read with read_json_auto.
+pub const KIND_CODETABLE: &str = "codetable";
+pub const KIND_QUERY: &str = "query";
+pub const KIND_SYNC: &str = "sync";
+
+// ── SqlSources ────────────────────────────────────────────────────────────────
+// The registry of label→path maps a SQL body can reference, keyed by placeholder
+// family. Everything that runs profile SQL takes one of these instead of a
+// parameter per family, so adding a family later is a `KIND_` const plus one
+// `.with(...)` at the call site — not a new argument threaded through
+// run_transform, select_rows and run_notice.
+
+#[derive(Debug, Default, Clone)]
+pub struct SqlSources {
+    families: Vec<(&'static str, HashMap<String, String>)>,
+}
+
+impl SqlSources {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    // Register one family. An empty map is kept rather than skipped so the
+    // debug view still shows which families a call site considered.
+    pub fn with(mut self, kind: &'static str, paths: &HashMap<String, String>) -> Self {
+        self.families.push((kind, paths.clone()));
+        self
+    }
+
+    // Resolve every registered family in one pass. Unregistered labels are left
+    // as literal `{{kind:Label}}` text so DuckDB names them in its error rather
+    // than the run silently reading nothing.
+    pub fn apply(&self, sql: &str) -> String {
+        let mut out = sql.to_string();
+        for (kind, paths) in &self.families {
+            out = substitute_labeled_paths(&out, kind, paths);
+        }
+        out
+    }
+}
+
+// ── select_rows ───────────────────────────────────────────────────────────────
+// Runs a bare SELECT over the profile's inputs and code tables and returns the
+// rows. Used by code_table_sync steps, where each returned row becomes one write
+// against RE — no output file is produced.
+
+pub fn select_rows(
+    file_paths: &HashMap<String, String>,
+    sources: &SqlSources,
+    sql_content: &str,
+) -> Result<ResultSet, AppError> {
+    let conn = Connection::open_in_memory().map_err(|e| AppError::SqlError(e.to_string()))?;
+    let mut sql = sql_content.to_string();
+    for (label, path) in file_paths {
+        let placeholder = format!("{{{{input:{}}}}}", label);
+        sql = sql.replace(&placeholder, &path.replace('\\', "/"));
+    }
+    if sql.contains("{{input_file}}") && file_paths.len() == 1 {
+        let only_path = file_paths.values().next().unwrap().replace('\\', "/");
+        sql = sql.replace("{{input_file}}", &only_path);
+    }
+    sql = sources.apply(&sql);
+    query_to_result_set(&conn, &sql)
 }
 
 // ── run_notice ────────────────────────────────────────────────────────────────
@@ -427,6 +526,7 @@ fn run_notice(
     conn: &Connection,
     n: &NoticeInput<'_>,
     file_paths: &HashMap<&str, String>,
+    sources: &SqlSources,
 ) -> Notice {
     let mut user_sql = n.sql_content.to_string();
     for (label, path) in file_paths {
@@ -437,6 +537,7 @@ fn run_notice(
         let only_path = file_paths.values().next().unwrap();
         user_sql = user_sql.replace("{{input_file}}", only_path);
     }
+    let user_sql = sources.apply(&user_sql);
     let trimmed = user_sql.trim().trim_end_matches(';').trim();
 
     // Phase 1: discover the column names returned by the user's query.
@@ -497,4 +598,60 @@ fn run_notice(
         columns,
         rows,
     }
+}
+
+// ── query_to_result_set ─────────────────────────────────────────────────────────
+// Runs a SELECT and returns its columns + rows as plain strings. Same two-phase
+// approach as run_notice (DESCRIBE to discover columns, then re-issue wrapped in
+// CAST(col AS VARCHAR) so every value reads as a String) — but surfaces failures
+// as AppError instead of embedding an error row, since report transforms must
+// fail loudly. The SQL is expected to be a bare SELECT (placeholders already
+// substituted by the caller).
+
+pub fn query_to_result_set(conn: &Connection, sql: &str) -> Result<ResultSet, AppError> {
+    let trimmed = sql.trim().trim_end_matches(';').trim();
+
+    // Phase 1: discover the column names returned by the query.
+    let describe_sql = format!("DESCRIBE {}", trimmed);
+    let columns: Vec<String> = {
+        let mut stmt = conn
+            .prepare(&describe_sql)
+            .map_err(|e| AppError::SqlError(format!("Transform failed: {}", e)))?;
+        stmt.query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| AppError::SqlError(e.to_string()))?
+            .filter_map(|r| r.ok())
+            .collect()
+    };
+
+    if columns.is_empty() {
+        return Ok(ResultSet { columns, rows: vec![] });
+    }
+
+    // Phase 2: re-issue the query wrapped in a CAST-to-VARCHAR projection so
+    // every cell deserializes as a String.
+    let cast_list = columns
+        .iter()
+        .map(|c| format!("CAST(\"{}\" AS VARCHAR) AS \"{}\"", c, c))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let wrapped = format!("SELECT {} FROM ({}) _rs", cast_list, trimmed);
+
+    let col_count = columns.len();
+    let mut stmt = conn
+        .prepare(&wrapped)
+        .map_err(|e| AppError::SqlError(format!("Transform failed: {}", e)))?;
+    let rows: Vec<Vec<String>> = stmt
+        .query_map([], |row| {
+            let mut data: Vec<String> = Vec::with_capacity(col_count);
+            for i in 0..col_count {
+                let v: Option<String> = row.get(i).unwrap_or(None);
+                data.push(v.unwrap_or_default());
+            }
+            Ok(data)
+        })
+        .map_err(|e| AppError::SqlError(e.to_string()))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(ResultSet { columns, rows })
 }

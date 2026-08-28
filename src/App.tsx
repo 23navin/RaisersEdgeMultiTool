@@ -8,24 +8,51 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import type {
+  ActionResult,
   LoadedProfile,
   Notice,
   OutputFile,
+  ProfileStructure,
   ProfileSummary,
+  Parameter,
+  ReportRunResult,
+  QueryStepResult,
   SqlError,
+  SyncResult,
   TransformResult,
   ValidationError,
 } from "./types";
 import { Titlebar, type TopTab } from "./components/Titlebar";
-import { Sidebar } from "./components/imports/Sidebar";
-import { MainPanel } from "./components/imports/MainPanel";
-import { DataRequestsPage } from "./components/data-request/DataRequestsPage";
-import { ReportsPage } from "./components/reports/ReportsPage";
+import { ImportsPage } from "./components/imports/ImportsPage";
+import {
+  DataRequestsPage,
+  DEFAULT_LIBRARY_RATIO,
+  type Mode as DataReqMode,
+} from "./components/data-request/DataRequestsPage";
+import {
+  ReportsPage,
+  type ReportStatus,
+  type ActionState,
+} from "./components/reports/ReportsPage";
 import { SettingsPanel } from "./components/SettingsPanel";
+import {
+  PanelTransition,
+  PANEL_TRANSITION_MS,
+} from "./components/PanelTransition";
 import { refLabel, stepTransforms } from "./lib/profile-utils";
+
+const TAB_ORDER: TopTab[] = ["imports", "data-requests", "reports"];
 
 export type FileStatus = "none" | "pending" | "valid" | "invalid";
 export type GenerateStatus = "idle" | "running" | "done" | "error";
+
+// A code_table_sync step runs in one shot — no progress bar, so no separate
+// progress field the way a generation has.
+export type SyncStatus = "idle" | "running" | "done" | "error";
+
+// An re_query step likewise. The SKY job reports no progress, so the UI shows an
+// indeterminate bar rather than a percentage.
+export type QueryStatus = "idle" | "running" | "done" | "error";
 
 export type FileEntry = {
   path: string;
@@ -42,6 +69,22 @@ export type GenEntry = {
   outputs?: OutputFile[];
 };
 
+// One code_table_sync step's run state, keyed by step label (a sync step holds
+// exactly one operation, so it needs no composite key the way transforms do).
+export type SyncEntry = {
+  status: SyncStatus;
+  result?: SyncResult;
+  error?: string;
+};
+
+// One re_query step's run state, keyed by step label. `result.path` is what gets
+// handed to whichever later transform declared this step's query_output.
+export type QueryEntry = {
+  status: QueryStatus;
+  result?: QueryStepResult;
+  error?: string;
+};
+
 // Composite key for a single transform within a sql_transform step.
 function genKey(stepLabel: string, transformIdx: number): string {
   return `${stepLabel}::${transformIdx}`;
@@ -49,6 +92,38 @@ function genKey(stepLabel: string, transformIdx: number): string {
 
 function asString(e: unknown): string {
   return typeof e === "string" ? e : String(e);
+}
+
+function isoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+// Resolve a parameter's declared default into a concrete control value.
+function resolveParamDefault(p: Parameter): unknown {
+  const d = p.default as
+    | { preset?: string; from?: string; to?: string }
+    | string
+    | number
+    | undefined;
+  if (p.type === "date_range") {
+    const obj = (d ?? {}) as { preset?: string; from?: string; to?: string };
+    if (obj.preset === "last_30_days") {
+      const to = new Date();
+      const from = new Date();
+      from.setDate(from.getDate() - 30);
+      return { from: isoDate(from), to: isoDate(to) };
+    }
+    if (obj.from || obj.to) return { from: obj.from, to: obj.to };
+    return {};
+  }
+  if (d != null && typeof d !== "object") return String(d);
+  return "";
+}
+
+function initialParamValues(structure: ProfileStructure): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const p of structure.parameters) out[p.id] = resolveParamDefault(p);
+  return out;
 }
 
 // Shape returned by the validate_file backend command.
@@ -65,8 +140,48 @@ export default function App() {
   const [loadedProfile, setLoadedProfile] = useState<LoadedProfile | null>(null);
   const [files, setFiles] = useState<Record<string, FileEntry>>({});
   const [generations, setGenerations] = useState<Record<string, GenEntry>>({});
+  const [syncs, setSyncs] = useState<Record<string, SyncEntry>>({});
+  const [queries, setQueries] = useState<Record<string, QueryEntry>>({});
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TopTab>("imports");
+  const [exitingTab, setExitingTab] = useState<TopTab | null>(null);
+  const [transitionDir, setTransitionDir] = useState<"left" | "right">("left");
+
+  // Data Requests panel layout — held here so it survives the page
+  // unmounting when the user navigates to another tab and back.
+  const [dataReqMode, setDataReqMode] = useState<DataReqMode>("default");
+  const [dataReqRatio, setDataReqRatio] = useState<number>(DEFAULT_LIBRARY_RATIO);
+
+  // ── Reports state ─────────────────────────────────────────────────────────
+  const [selectedReport, setSelectedReport] = useState<string | null>(null);
+  const [loadedReport, setLoadedReport] = useState<LoadedProfile | null>(null);
+  const [reportParams, setReportParams] = useState<Record<string, unknown>>({});
+  const [reportRun, setReportRun] = useState<ReportRunResult | null>(null);
+  const [reportStatus, setReportStatus] = useState<ReportStatus>("idle");
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [reportStale, setReportStale] = useState(false);
+  const [actionStates, setActionStates] = useState<Record<string, ActionState>>({});
+  const reportLoadId = useRef(0);
+
+  // Built-in + user profiles split by kind. Reports go to the Reports tab;
+  // everything else stays in Imports.
+  const reportProfiles = profiles.filter((p) => p.kind === "report");
+  const importProfiles = profiles.filter((p) => p.kind !== "report");
+
+  const handleTabChange = (newTab: TopTab) => {
+    if (newTab === activeTab || exitingTab) return;
+    const oldIdx = TAB_ORDER.indexOf(activeTab);
+    const newIdx = TAB_ORDER.indexOf(newTab);
+    setTransitionDir(newIdx > oldIdx ? "left" : "right");
+    setExitingTab(activeTab);
+    setActiveTab(newTab);
+  };
+
+  useEffect(() => {
+    if (!exitingTab) return;
+    const t = setTimeout(() => setExitingTab(null), PANEL_TRANSITION_MS + 20);
+    return () => clearTimeout(t);
+  }, [exitingTab]);
 
   // Increments on every load_profile call so late-arriving responses for a
   // profile the user has already navigated away from get discarded.
@@ -98,6 +213,11 @@ export default function App() {
         stepsDone[step.label] = transforms.every(
           (_, i) => generations[genKey(step.label, i)]?.status === "done"
         );
+      } else if (step.type === "re_query") {
+        stepsDone[step.label] = queries[step.label]?.status === "done";
+      } else if (step.type === "code_table_sync") {
+        const st = syncs[step.label];
+        stepsDone[step.label] = st?.status === "done" && (st.result?.ok ?? false);
       } else {
         stepsDone[step.label] = false;
       }
@@ -120,14 +240,81 @@ export default function App() {
     return keys;
   };
 
-  const resetGenerationsConsuming = (inputLabel: string) => {
-    const affected = transformsConsumingInput(inputLabel);
+  // The fields a transform uses to declare an upstream step's result.
+  type UpstreamField = "query_input" | "sync_input";
+
+  // Transform keys that read a given upstream result. One walk parameterised by
+  // the declaring field, so adding a third upstream family doesn't need another
+  // copy of this.
+  const transformsConsuming = (field: UpstreamField, label: string): string[] => {
+    if (!loadedProfile) return [];
+    const keys: string[] = [];
+    for (const step of loadedProfile.structure.steps) {
+      if (step.type !== "sql_transform") continue;
+      stepTransforms(step).forEach((t, idx) => {
+        if ((t[field] ?? []).includes(label)) {
+          keys.push(genKey(step.label, idx));
+        }
+      });
+    }
+    return keys;
+  };
+
+  // Clears every transform that reads this upstream result. Called when the
+  // producing step re-runs and when it's invalidated — a stale join is worse
+  // than a missing one.
+  const resetTransformsConsuming = (field: UpstreamField, label: string) => {
+    const affected = transformsConsuming(field, label);
     if (!affected.length) return;
     setGenerations((prev) => {
       const next = { ...prev };
       for (const k of affected) delete next[k];
       return next;
     });
+  };
+
+  // Changing an input invalidates, in order: transforms that read it, the
+  // re_query and code_table_sync steps that read it, and — because those
+  // results are now stale — the transforms downstream of them.
+  const resetGenerationsConsuming = (inputLabel: string) => {
+    const affected = transformsConsumingInput(inputLabel);
+    if (affected.length) {
+      setGenerations((prev) => {
+        const next = { ...prev };
+        for (const k of affected) delete next[k];
+        return next;
+      });
+    }
+    if (!loadedProfile) return;
+    for (const step of loadedProfile.structure.steps) {
+      const readsIt = (step.input ?? []).some((r) => refLabel(r) === inputLabel);
+      if (!readsIt) continue;
+
+      if (step.type === "re_query") {
+        setQueries((prev) => {
+          if (!prev[step.label]) return prev;
+          const next = { ...prev };
+          delete next[step.label];
+          return next;
+        });
+        if (step.query_output) {
+          resetTransformsConsuming("query_input", step.query_output);
+        }
+      } else if (step.type === "code_table_sync") {
+        // The rows already pushed to RE can't be un-pushed, but the recorded
+        // outcome no longer describes the file on screen, so it stops counting
+        // as done and anything joined to it is cleared.
+        setSyncs((prev) => {
+          if (!prev[step.label]) return prev;
+          const next = { ...prev };
+          delete next[step.label];
+          return next;
+        });
+        if (step.sync_output) {
+          resetTransformsConsuming("sync_input", step.sync_output);
+        }
+      }
+    }
   };
 
   // ── Handlers ──────────────────────────────────────────────────────────────
@@ -208,6 +395,30 @@ export default function App() {
       if (f?.status === "valid") filePaths[lbl] = f.path;
     }
 
+    // Query results this transform declared via query_input. A declared label
+    // whose step hasn't run yet is simply absent — the backend leaves the
+    // placeholder unsubstituted and DuckDB reports it, rather than us guessing.
+    const queryPaths: Record<string, string> = {};
+    for (const label of transform.query_input ?? []) {
+      const producer = loadedProfile.structure.steps.find(
+        (s) => s.type === "re_query" && s.query_output === label,
+      );
+      const res = producer ? queries[producer.label]?.result : undefined;
+      if (res) queryPaths[label] = res.path;
+    }
+
+    // Same contract for code_table_sync outcomes declared via sync_input. A
+    // sync that hasn't run yet is absent for the same reason: DuckDB naming the
+    // unresolved placeholder beats us inventing an empty table.
+    const syncPaths: Record<string, string> = {};
+    for (const label of transform.sync_input ?? []) {
+      const producer = loadedProfile.structure.steps.find(
+        (s) => s.type === "code_table_sync" && s.sync_output === label,
+      );
+      const res = producer ? syncs[producer.label]?.result : undefined;
+      if (res?.path) syncPaths[label] = res.path;
+    }
+
     setGenerations((prev) => ({
       ...prev,
       [key]: { status: "running", progress: 0 },
@@ -216,6 +427,8 @@ export default function App() {
     try {
       const result = await invoke<TransformResult>("run_profile", {
         filePaths,
+        queryPaths,
+        syncPaths,
         sqlFile: transform.sql,
         zipPath: loadedProfile.temp_dir,
         outputLabels: transform.output ?? [],
@@ -238,6 +451,82 @@ export default function App() {
           progress: 100,
           errors: [{ errorType: "Error", message: asString(e) }],
         },
+      }));
+    }
+  };
+
+  // Runs an re_query step: the backend executes the step's params SQL over the
+  // uploaded files, substitutes the values into the query template, calls RE,
+  // and writes the rows to a temp file. The returned path is what downstream
+  // transforms read as {{query:Label}}.
+  const handleRunQuery = async (stepLabel: string) => {
+    if (!loadedProfile) return;
+    const step = loadedProfile.structure.steps.find((s) => s.label === stepLabel);
+    if (!step) return;
+
+    const filePaths: Record<string, string> = {};
+    for (const ref of step.input ?? []) {
+      const lbl = refLabel(ref);
+      const f = files[lbl];
+      if (f?.status === "valid") filePaths[lbl] = f.path;
+    }
+
+    setQueries((prev) => ({ ...prev, [stepLabel]: { status: "running" } }));
+    // Anything already built off the previous result is now stale.
+    if (step.query_output) resetTransformsConsuming("query_input", step.query_output);
+
+    try {
+      const result = await invoke<QueryStepResult>("run_re_query", {
+        filePaths,
+        stepLabel,
+        zipPath: loadedProfile.temp_dir,
+      });
+      setQueries((prev) => ({
+        ...prev,
+        [stepLabel]: { status: "done", result },
+      }));
+    } catch (e) {
+      console.error("run_re_query failed:", e);
+      setQueries((prev) => ({
+        ...prev,
+        [stepLabel]: { status: "error", error: asString(e) },
+      }));
+    }
+  };
+
+  // Runs a code_table_sync step: the backend executes the step's SQL over the
+  // uploaded files and pushes one write per row to RE. Failures come back
+  // per-row rather than aborting, so a partial result is still reported.
+  const handleCodeTableSync = async (stepLabel: string) => {
+    if (!loadedProfile) return;
+    const step = loadedProfile.structure.steps.find((s) => s.label === stepLabel);
+    if (!step) return;
+
+    const filePaths: Record<string, string> = {};
+    for (const ref of step.input ?? []) {
+      const lbl = refLabel(ref);
+      const f = files[lbl];
+      if (f?.status === "valid") filePaths[lbl] = f.path;
+    }
+
+    setSyncs((prev) => ({ ...prev, [stepLabel]: { status: "running" } }));
+    // Anything joined to the previous run's outcome rows is now stale.
+    if (step.sync_output) resetTransformsConsuming("sync_input", step.sync_output);
+    try {
+      const result = await invoke<SyncResult>("run_code_table_sync", {
+        filePaths,
+        stepLabel,
+        zipPath: loadedProfile.temp_dir,
+      });
+      setSyncs((prev) => ({
+        ...prev,
+        [stepLabel]: { status: "done", result },
+      }));
+    } catch (e) {
+      console.error("run_code_table_sync failed:", e);
+      setSyncs((prev) => ({
+        ...prev,
+        [stepLabel]: { status: "error", error: asString(e) },
       }));
     }
   };
@@ -270,6 +559,8 @@ export default function App() {
   const handleReset = () => {
     setFiles({});
     setGenerations({});
+    setSyncs({});
+    setQueries({});
   };
 
   // `zipPath` is the unique selection key — built-in and user profiles can
@@ -280,6 +571,8 @@ export default function App() {
     setSelectedProfile(zipPath);
     setFiles({});
     setGenerations({});
+    setSyncs({});
+    setQueries({});
     setLoadedProfile(null);
     if (zipPath == null) return;
     const summary = profiles.find((p) => p.zip_path === zipPath);
@@ -296,40 +589,160 @@ export default function App() {
     }
   };
 
+  // ── Report handlers ───────────────────────────────────────────────────────
+
+  const handleSelectReport = async (zipPath: string) => {
+    const reqId = ++reportLoadId.current;
+    setSelectedReport(zipPath);
+    setLoadedReport(null);
+    setReportRun(null);
+    setReportStatus("idle");
+    setReportError(null);
+    setReportStale(false);
+    setActionStates({});
+    setReportParams({});
+    try {
+      const loaded = await invoke<LoadedProfile>("load_profile", { zipPath });
+      if (reportLoadId.current !== reqId) return;
+      setLoadedReport(loaded);
+      setReportParams(initialParamValues(loaded.structure));
+    } catch (e) {
+      if (reportLoadId.current !== reqId) return;
+      console.error("load_profile (report) failed:", e);
+      setSelectedReport(null);
+    }
+  };
+
+  const handleParamChange = (id: string, value: unknown) => {
+    setReportParams((prev) => ({ ...prev, [id]: value }));
+    // Existing results no longer reflect the inputs until the next refresh.
+    setReportStale(true);
+  };
+
+  const handleRefresh = async () => {
+    if (!loadedReport) return;
+    setReportStatus("running");
+    setReportError(null);
+    try {
+      const result = await invoke<ReportRunResult>("run_report", {
+        zipPath: loadedReport.temp_dir,
+        paramValues: reportParams,
+      });
+      setReportRun(result);
+      setReportStatus("done");
+      setReportStale(false);
+    } catch (e) {
+      console.error("run_report failed:", e);
+      setReportStatus("error");
+      setReportError(asString(e));
+    }
+  };
+
+  const handleRunAction = async (actionId: string) => {
+    if (!loadedReport) return;
+    setActionStates((prev) => ({
+      ...prev,
+      [actionId]: { status: "running" },
+    }));
+    try {
+      const result = await invoke<ActionResult>("run_report_action", {
+        zipPath: loadedReport.temp_dir,
+        actionId,
+        paramValues: reportParams,
+      });
+      setActionStates((prev) => ({
+        ...prev,
+        [actionId]: {
+          status: result.ok ? "done" : "error",
+          message: result.message,
+        },
+      }));
+    } catch (e) {
+      console.error("run_report_action failed:", e);
+      setActionStates((prev) => ({
+        ...prev,
+        [actionId]: { status: "error", message: asString(e) },
+      }));
+    }
+  };
+
+  const renderPanel = (tab: TopTab) => {
+    if (tab === "imports") {
+      return (
+        <ImportsPage
+          profiles={importProfiles}
+          selectedProfile={selectedProfile}
+          onSelectProfile={handleSelectProfile}
+          loadedProfile={loadedProfile}
+          stepsDone={stepsDone}
+          files={files}
+          generations={generations}
+          onFileSelect={handleFileSelect}
+          onValidate={handleValidate}
+          onClearFile={handleClearFile}
+          onGenerate={handleGenerate}
+          onDownload={handleDownload}
+          syncs={syncs}
+          onCodeTableSync={handleCodeTableSync}
+          queries={queries}
+          onRunQuery={handleRunQuery}
+          onReset={handleReset}
+        />
+      );
+    }
+    if (tab === "data-requests")
+      return (
+        <DataRequestsPage
+          mode={dataReqMode}
+          setMode={setDataReqMode}
+          customRatio={dataReqRatio}
+          setCustomRatio={setDataReqRatio}
+        />
+      );
+    return (
+      <ReportsPage
+        reports={reportProfiles}
+        selectedReport={selectedReport}
+        onSelectReport={handleSelectReport}
+        loadedReport={loadedReport}
+        paramValues={reportParams}
+        onParamChange={handleParamChange}
+        run={reportRun}
+        status={reportStatus}
+        error={reportError}
+        stale={reportStale}
+        onRefresh={handleRefresh}
+        actionStates={actionStates}
+        onRunAction={handleRunAction}
+      />
+    );
+  };
+
   return (
     <div className="flex flex-col h-screen bg-neutral-100 text-neutral-900">
       <Titlebar
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={handleTabChange}
         onOpenSettings={() => setSettingsOpen(true)}
       />
       <div className="flex-1 p-4 pt-0 overflow-hidden">
-        <div className="relative flex h-full bg-white rounded-xl border border-neutral-200 shadow-md overflow-hidden">
-          {activeTab === "imports" && (
-            <>
-              <Sidebar
-                profiles={profiles}
-                selectedProfile={selectedProfile}
-                onSelectProfile={handleSelectProfile}
-                loadedProfile={loadedProfile}
-                stepsDone={stepsDone}
-                onReset={handleReset}
-              />
-              <MainPanel
-                loadedProfile={loadedProfile}
-                stepsDone={stepsDone}
-                files={files}
-                generations={generations}
-                onFileSelect={handleFileSelect}
-                onValidate={handleValidate}
-                onClearFile={handleClearFile}
-                onGenerate={handleGenerate}
-                onDownload={handleDownload}
-              />
-            </>
+        <div className="relative h-full">
+          {exitingTab && (
+            <PanelTransition
+              key={`exit-${exitingTab}`}
+              state="exit"
+              direction={transitionDir}
+            >
+              {renderPanel(exitingTab)}
+            </PanelTransition>
           )}
-          {activeTab === "data-requests" && <DataRequestsPage />}
-          {activeTab === "reports" && <ReportsPage />}
+          <PanelTransition
+            key={`active-${activeTab}`}
+            state={exitingTab ? "enter" : "idle"}
+            direction={transitionDir}
+          >
+            {renderPanel(activeTab)}
+          </PanelTransition>
           <SettingsPanel
             open={settingsOpen}
             onClose={() => {

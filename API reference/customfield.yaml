@@ -1,0 +1,451 @@
+openapi: 3.0.1
+info:
+  title: Custom field
+  description: This API supports managing custom field categories.
+  version: '1.0'
+servers:
+  - url: https://api.sky.blackbaud.com/customfield
+paths:
+  '/customfieldcategories/{id}':
+    delete:
+      tags:
+        - Custom Fields
+      summary: Delete custom field (PREVIEW)
+      description: "Delete a custom field by ID.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: DeleteCustomField
+      parameters:
+        - name: id
+          in: path
+          description: Custom field category ID
+          required: true
+          schema:
+            type: integer
+            format: int32
+        - name: record_type
+          in: query
+          description: Custom field record type
+          required: true
+          schema:
+            $ref: '#/components/schemas/CustomFieldsRecordType'
+      responses:
+        '200':
+          description: OK
+    get:
+      tags:
+        - Custom Fields
+      summary: Get custom field category by ID (PREVIEW)
+      description: "Gets custom field category by ID.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: GetCustomFieldCategoryById
+      parameters:
+        - name: id
+          in: path
+          description: Custom field category ID
+          required: true
+          schema:
+            type: integer
+            format: int32
+        - name: record_type
+          in: query
+          description: Custom field record type
+          required: true
+          schema:
+            $ref: '#/components/schemas/CustomFieldsRecordType'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomFieldCategory'
+              example:
+                custom_field_category_id: 1
+                description: Description
+                type_of_data: Text
+                required: false
+                inactive: true
+                must_be_unique: false
+                has_values: false
+    patch:
+      tags:
+        - Custom Fields
+      summary: Edit custom field category (PREVIEW)
+      description: "Edit custom field category.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: EditCustomFieldCategory
+      parameters:
+        - name: id
+          in: path
+          description: The ID of the custom field category to edit.
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        description: Custom field category edit
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomFieldCategoryEdit'
+            example:
+              record_type: Constituent
+              description: Alternate constituent code
+              type_of_data: Table
+              code_table_id: 43
+              required: true
+              must_be_unique: true
+              sequence: 1
+              inactive: false
+      responses:
+        '200':
+          description: OK
+        '400':
+          description: Returned when the request is invalid.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/CustomFieldsErrorCodes'
+              example:
+                type: urn:blackbaud:unique-description
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Custom field category must be unique.
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+  /customfieldcategories:
+    get:
+      tags:
+        - Custom Fields
+      summary: Get custom field categories (PREVIEW)
+      description: "Gets a list of custom field categories for a given custom field type.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: GetCustomFieldCategories
+      parameters:
+        - name: record_type
+          in: query
+          description: The record type to filter custom field categories by.
+          required: true
+          schema:
+            $ref: '#/components/schemas/CustomFieldsRecordType'
+        - name: search_text
+          in: query
+          description: Fuzzy search for custom field categories by description.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: 'The maximum number of records to return. Defaults to 50, maximum 200.'
+          schema:
+            maximum: 200.0
+            minimum: 1.0
+            type: integer
+            format: int32
+            default: 50
+        - name: offset
+          in: query
+          description: 'The number of records to skip, for use with pagination.'
+          schema:
+            maximum: 2147483647.0
+            minimum: 0.0
+            type: integer
+            format: int32
+        - name: include_inactive
+          in: query
+          description: Include inactive custom field categories in the results.
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetCustomFieldCategoriesResponse'
+              example:
+                custom_field_categories:
+                  - custom_field_category_id: 1
+                    description: Origin
+                    type_of_data: Text
+                    required: false
+                    inactive: false
+                    code_table_id: 1
+                    must_be_unique: false
+                    has_values: false
+                count: 1
+                limit: 10
+                offset: 0
+    post:
+      tags:
+        - Custom Fields
+      summary: Add custom field category (PREVIEW)
+      description: "Add custom field category.\n\n***This endpoint is in PREVIEW and may be changed or removed at any time.***"
+      operationId: AddCustomFieldCategory
+      requestBody:
+        description: Custom field category add
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomFieldCategoryAdd'
+            example:
+              record_type: Constituent
+              description: Alternate constituent code
+              type_of_data: Table
+              code_table_id: 43
+              required: true
+              must_be_unique: true
+              sequence: 1
+              inactive: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+              example:
+                id: '2'
+        '400':
+          description: Returned when the request is invalid.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/CustomFieldsErrorCodes'
+              example:
+                type: urn:blackbaud:unique-description
+                title: One or more validation errors occurred.
+                status: 400
+                detail: Custom field category must be unique.
+                trace_id: 0092384aa2c24842a550a0137bbf3172
+                span_id: f7c9d108335d479588f5f165ca17a5e3
+components:
+  schemas:
+    CustomFieldCategory:
+      type: object
+      properties:
+        custom_field_category_id:
+          type: integer
+          description: ID of the custom field category.
+          format: int32
+        description:
+          type: string
+          description: The custom field category's description.
+          nullable: true
+        type_of_data:
+          $ref: '#/components/schemas/CustomFieldTypeOfData'
+        required:
+          type: boolean
+          description: The required flag for the custom field category.
+        inactive:
+          type: boolean
+          description: Whether the custom field category is active or inactive.
+        code_table_id:
+          type: integer
+          description: ID of the code table for categories of type Blackbaud.Renxt.CustomFields.Service.Models.Enums.CustomFieldTypeOfData.Table.
+          format: int32
+          nullable: true
+        code_table_name:
+          type: string
+          description: Name of the code table corresponding to Blackbaud.Renxt.CustomFields.Service.Models.CustomFieldCategory.CodeTableId.
+          nullable: true
+        must_be_unique:
+          type: boolean
+          description: Indicates if the custom field category values must be unique.
+        sequence:
+          type: integer
+          description: Sequence of the custom field category.
+          format: int32
+          nullable: true
+        has_values:
+          type: boolean
+          description: Indicates when the custom field category is in use with a value on one or more records that it applies to.
+      additionalProperties: false
+      description: Custom field category model
+    CustomFieldCategoryAdd:
+      required:
+        - description
+        - record_type
+      type: object
+      properties:
+        record_type:
+          $ref: '#/components/schemas/CustomFieldsRecordType'
+        description:
+          minLength: 1
+          type: string
+          description: Custom field category name.
+        type_of_data:
+          $ref: '#/components/schemas/CustomFieldTypeOfData'
+        code_table_id:
+          type: integer
+          description: 'The code table ID, used for table type custom fields.'
+          format: int32
+          nullable: true
+        required:
+          type: boolean
+          description: Whether the custom field is required for all records of the given type.
+        must_be_unique:
+          type: boolean
+          description: Whether the category values must be unique.
+        sequence:
+          type: integer
+          description: 'The sequence, controlling the order of the category in the categories list.'
+          format: int32
+          nullable: true
+        inactive:
+          type: boolean
+          description: Whether the custom field category is active or inactive.
+      additionalProperties: false
+      description: Model of a custom field category to be added.
+    CustomFieldCategoryEdit:
+      required:
+        - description
+        - record_type
+      type: object
+      properties:
+        record_type:
+          $ref: '#/components/schemas/CustomFieldsRecordType'
+        description:
+          minLength: 1
+          type: string
+          description: Custom field category name.
+        type_of_data:
+          $ref: '#/components/schemas/CustomFieldTypeOfData'
+        code_table_id:
+          type: integer
+          description: 'The code table ID, used for table type custom fields.'
+          format: int32
+          nullable: true
+        required:
+          type: boolean
+          description: Whether the custom field is required for all records of the given type.
+        must_be_unique:
+          type: boolean
+          description: Whether the category values must be unique.
+        sequence:
+          type: integer
+          description: 'The sequence, controlling the order of the category in the categories list.'
+          format: int32
+          nullable: true
+        inactive:
+          type: boolean
+          description: Whether the custom field category is active or inactive.
+      additionalProperties: false
+      description: Model of a custom field category to be edited.
+    CustomFieldTypeOfData:
+      enum:
+        - Text
+        - Number
+        - Date
+        - Currency
+        - Boolean
+        - Table
+        - Constituent
+        - FuzzyDate
+      type: string
+      description: The different types of data that can be stored in a custom field.<p>Members:</p><ul><li><i>Text</i> - Text field</li><li><i>Number</i> - Numeric field</li><li><i>Date</i> - Full date field</li><li><i>Currency</i> - Currency field</li><li><i>Boolean</i> - Yes/no field</li><li><i>Table</i> - Code table entry field</li><li><i>Constituent</i> - Specific constituent record field</li><li><i>FuzzyDate</i> - Fuzzy date field</li></ul>
+    CustomFieldsErrorCodes:
+      type: object
+      properties:
+        type:
+          type: string
+          description: 'A URI reference [RFC3986] that identifies the problem type. This specification encourages that, when dereferenced, it provide human-readable documentation for the problem type (e.g., using HTML [W3C.REC-html5-20141028]). When this member is not present, its value is assumed to be "about:blank".<br/><br/>Available values:<table><tr><th>type</th><th>detail</th></tr><tr><td>urn:blackbaud:model-validation-error</td><td>A model validation rule was violated, such as a missing required field.</td></tr><tr><td>urn:blackbaud:custom-field-category-description-must-be-unique</td><td>Custom field category description must be unique for the record type.</td></tr><tr><td>urn:blackbaud:description-too-long</td><td>The description must be 50 characters or less.</td></tr><tr><td>urn:blackbaud:required-field</td><td>The required field ''{0}'' does not have a value.</td></tr><tr><td>urn:blackbaud:invalid-value</td><td>''{0}'' is not a valid value for {1}.</td></tr></table>'
+          nullable: true
+        title:
+          type: string
+          description: 'A short, human-readable summary of the problem type. It SHOULD NOT change from occurrence to occurrence of the problem, except for purposes of localization (e.g., using proactive content negotiation; see [RFC7231], Section 3.4).'
+          nullable: true
+        status:
+          type: integer
+          description: 'The HTTP status code ([RFC7231], Section 6) generated by the origin server for this occurrence of the problem.'
+          format: int32
+          nullable: true
+        detail:
+          type: string
+          description: A human-readable explanation specific to this occurrence of the problem.
+          nullable: true
+        instance:
+          type: string
+          description: A URI reference that identifies the specific occurrence of the problem. It may or may not yield further information if dereferenced.
+          nullable: true
+        trace_id:
+          type: string
+          description: A request ID that can be provided to Blackbaud Support that may help with further troubleshooting.
+        span_id:
+          type: string
+          description: A request ID that can be provided to Blackbaud Support that may help with further troubleshooting.
+      additionalProperties: { }
+      description: A machine-readable format for specifying errors in HTTP API responses based on https://tools.ietf.org/html/rfc7807.
+      x-bb-error-types:
+        - urn:blackbaud:model-validation-error
+        - urn:blackbaud:custom-field-category-description-must-be-unique
+        - urn:blackbaud:description-too-long
+        - urn:blackbaud:required-field
+        - urn:blackbaud:invalid-value
+    CustomFieldsRecordType:
+      enum:
+        - Constituent
+        - Gift
+        - Action
+        - Education
+        - Event
+        - Participant
+        - Campaign
+        - Appeal
+        - Fund
+        - Package
+        - Address
+        - Job
+        - Membership
+        - IndividualRelationship
+        - OrganizationRelationship
+        - Financial
+        - Opportunity
+      type: string
+      description: Custom fields record type<p>Members:</p><ul><li><i>Constituent</i> - Constituent</li><li><i>Gift</i> - Gift</li><li><i>Action</i> - Action</li><li><i>Education</i> - Education</li><li><i>Event</i> - Event</li><li><i>Participant</i> - Participant</li><li><i>Campaign</i> - Campaign</li><li><i>Appeal</i> - Appeal</li><li><i>Fund</i> - Fund</li><li><i>Package</i> - Package</li><li><i>Address</i> - Address</li><li><i>Job</i> - Job</li><li><i>Membership</i> - Membership</li><li><i>IndividualRelationship</i> - Individual relationship</li><li><i>OrganizationRelationship</i> - Organization relationship</li><li><i>Financial</i> - Financial</li><li><i>Opportunity</i> - Opportunity</li></ul>
+    GetCustomFieldCategoriesResponse:
+      required:
+        - limit
+        - offset
+      type: object
+      properties:
+        custom_field_categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomFieldCategory'
+          description: The list of custom field categories.
+          nullable: true
+        count:
+          type: integer
+          description: The total number of items in the collection before limit/offset.
+          format: int32
+        limit:
+          type: integer
+          description: The limit on the list request.
+          format: int32
+        offset:
+          type: integer
+          description: The offset on the list request.
+          format: int32
+      additionalProperties: false
+      description: Response model for GET /customfieldcategories
+      x-bb-suppressions:
+        - list_operation_pagination_style
+    PostResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The identifier of the resulting record
+          nullable: true
+      additionalProperties: false
+      description: Response object for POST requests
+  securitySchemes:
+    apiKeyHeader:
+      type: apiKey
+      name: Bb-Api-Subscription-Key
+      in: header
+    apiKeyQuery:
+      type: apiKey
+      name: subscription-key
+      in: query
+security:
+  - apiKeyHeader: [ ]
+  - apiKeyQuery: [ ]
+tags:
+  - name: Custom Fields

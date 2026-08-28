@@ -8,8 +8,15 @@ component behavior live here side by side.
 Authoritative code locations:
 - YAML parsing (Rust): `src-tauri/src/profile.rs`
 - Type mirror (TS): `src/types.ts`
-- Step → component dispatch: `src/components/MainPanel.tsx` (`switch (step.type)`)
+- Step → component dispatch: `src/components/imports/MainPanel.tsx` (`switch (step.type)`)
 - Instruction section parser: `parse_instructions()` in `src-tauri/src/profile.rs`
+- Step-type acceptance: `src-tauri/src/validate.rs` and `profiles/build.sh` — both
+  reject unknown types
+
+**Scope:** this file covers **import** profiles. Report profiles (`kind: report`)
+have no steps at all — they declare `parameters` / `queries` / `transforms` /
+`visualizations` / `actions`, documented in `REPORT_PROFILES.md`. The one section
+below that applies to both kinds is *Code tables*.
 
 ---
 
@@ -20,7 +27,11 @@ A `.import` file is a zip archive containing:
 ```
 structure.yaml      # required — profile metadata, inputs/outputs, steps
 instructions.md     # optional — markdown text per step
-sql/                # optional — .sql files referenced by sql_transform steps
+sql/                # optional — .sql files referenced by sql_transform steps,
+                    #            code_table_sync steps, and notice queries
+fixtures/           # optional — mock-mode RE responses:
+                    #            queries/<query_output>.json  (re_query steps)
+                    #            codetables/<output>.json     (code_tables)
 assets/             # optional — images referenced from instructions.md
 ```
 
@@ -51,6 +62,11 @@ inputs:
 outputs:
   - label: Update_Records
     type: csv
+
+code_tables:               # optional — RE code tables pulled before any SQL runs
+  - id: constituent_codes  # (see Code tables below; also valid in report profiles)
+    name: "Constituent Codes"
+    output: ConstituentCodes
 
 steps:
   - label: ...
@@ -198,7 +214,8 @@ Renders the **pipeline diagram + Generate/progress/Download** row
 - The notice SQL is expected to return zero rows in the nominal case. Any
   returned rows are rendered as a table beneath the Generate row using the
   result-set column names as headers.
-- `{{input_file}}` substitution works the same way as in the main transform.
+- `{{input_file}}` / `{{input:Label}}` substitution works the same way as in the
+  main transform, and so does `{{codetable:Label}}`.
 - Notices live on the individual transform — both the single-transform
   shortcut and entries inside `transforms[]` support a `notices` field.
 
@@ -212,6 +229,11 @@ Renders the **pipeline diagram + Generate/progress/Download** row
   (`{ label: "Classification", validate: true }`) entries.
 - `sql` is required — names a `.sql` file inside the bundle.
 - `output` is an array — one transform can produce multiple outputs.
+- `query_input` is an array of `query_output` labels from earlier `re_query`
+  steps, read in SQL as `{{query:Label}}`. Supported on both the single-transform
+  shortcut and entries inside `transforms[]`.
+- `sync_input` is the same for `sync_output` labels from earlier
+  `code_table_sync` steps, read as `{{sync:Label}}`.
 
 ### SQL placeholders
 Inside the SQL file:
@@ -224,6 +246,17 @@ Inside the SQL file:
   output named `LabelName`. Use this when a single transform writes multiple
   files — the SQL author writes one `COPY` per output and the runtime
   executes them as a batch.
+- `{{query:Label}}` is replaced with the JSON file an earlier `re_query` step
+  wrote. Read it with `read_json_auto`. Requires the transform to declare the
+  label in `query_input`.
+- `{{sync:Label}}` is replaced with the outcome rows an earlier
+  `code_table_sync` step wrote. Requires the transform to declare the label in
+  `sync_input`. See *Publishing the outcome* under that step type — read it with
+  `read_json(..., columns={...})`, since the result may be empty.
+- `{{codetable:Label}}` likewise, for a declared code table. See *Code tables*.
+
+Inside an `re_query` step's `template` (JSON, not SQL), `{{rows:col}}` and
+`{{value:col}}` carry values in from `params_sql` — see that step type above.
 
 ### Single vs multi output
 
@@ -290,6 +323,241 @@ Optional body describing what this transform does.
 
 ---
 
+## Step type: `re_query`
+
+### Purpose
+Runs an RE query **mid-pipeline**. Values are pulled out of the uploaded files
+with SQL, sent to RE, and the returned rows are made available to later SQL steps
+as `{{query:Label}}`. Read-only — nothing is written to RE. Renders via
+`StepQuery`.
+
+This is the step that lets an import profile ask RE a question: *"here are the
+400 record ids in the vendor file, what do you currently have for them?"*
+
+### YAML
+```yaml
+  - label: FetchFromRE
+    type: re_query
+    ref: re.query.execute        # central registry call — or an inline template
+    input: [Vendor]              # inputs params_sql reads (optional)
+    params_sql: lookup_ids.sql   # optional — supplies {{rows:}} / {{value:}}
+    query_output: RERecords      # names the result -> {{query:RERecords}}
+    template:                    # ExecuteQueryDefinition (see REPORT_PROFILES.md)
+      type_id: 18
+      select_fields:
+        - { query_field_id: 597, user_alias: re_id }
+      filter_fields:
+        - query_field_id: 597
+          compare_type: None
+          operator: OneOf
+          filter_values: "{{rows:record_id}}"
+```
+
+`query_output` is a **string**, and deliberately not `output` — `output` already
+means "a declared file with a Download button" and would collide.
+
+### Feeding the query from SQL
+`params_sql` runs first, over the uploaded inputs (and any `code_tables`). Each
+column it returns becomes available to `template` in two forms:
+
+| Placeholder      | Becomes                                                        |
+| ---------------- | -------------------------------------------------------------- |
+| `{{rows:col}}`   | A **JSON array** of that column's values — deduped, empties dropped, order kept. The whole string is replaced, so this is what an `OneOf` `filter_values` wants. |
+| `{{value:col}}`  | The **first row's** cell, substituted inline like `{{param:}}`.  |
+
+`{{rows:col}}` only becomes an array when the string is *exactly* that
+placeholder. A column name that doesn't exist is left in place unsubstituted, so
+RE names it in the error rather than the step silently sending an empty filter
+that matches everything.
+
+A step with a fully static `template` can omit `params_sql` entirely.
+
+### Consuming the result
+A later `sql_transform` declares what it reads:
+
+```yaml
+  - label: CreateImportFile
+    type: sql_transform
+    input: [Vendor]
+    query_input: [RERecords]     # <- declared dependency
+    sql: build_import.sql
+    output: [Update_Records]
+```
+
+```sql
+FROM read_csv_auto('{{input:Vendor}}') v
+INNER JOIN read_json_auto('{{query:RERecords}}') r ON r.re_id = v."record_id"
+```
+
+The declaration is what makes the dependency validatable, visible, and precise
+for invalidation — see *Ordering* below. Notice queries on that transform see the
+same `{{query:...}}` data.
+
+### Ordering
+Steps run in the order the user clicks them, so a `query_input` may only name a
+`query_output` produced by an **earlier** step. A forward reference is rejected
+by both `validate.rs` and `build.sh` with "the re_query step producing it comes
+later — reorder the steps". There is no automatic topological sort.
+
+### Behavior
+- Live only when connected and `RE_NXT_MOCK` is unset; otherwise the step reads
+  `fixtures/queries/<query_output>.json` from the bundle. The `mode` badge shows
+  which ran.
+- The SKY flow is execute → poll job → download, which takes seconds to minutes.
+  The progress bar is **indeterminate** because the job reports no progress.
+- Re-running a query clears every transform that declares it, and re-uploading
+  an input clears the query steps that read it *and* their downstream
+  transforms — a stale join is worse than a missing one.
+
+### UI behavior
+- **Pipeline diagram**: input pills on the left, a download-cloud icon in the
+  middle, the `query_output` label on the right.
+- **Run Query** button, enabled on the same rule as a transform.
+- On success: row count plus the exact placeholder later SQL should use.
+
+---
+
+## Step type: `code_table_sync`
+
+### Purpose
+Pushes rows to an RE **code table** — creating, updating, or deleting entries.
+The step's SQL selects the rows; each returned row becomes one write. There is
+no output file. Renders via `StepCodeTableSync`.
+
+Reading a code table needs no step at all — declare it in the top-level
+`code_tables:` section and reference it from any SQL as `{{codetable:Label}}`
+(see *Code tables* below).
+
+### YAML
+```yaml
+  - label: AddMissingCodes
+    type: code_table_sync
+    code_table: "Constituent Codes"   # exact name — or code_table_id: "43"
+    operation: create                 # create | update | delete
+    input:                            # inputs the SQL reads
+      - Classification
+    sql: missing_codes.sql            # selects the rows to push
+    sync_output: NewCodes             # optional — names the outcome rows
+```
+
+### Publishing the outcome (`sync_output`)
+
+A sync step is a side effect by default: it pushes rows and reports counters.
+Naming `sync_output` also publishes **what happened to each row**, on the same
+contract `re_query` uses for `query_output`:
+
+```yaml
+  - label: CreateImportFile
+    type: sql_transform
+    input: [Classification]
+    sync_input: [NewCodes]           # <- declared dependency
+    sql: build_import.sql
+    output: [Update_Records]
+```
+
+```sql
+LEFT JOIN read_json('{{sync:NewCodes}}',
+                    columns={'long_description': 'VARCHAR',
+                             'table_entries_id': 'VARCHAR',
+                             'sync_status': 'VARCHAR'}) n
+       ON lower(n.long_description) = lower(trim(v."class"))
+      AND n.sync_status = 'ok'
+```
+
+One row per **attempted** write, in the order the SQL returned them. Each row
+carries the source SQL's own columns, so you can join on whatever the profile
+already selected, plus:
+
+| Column              | Meaning                                                       |
+| ------------------- | ------------------------------------------------------------- |
+| `table_entries_id`  | The id RE assigned to a create, or the id sent for update/delete. Null when a create failed. |
+| `sync_status`       | `ok` or `failed`. Same values in live and mock mode.           |
+| `sync_error`        | The error text for a failed row; null otherwise.               |
+| `sync_row`          | 1-based position, matching the `Row` column in the failures table. |
+| `sync_operation`    | `create` / `update` / `delete`.                                |
+| `sync_mode`         | `live` or `mock`.                                              |
+
+**Why this exists.** Without it, the only way to use a newly created entry
+downstream is to re-pull the whole code table and re-join on free-text
+`long_description`. That costs a second fetch, matches on a name rather than an
+id, and cannot work in mock mode at all, where the fixture never changes. Mock
+mode assigns deterministic `mock-N` ids so downstream SQL joins identically in
+both modes.
+
+> **Reading a possibly-empty result.** A sync legitimately attempts zero rows
+> when nothing was missing, which writes `[]`. `read_json_auto` has nothing to
+> infer a schema from and fails to bind columns, so read a sync result with the
+> explicit `read_json(..., columns={...})` form as above. Extra columns in the
+> file are ignored.
+
+Ordering works exactly like `query_input`: the producing step must appear
+**earlier** in `steps:`, and both `validate.rs` and `build.sh` reject a forward
+reference with "the code_table_sync step producing it comes later — reorder the
+steps".
+
+### The SQL contract
+Column names are the API's writable `TableEntry` fields. Any other column is
+ignored, so a query can carry extra columns for its own joins.
+
+| Column              | Applies to           | Notes                                    |
+| ------------------- | -------------------- | ---------------------------------------- |
+| `long_description`  | create (**required**), update | The entry's name.               |
+| `table_entries_id`  | update, delete (**required**) | RE's system id for the entry.   |
+| `short_description` | create, update       | Optional.                                |
+| `numeric_value`     | create, update       | Optional; parsed as a number.            |
+| `sequence`          | create               | Optional; parsed as an integer.          |
+| `is_active`         | create, update       | Optional; `true`/`1`/`yes` → `true`.     |
+
+### Behavior
+- One HTTP call per row. A failed row is recorded and the run **continues** —
+  the result carries `succeeded`, `attempted`, and a `failures[]` list naming
+  each bad row, so one rejected entry can't hide the rest.
+- Writes reach RE only when connected and `RE_NXT_MOCK` is unset; otherwise
+  they're stubbed. The result's `mode` (`live`/`mock`) is shown as a badge
+  next to the button *before* the user clicks, because this step changes RE data.
+- The step is marked done only when every row succeeded.
+
+### UI behavior
+- **Pipeline diagram**: input pills on the left, an upload icon in the middle,
+  the target code table on the right.
+- **Button**: labelled by operation ("Add entries" / "Update entries" /
+  "Delete entries"), enabled on the same rule as a transform — every required
+  input uploaded and valid.
+- **Result**: a green callout on full success, amber on partial. Failures render
+  as a table of `Row` / `Entry` / `Error`.
+
+---
+
+## Code tables (no step required)
+
+A top-level section, valid in **both** import and report profiles. Each entry is
+fetched from RE before any SQL runs and written to the run's temp dir as JSON.
+
+```yaml
+code_tables:
+  - id: constituent_codes
+    name: "Constituent Codes"    # exact name — or code_table_id: "43"
+    include_inactive: false      # default false
+    output: ConstituentCodes     # → {{codetable:ConstituentCodes}}
+```
+
+`{{codetable:Label}}` resolves to that JSON file, read with `read_json_auto`:
+
+```sql
+LEFT JOIN read_json_auto('{{codetable:ConstituentCodes}}') ct
+       ON lower(trim(ct.long_description)) = lower(trim(v."class"))
+```
+
+Columns are the API's `TableEntry` fields: `table_entries_id`,
+`long_description`, `short_description`, `numeric_value`, `sequence`,
+`is_active`, `is_system_entry`, `code_tables_id`, `code_tables_name`.
+
+Mock mode reads `fixtures/codetables/<output>.json` from the bundle, so a
+profile that uses code tables still runs offline. Working example:
+`profiles/src/code_table_demo/`.
+
+---
+
 ## Step type: `manual_instruction`
 
 ### Purpose
@@ -329,10 +597,15 @@ Computed in `App.tsx` (`stepsDone`):
 - `file_input` — done when **every** input row in the step is `"valid"`.
 - `sql_transform` — done when **every** transform in the step has
   `status === "done"`.
+- `re_query` — done when the query returned without error (zero rows still
+  counts as done; an empty result is a legitimate answer).
+- `code_table_sync` — done when the run finished **and** every row succeeded
+  (`status === "done" && result.ok`). A partial run leaves the step open.
 - `manual_instruction` — currently never marked done (no user action tracked).
 
 Generation state is keyed by `${stepLabel}::${transformIdx}` so that
-multi-transform steps track each transform independently.
+multi-transform steps track each transform independently. Sync state is keyed by
+step label alone — a `code_table_sync` step holds exactly one operation.
 
 ---
 
@@ -341,7 +614,9 @@ multi-transform steps track each transform independently.
 | Step type            | Required fields                      | Optional fields                          |
 | -------------------- | ------------------------------------ | ---------------------------------------- |
 | `file_input`         | `label`, `type`, at least one `input`| `input[].validate`                       |
-| `sql_transform`      | `label`, `type`, `sql` or `transforms`| `input`, `output`, `notices`, `transforms[].input`, `transforms[].output`, `transforms[].notices` |
+| `sql_transform`      | `label`, `type`, `sql` or `transforms`| `input`, `output`, `notices`, `query_input`, `sync_input`, `transforms[].*` |
+| `re_query`           | `label`, `type`, `query_output`, `ref` or `template` | `input`, `params_sql`, `bind`     |
+| `code_table_sync`    | `label`, `type`, `sql`, `operation`, `code_table` or `code_table_id` | `input`, `sync_output` |
 | `manual_instruction` | `label`, `type`                      | —                                        |
 
 ---
@@ -352,10 +627,12 @@ To add a new step type or change an existing one, touch:
 
 1. **`src-tauri/src/profile.rs`** — extend `Step` / `StepInputRef` if new fields are needed; serde handles the YAML mapping.
 2. **`src/types.ts`** — mirror any new field in the TS `Step` type.
-3. **`src/components/MainPanel.tsx`** — add a `case "your_type":` in the
+3. **`src/components/imports/MainPanel.tsx`** — add a `case "your_type":` in the
    `StepSection` switch, dispatching to a new or existing component.
 4. **`src/App.tsx`** — extend state shape / handlers if the new step needs
    to track per-step data beyond the existing `files` and `generations` maps.
-5. **An example profile** — add a corresponding YAML+MD example under
+5. **`src-tauri/src/validate.rs`** and **`profiles/build.sh`** — both reject
+   unknown step types, so a new one must be added to each or bundles won't verify.
+6. **An example profile** — add a corresponding YAML+MD example under
    `profiles/src/<name>/` and rebuild with `profiles/build.sh` so you can
    exercise it end to end.

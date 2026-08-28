@@ -5,6 +5,8 @@ pub enum AppError {
     SqlError(String),
     IoError(String),
     ParseError(String),
+    NetworkError(String),
+    AuthError(String),
 }
 
 impl fmt::Display for AppError {
@@ -16,6 +18,10 @@ impl fmt::Display for AppError {
                 write!(f, "IO error: {}", msg),
             AppError::ParseError(msg) =>
                 write!(f, "Parse error: {}", msg),
+            AppError::NetworkError(msg) =>
+                write!(f, "Network error: {}", msg),
+            AppError::AuthError(msg) =>
+                write!(f, "Auth error: {}", msg),
         }
     }
 }

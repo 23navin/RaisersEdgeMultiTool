@@ -24,6 +24,16 @@ const BUILTIN_PROFILES: &[(&str, &[u8])] = &[
     ("test2.import", include_bytes!("../../profiles/test2.import")),
     ("test3.import", include_bytes!("../../profiles/test3.import")),
     ("test4.import", include_bytes!("../../profiles/test4.import")),
+    // Demonstrates the re_query step feeding a later sql_transform.
+    ("re_query_demo.import", include_bytes!("../../profiles/re_query_demo.import")),
+    // Demonstrates the code_tables section + the code_table_sync step.
+    ("code_table_demo.import", include_bytes!("../../profiles/code_table_demo.import")),
+    // Same pieces, ordered as a cross-reference workflow: audit the file's codes
+    // against the table, then offer to create the missing ones before importing.
+    ("code_table_crossref.import", include_bytes!("../../profiles/code_table_crossref.import")),
+    // Report-kind built-in. Verified + packed by profiles/build.sh like the
+    // others (the verifier branches on `kind: report`).
+    ("gift_activity.import", include_bytes!("../../profiles/gift_activity.import")),
 ];
 
 // ── YAML structs ──────────────────────────────────────────────────────────────
@@ -92,6 +102,47 @@ pub struct SqlTransform {
     pub sql: String,
     pub output: Option<Vec<String>>,
     pub notices: Option<Vec<NoticeQuery>>,
+    // Query outputs (from an earlier re_query step) this transform reads as
+    // {{query:Label}}. Declared so the dependency is validatable and so the
+    // frontend knows which results to pass down.
+    pub query_input: Option<Vec<String>>,
+    // Same contract for an earlier code_table_sync step's outcome rows, read as
+    // {{sync:Label}}.
+    pub sync_input: Option<Vec<String>>,
+}
+
+// A code table pulled from RE before transforms run. Shared by both profile
+// kinds: the fetched entries are written to the run's temp dir as JSON and
+// exposed to SQL as {{codetable:<output>}}, which DuckDB reads via
+// read_json_auto. Address the table by `name` (exact match, resolved to its id
+// with one extra call) or by `code_table_id` when the id is already known.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct CodeTableRef {
+    pub id: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub code_table_id: Option<String>,
+    // Retired entries are excluded unless a profile asks for them.
+    #[serde(default)]
+    pub include_inactive: Option<bool>,
+    pub output: String,
+}
+
+impl CodeTableRef {
+    // Whether the table is addressed by id or by name — id wins when both are set.
+    pub fn selector(&self) -> Result<crate::re_calls::CodeTableSelector<'_>, AppError> {
+        if let Some(id) = self.code_table_id.as_deref() {
+            return Ok(crate::re_calls::CodeTableSelector::Id(id));
+        }
+        if let Some(name) = self.name.as_deref() {
+            return Ok(crate::re_calls::CodeTableSelector::Name(name));
+        }
+        Err(AppError::ParseError(format!(
+            "code_tables entry '{}' needs either `name` or `code_table_id`",
+            self.id
+        )))
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -104,6 +155,36 @@ pub struct Step {
     pub output: Option<Vec<String>>, // sql_transform single-transform shortcut
     pub notices: Option<Vec<NoticeQuery>>, // sql_transform single-transform shortcut
     pub transforms: Option<Vec<SqlTransform>>, // sql_transform multi-transform form
+
+    // ── code_table_sync fields ───────────────────────────────────────────────
+    // The step's `sql` (above) selects the rows to push; each row becomes one
+    // create / update / delete against the named table.
+    pub code_table: Option<String>,        // code table name
+    pub code_table_id: Option<String>,     // ...or its id, skipping the lookup
+    pub operation: Option<String>,         // "create" | "update" | "delete"
+    // Names the step's outcome rows, exposing them to later SQL as
+    // {{sync:<sync_output>}} — one row per attempted write, carrying the id RE
+    // assigned. Optional: a sync step that nothing reads needs no label.
+    pub sync_output: Option<String>,
+
+    // ── re_query fields ──────────────────────────────────────────────────────
+    // Runs an RE query mid-pipeline: `params_sql` (optional) supplies values
+    // from the uploaded files, they are substituted into `template`, and the
+    // returned rows are exposed to later steps as {{query:<query_output>}}.
+    #[serde(rename = "ref")]
+    pub call_ref: Option<String>,          // central registry entry, e.g. re.query.execute
+    pub template: Option<serde_json::Value>, // inline ExecuteQueryDefinition
+    #[serde(default)]
+    pub bind: HashMap<String, serde_json::Value>,
+    pub params_sql: Option<String>,        // SQL whose rows fill {{rows:}}/{{value:}}
+    pub query_output: Option<String>,      // names the result; NOT `output` (see below)
+
+    // sql_transform single-transform shortcut for the query results it reads.
+    // Kept distinct from `output`, which means "a declared file with a Download
+    // button" and would collide.
+    pub query_input: Option<Vec<String>>,
+    // Same shortcut for code_table_sync outcomes read as {{sync:Label}}.
+    pub sync_input: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -112,9 +193,122 @@ pub struct ProfileStructure {
     pub name: String,
     pub version: String,
     pub min_app_version: String,
+
+    // Discriminator. Absent or "import" => the import workflow (inputs/outputs/
+    // steps below). "report" => the report sections further down. Kept optional
+    // so every existing import bundle still parses unchanged.
+    #[serde(default)]
+    pub kind: Option<String>,
+
+    // ── Import sections ──────────────────────────────────────────────────────
+    // Defaulted so a report bundle (which omits them) still deserializes. Import
+    // bundles always supply them.
+    #[serde(default)]
     pub inputs: Vec<InputDefinition>,
+    #[serde(default)]
     pub outputs: Vec<OutputDefinition>,
+    #[serde(default)]
     pub steps: Vec<Step>,
+
+    // ── Shared sections ──────────────────────────────────────────────────────
+    // Code tables are pulled from RE before any SQL runs and exposed to it as
+    // {{codetable:<output>}}. Usable by import and report profiles alike.
+    #[serde(default)]
+    pub code_tables: Vec<CodeTableRef>,
+
+    // ── Report sections ──────────────────────────────────────────────────────
+    // All optional; populated only when kind == "report". See REPORT_PROFILES.md.
+    // Deserialize-only for now — nothing executes these yet.
+    #[serde(default)]
+    pub parameters: Vec<Parameter>,
+    #[serde(default)]
+    pub queries: Vec<QueryRef>,
+    // Top-level report transforms. Renamed off `report_transforms` so the YAML
+    // key is `transforms` (distinct from the import Step's nested `transforms`).
+    #[serde(default, rename = "transforms")]
+    pub report_transforms: Vec<ReportTransform>,
+    #[serde(default)]
+    pub visualizations: Vec<Visualization>,
+    #[serde(default)]
+    pub actions: Vec<Action>,
+}
+
+// ── Report profile structs (deserialize-only) ─────────────────────────────────
+// A report profile reuses the bundle/loader machinery but declares five
+// report-specific sections instead of the import step-list:
+//   parameters  → UI inputs
+//   queries     → parameterized RE API calls (hybrid library)
+//   transforms  → DuckDB SQL over query results
+//   visualizations → shared viz components bound to transform outputs
+//   actions     → on-demand write-backs (e.g. create an RE query)
+// Free-form fields (config/default/template/bind) use serde_json::Value so they
+// pass through to the frontend as native JSON. See REPORT_PROFILES.md for the
+// full contract. No execution logic exists yet.
+
+// A UI input control rendered in the Inputs panel.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Parameter {
+    pub id: String,
+    pub label: String,
+    #[serde(rename = "type")]
+    pub param_type: String,        // "date" | "date_range" | "select" | "text" | "number"
+    #[serde(default)]
+    pub required: bool,
+    pub options: Option<Vec<String>>,        // allowed values for "select"
+    pub default: Option<serde_json::Value>,  // shape varies by param_type
+}
+
+// A reference to an RE API call. Hybrid: `call_ref` (YAML `ref`) names a central
+// registry entry; `template` inlines a bundle-local call definition. `bind` maps
+// parameters/literals into the call; `output` names the JSON result that
+// transforms reference via {{query:Label}}.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct QueryRef {
+    pub id: String,
+    #[serde(rename = "ref")]
+    pub call_ref: Option<String>,
+    pub template: Option<serde_json::Value>,
+    #[serde(default)]
+    pub bind: HashMap<String, serde_json::Value>,
+    pub output: String,
+}
+
+// SQL processing over query outputs. `input` lists query output labels (resolved
+// to {{query:Label}} paths); `output` is the in-memory result-set label a
+// visualization binds to.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ReportTransform {
+    pub id: String,
+    #[serde(default)]
+    pub input: Vec<String>,
+    pub sql: String,
+    pub output: String,
+}
+
+// A visualization bound to a transform output, rendered by the shared viz
+// library keyed on `viz_type`.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Visualization {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub viz_type: String,          // "table" | "bar" | "line" | "pie" | "kpi"
+    pub title: Option<String>,
+    pub data: String,              // transform output label feeding it
+    pub config: Option<serde_json::Value>,
+}
+
+// An on-demand write-back. Like QueryRef, resolves through the API library;
+// `input` names the result set whose rows feed the call.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Action {
+    pub id: String,
+    pub label: String,
+    #[serde(rename = "ref")]
+    pub call_ref: Option<String>,
+    pub template: Option<serde_json::Value>,
+    pub input: Option<String>,
+    #[serde(default)]
+    pub bind: HashMap<String, serde_json::Value>,
 }
 
 // ── Parsed profile (what the rest of the app works with) ─────────────────────
@@ -378,6 +572,7 @@ pub struct ProfileSummary {
     pub version: String,
     pub zip_path: String,   // user: full fs path. builtin: "builtin://<filename>" sentinel.
     pub source: ProfileSource,
+    pub kind: Option<String>, // None/"import" => import workflow. "report" => report.
 }
 
 // Peeks at structure.yaml inside an open zip archive — enough to populate
@@ -406,6 +601,7 @@ fn read_summary_from_zip<R: Read + std::io::Seek>(
         version: structure.version,
         zip_path,
         source,
+        kind: structure.kind,
     })
 }
 
@@ -688,6 +884,7 @@ pub fn save_user_profile(
         version: structure.version,
         zip_path: path.to_string_lossy().to_string(),
         source: ProfileSource::User,
+        kind: structure.kind,
     };
     Ok((summary, loaded))
 }
@@ -764,6 +961,7 @@ pub fn create_new_profile(profiles_dir: &Path) -> Result<(ProfileSummary, Loaded
         version: loaded.structure.version.clone(),
         zip_path: zip_path.to_string_lossy().to_string(),
         source: ProfileSource::User,
+        kind: loaded.structure.kind.clone(),
     };
     Ok((summary, loaded))
 }
@@ -834,6 +1032,7 @@ pub fn duplicate_profile(
         version: loaded.structure.version.clone(),
         zip_path: zip_path.to_string_lossy().to_string(),
         source: ProfileSource::User,
+        kind: loaded.structure.kind.clone(),
     };
     Ok((summary, loaded))
 }
@@ -886,4 +1085,44 @@ pub fn delete_user_profile(zip_path: &str) -> Result<(), AppError> {
     fs::remove_file(path)
         .map_err(|e| AppError::IoError(format!("Cannot delete profile: {}", e)))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // A report bundle (kind: report) must load through the same loader as import
+    // bundles, with all five report sections populated and the import sections
+    // defaulted to empty.
+    #[test]
+    fn report_bundle_parses() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../profiles/src/gift_activity");
+        let loaded = load_from_dir(&dir).expect("gift_activity should load");
+        let s = &loaded.structure;
+
+        assert_eq!(s.kind.as_deref(), Some("report"));
+        assert_eq!(s.parameters.len(), 1);
+        assert_eq!(s.queries.len(), 1);
+        assert_eq!(s.report_transforms.len(), 1);
+        assert_eq!(s.visualizations.len(), 1);
+        assert_eq!(s.actions.len(), 1);
+
+        // Import sections default to empty for a report bundle.
+        assert!(s.inputs.is_empty() && s.outputs.is_empty() && s.steps.is_empty());
+
+        // Spot-check the query ref + ad-hoc template passthrough.
+        assert_eq!(s.queries[0].call_ref.as_deref(), Some("re.query.execute"));
+        assert_eq!(s.queries[0].output, "GiftRows");
+        assert!(s.queries[0].template.is_some());
+    }
+
+    // Existing import bundles must still parse unchanged after the schema grew.
+    #[test]
+    fn import_bundle_still_parses() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../profiles/src/test1");
+        let loaded = load_from_dir(&dir).expect("test1 should load");
+        assert!(loaded.structure.kind.is_none());
+        assert!(!loaded.structure.steps.is_empty());
+    }
 }

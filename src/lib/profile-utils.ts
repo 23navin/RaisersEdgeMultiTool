@@ -16,6 +16,10 @@ export function stepTransforms(step: Step): SqlTransform[] {
       sql: step.sql ?? "",
       output: step.output,
       notices: step.notices,
+      // Must be carried through: handleGenerate reads query_input off the
+      // normalized transform, so dropping it here would silently send an empty
+      // queryPaths map and leave {{query:...}} unresolved at runtime.
+      query_input: step.query_input,
     },
   ];
 }
