@@ -47,7 +47,10 @@ pub struct Notice {
 #[derive(Debug, Serialize)]
 pub struct OutputFile {
     pub label: String,
-    pub path: String,
+    // Where the CSV was written — run_transform fills in the absolute path;
+    // api.rs relativizes it to an opaque artifact id before it crosses the
+    // wire, and save_output resolves it back inside the session.
+    pub artifact_id: String,
     pub row_count: usize,
 }
 
@@ -74,6 +77,15 @@ pub struct NoticeInput<'a> {
     pub sql_content: &'a str,
 }
 
+// A filesystem path as it may be embedded in a single-quoted SQL string
+// literal: forward slashes (DuckDB accepts them on all platforms, including
+// Windows) and embedded quotes doubled so a path containing `'` can't
+// terminate the literal early. Every site that splices a path into SQL text
+// goes through this.
+pub fn sql_path(path: &str) -> String {
+    path.replace('\\', "/").replace('\'', "''")
+}
+
 // ── validate_file ─────────────────────────────────────────────────────────────
 // Opens the input file with DuckDB and checks:
 //   1. All required columns exist
@@ -91,7 +103,7 @@ pub fn validate_file(
         .map_err(|e| AppError::SqlError(e.to_string()))?;
 
     // Load the file into a DuckDB view — handles both CSV and XLSX
-    let file_str = file_path.to_string_lossy().replace('\\', "/");
+    let file_str = sql_path(&file_path.to_string_lossy());
     let ext = file_path
         .extension()
         .and_then(|e| e.to_str())
@@ -302,6 +314,7 @@ pub fn run_transform(
     sql_content: &str,
     output_labels: &[String],
     notices: &[NoticeInput<'_>],
+    out_dir: &Path,
 ) -> Result<TransformResult, AppError> {
     if output_labels.is_empty() {
         return Err(AppError::SqlError(
@@ -317,24 +330,21 @@ pub fn run_transform(
     let conn = Connection::open_in_memory()
         .map_err(|e| AppError::SqlError(e.to_string()))?;
 
-    // Forward slashes work on all platforms including Windows in DuckDB
+    // Quoted-and-normalized once, up front — these strings go into SQL text.
     let normalized: HashMap<&str, String> = file_paths
         .iter()
-        .map(|(k, v)| (k.as_str(), v.replace('\\', "/")))
+        .map(|(k, v)| (k.as_str(), sql_path(v)))
         .collect();
 
-    // Assign a temp-dir path per output label up front so we can substitute
+    // Assign a path per output label up front so we can substitute
     // {{output:Label}} placeholders and remember which path belongs to which.
-    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+    // `out_dir` is unique per run (workspace.rs), so plain label-based
+    // filenames can't collide across runs or users.
     let outputs: Vec<(String, PathBuf)> = output_labels
         .iter()
         .map(|label| {
-            let filename = format!(
-                "{}_{}.csv",
-                label.to_lowercase().replace(' ', "_"),
-                timestamp
-            );
-            (label.clone(), std::env::temp_dir().join(filename))
+            let filename = format!("{}.csv", label.to_lowercase().replace(' ', "_"));
+            (label.clone(), out_dir.join(filename))
         })
         .collect();
 
@@ -362,7 +372,7 @@ pub fn run_transform(
         let placeholder = format!("{{{{output:{}}}}}", label);
         if sql.contains(&placeholder) {
             multi_output_mode = true;
-            let path_str = path.to_string_lossy().replace('\\', "/");
+            let path_str = sql_path(&path.to_string_lossy());
             sql = sql.replace(&placeholder, &path_str);
         }
     }
@@ -380,7 +390,7 @@ pub fn run_transform(
                 outputs.len()
             )));
         }
-        let output_str = outputs[0].1.to_string_lossy().replace('\\', "/");
+        let output_str = sql_path(&outputs[0].1.to_string_lossy());
         let copy_sql = format!(
             "COPY ({}) TO '{}' (HEADER, DELIMITER ',')",
             sql.trim().trim_end_matches(';').trim(),
@@ -401,7 +411,7 @@ pub fn run_transform(
                 label, label
             )));
         }
-        let path_str = path.to_string_lossy().replace('\\', "/");
+        let path_str = sql_path(&path.to_string_lossy());
         let count_sql = format!("SELECT COUNT(*) FROM read_csv_auto('{}')", path_str);
         let row_count: usize = conn
             .query_row(&count_sql, [], |r| r.get::<_, i64>(0))
@@ -409,7 +419,7 @@ pub fn run_transform(
             .unwrap_or(0);
         output_files.push(OutputFile {
             label: label.clone(),
-            path: path.to_string_lossy().to_string(),
+            artifact_id: path.to_string_lossy().to_string(),
             row_count,
         });
     }
@@ -446,7 +456,7 @@ pub fn substitute_labeled_paths(
     let mut out = sql.to_string();
     for (label, path) in paths {
         let placeholder = format!("{{{{{}:{}}}}}", kind, label);
-        out = out.replace(&placeholder, &path.replace('\\', "/"));
+        out = out.replace(&placeholder, &sql_path(path));
     }
     out
 }
@@ -506,10 +516,10 @@ pub fn select_rows(
     let mut sql = sql_content.to_string();
     for (label, path) in file_paths {
         let placeholder = format!("{{{{input:{}}}}}", label);
-        sql = sql.replace(&placeholder, &path.replace('\\', "/"));
+        sql = sql.replace(&placeholder, &sql_path(path));
     }
     if sql.contains("{{input_file}}") && file_paths.len() == 1 {
-        let only_path = file_paths.values().next().unwrap().replace('\\', "/");
+        let only_path = sql_path(file_paths.values().next().unwrap());
         sql = sql.replace("{{input_file}}", &only_path);
     }
     sql = sources.apply(&sql);

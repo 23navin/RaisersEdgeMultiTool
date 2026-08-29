@@ -6,7 +6,6 @@
 
 import { useState } from "react";
 import {
-  FileInputIcon,
   CheckIcon,
   RotateCcwIcon,
   ChevronsUpDownIcon,

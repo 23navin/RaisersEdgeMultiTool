@@ -1,7 +1,7 @@
 // ProfileEditor.tsx
 //
 // Right-hand pane of the Import-profiles tab: header + file tree +
-// CodeMirror editor + issues footer. Pure view — all state and invoke()
+// CodeMirror editor + issues footer. Pure view — all state and backend
 // calls live in the parent ImportTab.
 
 import { useMemo } from "react";

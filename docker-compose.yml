@@ -1,0 +1,21 @@
+# Local/simple deployment: one service, one volume. Put the RE NXT service
+# account in a .env file next to this (RE_CLIENT_ID=..., etc.) or leave it
+# out to run in mock mode.
+services:
+  multitool:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - multitool-data:/data
+    environment:
+      RE_CLIENT_ID: ${RE_CLIENT_ID:-}
+      RE_CLIENT_SECRET: ${RE_CLIENT_SECRET:-}
+      RE_SUBSCRIPTION_KEY: ${RE_SUBSCRIPTION_KEY:-}
+      RE_REFRESH_TOKEN: ${RE_REFRESH_TOKEN:-}
+      RE_NXT_MOCK: ${RE_NXT_MOCK:-}
+      MAX_RUNS: ${MAX_RUNS:-4}
+    restart: unless-stopped
+
+volumes:
+  multitool-data:

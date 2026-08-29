@@ -4,7 +4,7 @@
 // card — the OAuth setup for the Data Requests / Reports features.
 //
 // Follows the ImportTab convention: this component owns its state and is the
-// only place here that calls invoke(). The backend (sky_auth.rs) runs the
+// only place here that calls the backend (via lib/api.ts). sky_auth.rs runs the
 // actual OAuth handshake; this UI just collects the three credentials, kicks
 // off connect_re_nxt, and reflects connection status.
 
@@ -15,7 +15,7 @@ import {
   ExternalLinkIcon,
   Loader2Icon,
 } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
+import * as api from "../../../lib/api";
 import { cn } from "../../../lib/utils";
 import type { ReNxtConnectionStatus } from "../../../types";
 
@@ -43,7 +43,7 @@ export function GeneralTab() {
 
   const refreshStatus = async () => {
     try {
-      const s = await invoke<ReNxtConnectionStatus>("re_nxt_status");
+      const s = await api.reNxtStatus();
       if (mounted.current) setStatus(s);
     } catch (e) {
       if (mounted.current) setError(String(e));
@@ -68,11 +68,11 @@ export function GeneralTab() {
       // Resolves once the user finishes the browser handshake against their
       // RE NXT environment. The backend persists the connection; the secret
       // never comes back to the frontend.
-      const s = await invoke<ReNxtConnectionStatus>("connect_re_nxt", {
-        clientId: clientId.trim(),
-        clientSecret: clientSecret.trim(),
-        subscriptionKey: subscriptionKey.trim(),
-      });
+      const s = await api.connectReNxt(
+        clientId.trim(),
+        clientSecret.trim(),
+        subscriptionKey.trim(),
+      );
       if (!mounted.current) return;
       setStatus(s);
       // Clear the secret from the form once it's safely stored backend-side.
@@ -88,7 +88,7 @@ export function GeneralTab() {
     setBusy(true);
     setError(null);
     try {
-      await invoke("disconnect_re_nxt");
+      await api.disconnectReNxt();
       if (!mounted.current) return;
       setStatus({ connected: false });
     } catch (e) {

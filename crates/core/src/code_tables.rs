@@ -108,7 +108,7 @@ pub struct SyncResult {
     // {{sync:<label>}}, and the JSON file the outcome rows were written to —
     // the same shape re_query returns, so the frontend routes both the same way.
     pub sync_output: Option<String>,
-    pub path: Option<String>,
+    pub artifact_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -284,7 +284,7 @@ pub fn run_sync(
         message,
         mode: transport.label().to_string(),
         sync_output,
-        path: sync_path,
+        artifact_id: sync_path,
     })
 }
 
@@ -427,7 +427,7 @@ mod tests {
     use std::path::Path;
 
     fn load() -> LoadedProfile {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../profiles/src/code_table_demo");
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../profiles/src/code_table_demo");
         profile::load_from_dir(&dir).expect("code_table_demo should load")
     }
 
@@ -463,7 +463,7 @@ mod tests {
     // A profile with no code_tables section costs nothing and returns an empty map.
     #[test]
     fn fetch_all_noop_without_declarations() {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../profiles/src/test1");
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../profiles/src/test1");
         let loaded = profile::load_from_dir(&dir).expect("test1 loads");
         let paths =
             fetch_all(&loaded, &Transport::Mock, &run_dir("noop")).expect("fetch ok");
@@ -518,7 +518,7 @@ mod tests {
         assert_eq!(res.mode, "mock");
         assert_eq!(res.operation, "create");
         // code_table_demo names no sync_output, so nothing is published.
-        assert!(res.sync_output.is_none() && res.path.is_none());
+        assert!(res.sync_output.is_none() && res.artifact_id.is_none());
     }
 
     // ── sync_output → {{sync:Label}} ──────────────────────────────────────────
@@ -528,7 +528,7 @@ mod tests {
 
     fn load_crossref() -> LoadedProfile {
         let dir =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../profiles/src/code_table_crossref");
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../profiles/src/code_table_crossref");
         profile::load_from_dir(&dir).expect("code_table_crossref should load")
     }
 
@@ -567,7 +567,7 @@ mod tests {
         let (_loaded, res) = run_crossref_sync("published");
 
         assert_eq!(res.sync_output.as_deref(), Some("NewCodes"));
-        let path = res.path.expect("a declared sync_output writes a file");
+        let path = res.artifact_id.expect("a declared sync_output writes a file");
 
         let rows: Vec<Value> =
             serde_json::from_slice(&fs::read(&path).expect("outcome file readable"))
@@ -591,7 +591,7 @@ mod tests {
     #[test]
     fn transform_joins_sync_output() {
         let (loaded, res) = run_crossref_sync("joined");
-        let sync_path = res.path.expect("sync published");
+        let sync_path = res.artifact_id.expect("sync published");
 
         let ct_paths = fetch_all(&loaded, &Transport::Mock, &run_dir("joined-ct"))
             .expect("code tables fetch");

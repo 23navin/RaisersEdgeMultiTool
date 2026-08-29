@@ -7,7 +7,7 @@
 // the backend pipeline (run_report) via App.tsx. Changing an input marks the
 // visualizations stale until the next Refresh.
 //
-// State + all invoke() calls live in App.tsx; this component is props-driven.
+// State + all backend calls live in App.tsx; this component is props-driven.
 
 import { useState } from "react";
 import { SearchIcon, RefreshCwIcon } from "lucide-react";

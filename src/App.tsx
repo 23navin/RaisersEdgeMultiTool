@@ -1,14 +1,13 @@
 // App.tsx
 //
-// Root component. Owns all shared state and is the only place that calls
-// invoke(). Renders the shell: Titlebar on top, then a floating panel
+// Root component. Owns all shared state and calls the backend through
+// lib/api.ts (the transport module — invoke() on desktop, fetch() on the
+// web). Renders the shell: Titlebar on top, then a floating panel
 // containing Sidebar + MainPanel.
 
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { save } from "@tauri-apps/plugin-dialog";
+import * as api from "./lib/api";
 import type {
-  ActionResult,
   LoadedProfile,
   Notice,
   OutputFile,
@@ -20,7 +19,6 @@ import type {
   ResultSet,
   SqlError,
   SyncResult,
-  TransformResult,
   ValidationError,
 } from "./types";
 import { Titlebar, type TopTab } from "./components/Titlebar";
@@ -81,7 +79,7 @@ export type SyncEntry = {
   error?: string;
 };
 
-// One re_query step's run state, keyed by step label. `result.path` is what gets
+// One re_query step's run state, keyed by step label. `result.artifact_id` is what gets
 // handed to whichever later transform declared this step's query_output.
 export type QueryEntry = {
   status: QueryStatus;
@@ -137,13 +135,6 @@ function initialParamValues(structure: ProfileStructure): Record<string, unknown
   for (const p of structure.parameters) out[p.id] = resolveParamDefault(p);
   return out;
 }
-
-// Shape returned by the validate_file backend command.
-type ValidationResult = {
-  ok: boolean;
-  errors: ValidationError[];
-  notices: Notice[];
-};
 
 export default function App() {
   // ── State ───────────────────────────────────────────────────────────────────
@@ -204,7 +195,7 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        const list = await invoke<ProfileSummary[]>("list_profiles");
+        const list = await api.listProfiles();
         setProfiles(list);
       } catch (e) {
         console.error("list_profiles failed:", e);
@@ -371,11 +362,11 @@ export default function App() {
     const file = files[inputLabel];
     if (!file || !loadedProfile) return;
     try {
-      const result = await invoke<ValidationResult>("validate_file", {
-        filePath: file.path,
+      const result = await api.validateFile(
+        file.path,
         inputLabel,
-        zipPath: loadedProfile.temp_dir,
-      });
+        loadedProfile.session_id,
+      );
       setFiles((prev) => {
         const cur = prev[inputLabel];
         if (!cur) return prev;
@@ -438,25 +429,25 @@ export default function App() {
     // Query results this transform declared via query_input. A declared label
     // whose step hasn't run yet is simply absent — the backend leaves the
     // placeholder unsubstituted and DuckDB reports it, rather than us guessing.
-    const queryPaths: Record<string, string> = {};
+    const queryIds: Record<string, string> = {};
     for (const label of transform.query_input ?? []) {
       const producer = loadedProfile.structure.steps.find(
         (s) => s.type === "re_query" && s.query_output === label,
       );
       const res = producer ? queries[producer.label]?.result : undefined;
-      if (res) queryPaths[label] = res.path;
+      if (res) queryIds[label] = res.artifact_id;
     }
 
     // Same contract for code_table_sync outcomes declared via sync_input. A
     // sync that hasn't run yet is absent for the same reason: DuckDB naming the
     // unresolved placeholder beats us inventing an empty table.
-    const syncPaths: Record<string, string> = {};
+    const syncIds: Record<string, string> = {};
     for (const label of transform.sync_input ?? []) {
       const producer = loadedProfile.structure.steps.find(
         (s) => s.type === "code_table_sync" && s.sync_output === label,
       );
       const res = producer ? syncs[producer.label]?.result : undefined;
-      if (res?.path) syncPaths[label] = res.path;
+      if (res?.artifact_id) syncIds[label] = res.artifact_id;
     }
 
     setGenerations((prev) => ({
@@ -465,12 +456,12 @@ export default function App() {
     }));
 
     try {
-      const result = await invoke<TransformResult>("run_profile", {
+      const result = await api.runProfile({
         filePaths,
-        queryPaths,
-        syncPaths,
+        queryIds,
+        syncIds,
         sqlFile: transform.sql,
-        zipPath: loadedProfile.temp_dir,
+        sessionId: loadedProfile.session_id,
         outputLabels: transform.output ?? [],
       });
       setGenerations((prev) => ({
@@ -516,11 +507,7 @@ export default function App() {
     if (step.query_output) resetTransformsConsuming("query_input", step.query_output);
 
     try {
-      const result = await invoke<QueryStepResult>("run_re_query", {
-        filePaths,
-        stepLabel,
-        zipPath: loadedProfile.temp_dir,
-      });
+      const result = await api.runReQuery(filePaths, stepLabel, loadedProfile.session_id);
       setQueries((prev) => ({
         ...prev,
         [stepLabel]: { status: "done", result },
@@ -553,11 +540,11 @@ export default function App() {
     // Anything joined to the previous run's outcome rows is now stale.
     if (step.sync_output) resetTransformsConsuming("sync_input", step.sync_output);
     try {
-      const result = await invoke<SyncResult>("run_code_table_sync", {
+      const result = await api.runCodeTableSync(
         filePaths,
         stepLabel,
-        zipPath: loadedProfile.temp_dir,
-      });
+        loadedProfile.session_id,
+      );
       setSyncs((prev) => ({
         ...prev,
         [stepLabel]: { status: "done", result },
@@ -589,33 +576,33 @@ export default function App() {
 
     // Same contract as a transform: a declared label whose producing step
     // hasn't run is simply absent, and DuckDB names the unresolved placeholder.
-    const queryPaths: Record<string, string> = {};
+    const queryIds: Record<string, string> = {};
     for (const label of step.query_input ?? []) {
       const producer = loadedProfile.structure.steps.find(
         (s) => s.type === "re_query" && s.query_output === label,
       );
       const res = producer ? queries[producer.label]?.result : undefined;
-      if (res) queryPaths[label] = res.path;
+      if (res) queryIds[label] = res.artifact_id;
     }
 
-    const syncPaths: Record<string, string> = {};
+    const syncIds: Record<string, string> = {};
     for (const label of step.sync_input ?? []) {
       const producer = loadedProfile.structure.steps.find(
         (s) => s.type === "code_table_sync" && s.sync_output === label,
       );
       const res = producer ? syncs[producer.label]?.result : undefined;
-      if (res?.path) syncPaths[label] = res.path;
+      if (res?.artifact_id) syncIds[label] = res.artifact_id;
     }
 
     setVisualizations((prev) => ({ ...prev, [stepLabel]: { status: "running" } }));
 
     try {
-      const data = await invoke<ResultSet>("run_visualization", {
+      const data = await api.runVisualization({
         filePaths,
-        queryPaths,
-        syncPaths,
+        queryIds,
+        syncIds,
         stepLabel,
-        zipPath: loadedProfile.temp_dir,
+        sessionId: loadedProfile.session_id,
       });
       setVisualizations((prev) => ({
         ...prev,
@@ -637,17 +624,13 @@ export default function App() {
   ) => {
     const key = genKey(stepLabel, transformIdx);
     const output = generations[key]?.outputs?.find((o) => o.label === outputLabel);
-    if (!output) return;
+    if (!output || !loadedProfile) return;
     try {
-      const dest = await save({
-        defaultPath: `${outputLabel}.csv`,
-        filters: [{ name: "CSV", extensions: ["csv"] }],
-      });
-      if (typeof dest !== "string") return; // user cancelled
-      await invoke<void>("save_output", {
-        srcPath: output.path,
-        destPath: dest,
-      });
+      await api.saveOutputFile(
+        loadedProfile.session_id,
+        output.artifact_id,
+        `${outputLabel}.csv`,
+      );
     } catch (e) {
       console.error("save_output failed:", e);
     }
@@ -677,9 +660,7 @@ export default function App() {
     const summary = profiles.find((p) => p.zip_path === zipPath);
     if (!summary) return;
     try {
-      const loaded = await invoke<LoadedProfile>("load_profile", {
-        zipPath: summary.zip_path,
-      });
+      const loaded = await api.loadProfile(summary.zip_path);
       if (loadRequestId.current === reqId) setLoadedProfile(loaded);
     } catch (e) {
       if (loadRequestId.current !== reqId) return;
@@ -701,7 +682,7 @@ export default function App() {
     setActionStates({});
     setReportParams({});
     try {
-      const loaded = await invoke<LoadedProfile>("load_profile", { zipPath });
+      const loaded = await api.loadProfile(zipPath);
       if (reportLoadId.current !== reqId) return;
       setLoadedReport(loaded);
       setReportParams(initialParamValues(loaded.structure));
@@ -723,10 +704,7 @@ export default function App() {
     setReportStatus("running");
     setReportError(null);
     try {
-      const result = await invoke<ReportRunResult>("run_report", {
-        zipPath: loadedReport.temp_dir,
-        paramValues: reportParams,
-      });
+      const result = await api.runReport(loadedReport.session_id, reportParams);
       setReportRun(result);
       setReportStatus("done");
       setReportStale(false);
@@ -744,11 +722,11 @@ export default function App() {
       [actionId]: { status: "running" },
     }));
     try {
-      const result = await invoke<ActionResult>("run_report_action", {
-        zipPath: loadedReport.temp_dir,
+      const result = await api.runReportAction(
+        loadedReport.session_id,
         actionId,
-        paramValues: reportParams,
-      });
+        reportParams,
+      );
       setActionStates((prev) => ({
         ...prev,
         [actionId]: {
@@ -851,7 +829,7 @@ export default function App() {
               // Refresh the main sidebar's profile list — the user may have
               // created, duplicated, or deleted a profile while the panel
               // was open. Clear selection if it's no longer on disk.
-              invoke<ProfileSummary[]>("list_profiles")
+              api.listProfiles()
                 .then((list) => {
                   setProfiles(list);
                   if (

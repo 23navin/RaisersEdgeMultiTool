@@ -1,14 +1,6 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod errors;
-mod profile;
-mod db;
-mod code_tables;
-mod query_step;
-mod re_calls;
-mod report;
-mod validate;
 mod commands;
 mod sky_auth;
 

@@ -30,11 +30,10 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
-use crate::errors::AppError;
+use multitool_core::errors::AppError;
 
 // Blackbaud SKY API OAuth endpoints (same for all environments).
 const AUTH_URL: &str = "https://oauth2.sky.blackbaud.com/authorization";
-const TOKEN_URL: &str = "https://oauth2.sky.blackbaud.com/token";
 
 // Fixed loopback redirect. This exact string must be registered as a
 // Redirect URI on the application in the Blackbaud developer portal, or the
@@ -72,18 +71,9 @@ pub struct ConnectionStatus {
     pub expires_at: Option<i64>,
 }
 
-// Blackbaud's token response. environment_id / environment_name identify which
-// RE NXT environment the user authorized against (returned on both grant types).
-#[derive(Deserialize)]
-struct TokenResponse {
-    access_token: String,
-    refresh_token: String,
-    expires_in: i64,
-    #[serde(default)]
-    environment_id: Option<String>,
-    #[serde(default)]
-    environment_name: Option<String>,
-}
+// Blackbaud's token response shape lives in core::creds (shared with the web
+// shell); the exchange/refresh POSTs go through it too.
+use multitool_core::creds::{self, TokenResponse};
 
 fn now_secs() -> i64 {
     chrono::Utc::now().timestamp()
@@ -243,14 +233,13 @@ fn respond(stream: &mut TcpStream, body: &str) {
     let _ = stream.flush();
 }
 
-// POST the authorization code to the token endpoint. Credentials go via HTTP
-// Basic auth (client_id:client_secret), which Blackbaud accepts.
+// POST the authorization code to the token endpoint.
 fn exchange_code(
     client_id: &str,
     client_secret: &str,
     code: &str,
 ) -> Result<TokenResponse, AppError> {
-    post_token(
+    creds::post_token(
         client_id,
         client_secret,
         &[
@@ -262,38 +251,7 @@ fn exchange_code(
 }
 
 fn refresh_token(conn: &Connection) -> Result<TokenResponse, AppError> {
-    post_token(
-        &conn.client_id,
-        &conn.client_secret,
-        &[
-            ("grant_type", "refresh_token"),
-            ("refresh_token", &conn.refresh_token),
-        ],
-    )
-}
-
-fn post_token(
-    client_id: &str,
-    client_secret: &str,
-    form: &[(&str, &str)],
-) -> Result<TokenResponse, AppError> {
-    let client = reqwest::blocking::Client::new();
-    let resp = client
-        .post(TOKEN_URL)
-        .basic_auth(client_id, Some(client_secret))
-        .form(form)
-        .send()
-        .map_err(|e| AppError::NetworkError(e.to_string()))?;
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().unwrap_or_default();
-        return Err(AppError::AuthError(format!(
-            "Token endpoint returned {status}: {body}"
-        )));
-    }
-    resp.json::<TokenResponse>()
-        .map_err(|e| AppError::ParseError(e.to_string()))
+    creds::refresh(&conn.client_id, &conn.client_secret, &conn.refresh_token)
 }
 
 // Returns a usable access token, refreshing (and re-persisting) if the stored
@@ -418,7 +376,7 @@ pub async fn connect_re_nxt(
     client_secret: String,
     subscription_key: String,
 ) -> Result<ConnectionStatus, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    tokio::task::spawn_blocking(move || {
         connect_blocking(&app, client_id, client_secret, subscription_key)
     })
     .await
@@ -455,7 +413,7 @@ pub fn disconnect_re_nxt(app: AppHandle) -> Result<(), String> {
 // the stored subscription key.
 #[tauri::command]
 pub async fn re_nxt_access_token(app: AppHandle) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || valid_access_token(&app))
+    tokio::task::spawn_blocking(move || valid_access_token(&app))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())

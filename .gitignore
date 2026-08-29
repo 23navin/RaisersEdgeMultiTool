@@ -24,3 +24,5 @@ dist-ssr
 *.sw?
 
 .claude
+# Cargo workspace build output
+/target
