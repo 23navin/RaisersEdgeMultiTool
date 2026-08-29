@@ -3,10 +3,11 @@
 #
 #   docker build -t multitool-server .
 #   docker run -p 8080:8080 -v multitool-data:/data \
-#     -e RE_CLIENT_ID=... -e RE_CLIENT_SECRET=... -e RE_SUBSCRIPTION_KEY=... \
-#     multitool-server
+#     -e PUBLIC_URL=https://multitool.example.org multitool-server
 #
-# Without RE_* env vars the server runs in mock mode (bundle fixtures).
+# Connect to RE NXT through the app's Settings → General panel. The RE_* env
+# vars are an optional alternative for headless deploys; with neither, the
+# server runs in mock mode against bundle fixtures.
 
 # ── frontend ──────────────────────────────────────────────────────────────────
 FROM node:20-bookworm-slim AS frontend

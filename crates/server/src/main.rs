@@ -7,6 +7,12 @@
 //   POST /api/sessions/{sid}/inputs            multipart upload → input id
 //   GET  /api/sessions/{sid}/artifacts/{*id}   download an output artifact
 //   GET  /api/sessions/{sid}/assets/{*rel}     instruction images etc.
+//   GET  /api/oauth/callback                   Blackbaud's OAuth redirect
+//
+// The RE NXT connection is established through the same Settings → General
+// form the desktop app uses: connect_re_nxt returns an authorization URL, the
+// browser visits Blackbaud, and Blackbaud redirects to /api/oauth/callback.
+// No loopback listener is needed — a server already has an addressable URL.
 //
 // Everything else is served from STATIC_DIR (the Vite dist/) as the SPA.
 //
@@ -17,6 +23,9 @@
 //   STATIC_DIR  built frontend to serve     (default ./dist)
 //   MAX_RUNS    concurrent pipeline runs    (default 4; each run is a full
 //               in-memory DuckDB plus, live, a SKY poll loop)
+//   PUBLIC_URL  the app's externally reachable base URL, e.g.
+//               https://multitool.example.org — used to build the OAuth
+//               redirect_uri. Falls back to the request's Host header.
 //   RE_CLIENT_ID / RE_CLIENT_SECRET / RE_SUBSCRIPTION_KEY / RE_REFRESH_TOKEN
 //               the shared RE NXT service account (absent → mock mode)
 //   RE_NXT_MOCK force mock mode even when credentials are configured
@@ -39,16 +48,16 @@ use tokio::sync::Semaphore;
 use tower_http::services::{ServeDir, ServeFile};
 
 use multitool_core::api::{self, Ctx};
+use multitool_core::creds::ConnectionStatus;
 use multitool_core::errors::AppError;
 use multitool_core::profile::ProfileFileEntry;
-use multitool_core::re_calls::Transport;
 use multitool_core::workspace::{self, Workspace};
 
 struct AppState {
     workspaces_root: PathBuf,
     user_profiles_dir: PathBuf,
-    creds: Option<creds::ServerCreds>,
-    force_mock: bool,
+    creds: creds::CredStore,
+    public_url: Option<String>,
     // Bounds concurrent pipeline runs — each is a full in-memory DuckDB, and
     // a live SKY query can hold a blocking thread for minutes.
     run_permits: Semaphore,
@@ -60,20 +69,32 @@ impl AppState {
         Ctx {
             workspaces_root: self.workspaces_root.clone(),
             user_profiles_dir: self.user_profiles_dir.clone(),
-            transport: Box::new(move || {
-                if state.force_mock {
-                    return Ok(Transport::Mock);
-                }
-                match &state.creds {
-                    Some(c) => c.transport(),
-                    None => Ok(Transport::Mock),
-                }
-            }),
+            transport: Box::new(move || state.creds.transport()),
         }
     }
 
     fn open_workspace(&self, session_id: &str) -> Result<Workspace, ApiError> {
         Workspace::open(&self.workspaces_root, session_id).map_err(ApiError)
+    }
+
+    // The OAuth redirect_uri, which must byte-match what's registered on the
+    // Blackbaud application. PUBLIC_URL is authoritative; without it we derive
+    // from the request's Host (fine for local dev, but set PUBLIC_URL behind a
+    // proxy or the scheme/host will be wrong).
+    fn redirect_uri(&self, headers: &axum::http::HeaderMap) -> String {
+        if let Some(base) = &self.public_url {
+            return format!("{}/api/oauth/callback", base.trim_end_matches('/'));
+        }
+        let host = headers
+            .get(axum::http::header::HOST)
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or("localhost:8080");
+        let scheme = if host.starts_with("localhost") || host.starts_with("127.0.0.1") {
+            "http"
+        } else {
+            "https"
+        };
+        format!("{}://{}/api/oauth/callback", scheme, host)
     }
 }
 
@@ -402,36 +423,107 @@ async fn scaffold_missing(Json(req): Json<FilesReq>) -> ApiResult<Vec<ProfileFil
     Ok(Json(api::scaffold_missing(&req.files).map_err(ApiError)?))
 }
 
-// ── RE NXT connection status ──────────────────────────────────────────────────
-// The server's connection is deployment config, not something a user wires up
-// in the settings panel — status reports how the server is configured, and
-// the connect/disconnect commands explain that.
+// ── RE NXT connection ─────────────────────────────────────────────────────────
+// The same three commands the desktop shell exposes, so the Settings → General
+// panel works unchanged. The difference is only how the authorization code is
+// obtained: the browser is sent to Blackbaud and comes back to
+// /api/oauth/callback below.
+//
+// SECURITY (deferred): the connection is server-wide and these endpoints are
+// unauthenticated, so anyone who can reach the server can connect, replace, or
+// disconnect it. Gate them behind the login that comes with real auth.
 
-async fn re_nxt_status(State(s): State<Arc<AppState>>) -> ApiResult<serde_json::Value> {
-    let connected = !s.force_mock && s.creds.is_some();
-    Ok(Json(serde_json::json!({
-        "connected": connected,
-        "environment_id": null,
-        "environment_name": if connected { Some("service account (server)") } else { None },
-        "expires_at": null,
-    })))
+async fn re_nxt_status(State(s): State<Arc<AppState>>) -> ApiResult<ConnectionStatus> {
+    Ok(Json(s.creds.status()))
 }
 
-async fn connect_re_nxt() -> ApiError {
-    ApiError(AppError::AuthError(
-        "On the web app the RE NXT connection is configured by the server \
-         administrator (RE_CLIENT_ID / RE_CLIENT_SECRET / RE_SUBSCRIPTION_KEY), \
-         not from this panel."
-            .into(),
-    ))
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConnectReq {
+    client_id: String,
+    client_secret: String,
+    subscription_key: String,
 }
 
-async fn disconnect_re_nxt() -> ApiError {
-    ApiError(AppError::AuthError(
-        "The server's RE NXT connection can only be changed in its deployment \
-         configuration."
-            .into(),
-    ))
+// The web analogue of the desktop's "open a browser and wait". Returns the
+// Blackbaud URL for the client to navigate to; the connection isn't persisted
+// until the user finishes signing in and Blackbaud calls us back.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ConnectStarted {
+    authorize_url: String,
+    redirect_uri: String,
+}
+
+async fn connect_re_nxt(
+    State(s): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Json(req): Json<ConnectReq>,
+) -> ApiResult<ConnectStarted> {
+    let redirect_uri = s.redirect_uri(&headers);
+    let authorize_url = s
+        .creds
+        .begin_connect(
+            req.client_id,
+            req.client_secret,
+            req.subscription_key,
+            redirect_uri.clone(),
+        )
+        .map_err(ApiError)?;
+    Ok(Json(ConnectStarted { authorize_url, redirect_uri }))
+}
+
+async fn disconnect_re_nxt(State(s): State<Arc<AppState>>) -> ApiResult<()> {
+    s.creds.disconnect().map_err(ApiError)?;
+    Ok(Json(()))
+}
+
+#[derive(Deserialize)]
+struct CallbackQuery {
+    code: Option<String>,
+    state: Option<String>,
+    error: Option<String>,
+    error_description: Option<String>,
+}
+
+// Where Blackbaud sends the user after they sign in. Exchanges the code, then
+// bounces back to the SPA — a redirect rather than JSON, because a human is
+// looking at this response in their browser.
+async fn oauth_callback(
+    State(s): State<Arc<AppState>>,
+    Query(q): Query<CallbackQuery>,
+) -> Response {
+    let outcome = match (q.error, q.code, q.state) {
+        (Some(err), _, _) => Err(format!(
+            "{}{}",
+            err,
+            q.error_description.map(|d| format!(": {}", d)).unwrap_or_default()
+        )),
+        (None, Some(code), Some(state)) => {
+            // Blocking token exchange — keep it off the async runtime.
+            let creds_state = Arc::clone(&s);
+            tokio::task::spawn_blocking(move || creds_state.creds.finish_connect(&state, &code))
+                .await
+                .map_err(|e| format!("Worker panicked: {}", e))
+                .and_then(|r| r.map_err(|e| e.to_string()))
+                .map(|_| ())
+        }
+        _ => Err("The redirect carried no authorization code.".to_string()),
+    };
+
+    match outcome {
+        Ok(()) => axum::response::Redirect::to("/?connected=1").into_response(),
+        Err(msg) => {
+            tracing::warn!(error = %msg, "RE NXT connect failed");
+            // Send the message back through the SPA so the settings panel can
+            // show it, rather than stranding the user on a blank error page.
+            axum::response::Redirect::to(&format!(
+                "/?connect_error={}",
+                multitool_core::creds::urlencode(&msg)
+            ))
+            .into_response()
+        }
+    }
 }
 
 // ── session file endpoints ────────────────────────────────────────────────────
@@ -560,12 +652,14 @@ async fn main() {
     let force_mock = std::env::var("RE_NXT_MOCK")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
-    let creds = creds::ServerCreds::from_env(&data_dir);
+    let creds = creds::CredStore::new(&data_dir, force_mock);
     let max_runs: usize = env_or("MAX_RUNS", "4").parse().expect("MAX_RUNS must be a number");
 
+    let public_url = std::env::var("PUBLIC_URL").ok();
     tracing::info!(
         data_dir = %data_dir.display(),
-        mode = if force_mock || creds.is_none() { "mock" } else { "live" },
+        mode = if creds.is_connected() { "live" } else { "mock" },
+        public_url = public_url.as_deref().unwrap_or("(derived from Host)"),
         max_runs,
         "starting"
     );
@@ -574,7 +668,7 @@ async fn main() {
         workspaces_root: data_dir.join("sessions"),
         user_profiles_dir: data_dir.join("profiles"),
         creds,
-        force_mock,
+        public_url,
         run_permits: Semaphore::new(max_runs),
     });
 
@@ -601,6 +695,7 @@ async fn main() {
         .route("/api/re_nxt_status", post(re_nxt_status))
         .route("/api/connect_re_nxt", post(connect_re_nxt))
         .route("/api/disconnect_re_nxt", post(disconnect_re_nxt))
+        .route("/api/oauth/callback", get(oauth_callback))
         .route(
             "/api/sessions/{sid}/inputs",
             post(upload_input).layer(DefaultBodyLimit::max(200 * 1024 * 1024)),

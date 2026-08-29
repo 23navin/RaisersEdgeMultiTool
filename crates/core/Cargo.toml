@@ -15,4 +15,5 @@ serde_yaml = "0.9"
 duckdb = { version = "1", features = ["bundled"] }
 zip = "2"
 chrono = { version = "0.4", features = ["clock"] }
+getrandom = "0.2"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }

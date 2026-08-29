@@ -13,11 +13,10 @@
 //      /token endpoint for an access_token + refresh_token, then persist
 //      the whole connection to app_data_dir.
 //
-// The persisted Connection holds the credentials needed to silently refresh
-// the access token (valid ~60 min) for subsequent API calls. Both the
-// Authorization: Bearer header AND the Bb-Api-Subscription-Key header are
-// required on every SKY API request — see valid_access_token / the
-// subscription_key field.
+// The Connection model, its on-disk format, and the token exchange/refresh
+// calls live in multitool_core::creds — shared with the web shell, which runs
+// the same handshake through its own /api/oauth/callback route instead of a
+// loopback listener. Only the code-acquisition half is desktop-specific.
 //
 // NOTE (security): the connection file is plaintext JSON on disk, which is
 // fine for a test/cohort environment. For production, store the secret and
@@ -27,13 +26,10 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 
-use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
+use multitool_core::creds::{self, TokenResponse};
 use multitool_core::errors::AppError;
-
-// Blackbaud SKY API OAuth endpoints (same for all environments).
-const AUTH_URL: &str = "https://oauth2.sky.blackbaud.com/authorization";
 
 // Fixed loopback redirect. This exact string must be registered as a
 // Redirect URI on the application in the Blackbaud developer portal, or the
@@ -41,43 +37,11 @@ const AUTH_URL: &str = "https://oauth2.sky.blackbaud.com/authorization";
 const REDIRECT_URI: &str = "http://localhost:13631/callback";
 const LOOPBACK_ADDR: &str = "127.0.0.1:13631";
 
-// Refresh a little before the token actually expires so an in-flight request
-// never races the expiry.
-const EXPIRY_SKEW_SECS: i64 = 60;
-
 // ── Persisted connection ───────────────────────────────────────────────────────
-// Everything needed to make authenticated calls and to refresh silently.
+// Model + persistence + refresh all come from core; this shell only decides
+// *where* the file lives (per-user app data dir).
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct Connection {
-    pub client_id: String,
-    pub client_secret: String,
-    pub subscription_key: String,
-    pub access_token: String,
-    pub refresh_token: String,
-    pub expires_at: i64, // unix seconds — when access_token stops being valid
-    pub environment_id: Option<String>,
-    pub environment_name: Option<String>,
-}
-
-// ── Status surfaced to the frontend ────────────────────────────────────────────
-// Deliberately omits tokens/secret — only what the UI needs to render state.
-
-#[derive(Serialize)]
-pub struct ConnectionStatus {
-    pub connected: bool,
-    pub environment_id: Option<String>,
-    pub environment_name: Option<String>,
-    pub expires_at: Option<i64>,
-}
-
-// Blackbaud's token response shape lives in core::creds (shared with the web
-// shell); the exchange/refresh POSTs go through it too.
-use multitool_core::creds::{self, TokenResponse};
-
-fn now_secs() -> i64 {
-    chrono::Utc::now().timestamp()
-}
+pub use multitool_core::creds::{Connection, ConnectionStatus};
 
 fn connection_path(app: &AppHandle) -> Result<PathBuf, AppError> {
     let dir = app
@@ -89,28 +53,11 @@ fn connection_path(app: &AppHandle) -> Result<PathBuf, AppError> {
 }
 
 fn load_connection(app: &AppHandle) -> Result<Option<Connection>, AppError> {
-    let path = connection_path(app)?;
-    if !path.exists() {
-        return Ok(None);
-    }
-    let bytes = std::fs::read(&path).map_err(|e| AppError::IoError(e.to_string()))?;
-    let conn = serde_json::from_slice(&bytes).map_err(|e| AppError::ParseError(e.to_string()))?;
-    Ok(Some(conn))
+    creds::load_connection(&connection_path(app)?)
 }
 
 fn save_connection(app: &AppHandle, conn: &Connection) -> Result<(), AppError> {
-    let path = connection_path(app)?;
-    let json = serde_json::to_vec_pretty(conn).map_err(|e| AppError::ParseError(e.to_string()))?;
-    std::fs::write(&path, json).map_err(|e| AppError::IoError(e.to_string()))
-}
-
-fn status_from(conn: &Connection) -> ConnectionStatus {
-    ConnectionStatus {
-        connected: true,
-        environment_id: conn.environment_id.clone(),
-        environment_name: conn.environment_name.clone(),
-        expires_at: Some(conn.expires_at),
-    }
+    creds::save_connection(&connection_path(app)?, conn)
 }
 
 // ── OAuth flow (blocking) ───────────────────────────────────────────────────────
@@ -131,14 +78,8 @@ fn connect_blocking(
         ))
     })?;
 
-    let state = random_state();
-    let auth_url = format!(
-        "{AUTH_URL}?client_id={}&response_type=code&redirect_uri={}&state={}",
-        urlencode(&client_id),
-        urlencode(REDIRECT_URI),
-        urlencode(&state),
-    );
-    open_url(&auth_url);
+    let state = creds::random_state();
+    open_url(&creds::authorize_url(&client_id, REDIRECT_URI, &state));
 
     let code = wait_for_code(&listener, &state)?;
     let token = exchange_code(&client_id, &client_secret, &code)?;
@@ -149,12 +90,12 @@ fn connect_blocking(
         subscription_key,
         access_token: token.access_token,
         refresh_token: token.refresh_token,
-        expires_at: now_secs() + token.expires_in,
+        expires_at: creds::now_secs() + token.expires_in,
         environment_id: token.environment_id,
         environment_name: token.environment_name,
     };
     save_connection(app, &conn)?;
-    Ok(status_from(&conn))
+    Ok(conn.status())
 }
 
 // Accepts loopback connections until one hits /callback, then returns the
@@ -187,9 +128,9 @@ fn wait_for_code(listener: &TcpListener, expected_state: &str) -> Result<String,
         for pair in query.split('&') {
             let mut it = pair.splitn(2, '=');
             match (it.next(), it.next()) {
-                (Some("code"), Some(v)) => code = Some(urldecode(v)),
-                (Some("state"), Some(v)) => state = Some(urldecode(v)),
-                (Some("error"), Some(v)) => error = Some(urldecode(v)),
+                (Some("code"), Some(v)) => code = Some(creds::urldecode(v)),
+                (Some("state"), Some(v)) => state = Some(creds::urldecode(v)),
+                (Some("error"), Some(v)) => error = Some(creds::urldecode(v)),
                 _ => {}
             }
         }
@@ -239,19 +180,7 @@ fn exchange_code(
     client_secret: &str,
     code: &str,
 ) -> Result<TokenResponse, AppError> {
-    creds::post_token(
-        client_id,
-        client_secret,
-        &[
-            ("grant_type", "authorization_code"),
-            ("code", code),
-            ("redirect_uri", REDIRECT_URI),
-        ],
-    )
-}
-
-fn refresh_token(conn: &Connection) -> Result<TokenResponse, AppError> {
-    creds::refresh(&conn.client_id, &conn.client_secret, &conn.refresh_token)
+    creds::exchange_code(client_id, client_secret, code, REDIRECT_URI)
 }
 
 // Returns a usable access token, refreshing (and re-persisting) if the stored
@@ -260,20 +189,10 @@ fn refresh_token(conn: &Connection) -> Result<TokenResponse, AppError> {
 fn valid_access_token(app: &AppHandle) -> Result<String, AppError> {
     let mut conn = load_connection(app)?
         .ok_or_else(|| AppError::AuthError("Not connected to Raiser's Edge NXT.".into()))?;
-
-    if conn.expires_at - EXPIRY_SKEW_SECS > now_secs() {
-        return Ok(conn.access_token);
+    // Blackbaud spends the refresh token on use, so persist immediately.
+    if creds::ensure_fresh(&mut conn)? {
+        save_connection(app, &conn)?;
     }
-
-    let token = refresh_token(&conn)?;
-    conn.access_token = token.access_token;
-    conn.refresh_token = token.refresh_token;
-    conn.expires_at = now_secs() + token.expires_in;
-    if token.environment_id.is_some() {
-        conn.environment_id = token.environment_id;
-        conn.environment_name = token.environment_name;
-    }
-    save_connection(app, &conn)?;
     Ok(conn.access_token)
 }
 
@@ -298,16 +217,6 @@ pub fn live_credentials(app: &AppHandle) -> Result<(String, String), AppError> {
 
 // ── small helpers (no extra deps) ───────────────────────────────────────────────
 
-// Opaque CSRF nonce — not a secret, just needs to be unguessable per-attempt.
-fn random_state() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    format!("{:x}{:x}", nanos, std::process::id())
-}
-
 fn open_url(url: &str) {
     #[cfg(target_os = "windows")]
     let _ = std::process::Command::new("cmd")
@@ -317,51 +226,6 @@ fn open_url(url: &str) {
     let _ = std::process::Command::new("open").arg(url).spawn();
     #[cfg(all(unix, not(target_os = "macos")))]
     let _ = std::process::Command::new("xdg-open").arg(url).spawn();
-}
-
-// Minimal percent-encoding for query values (RFC 3986 unreserved set kept).
-fn urlencode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for b in s.bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(b as char)
-            }
-            _ => out.push_str(&format!("%{:02X}", b)),
-        }
-    }
-    out
-}
-
-// Minimal percent-decoding for the redirect query (handles %XX and '+').
-fn urldecode(s: &str) -> String {
-    let bytes = s.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'%' if i + 2 < bytes.len() => {
-                let hi = (bytes[i + 1] as char).to_digit(16);
-                let lo = (bytes[i + 2] as char).to_digit(16);
-                if let (Some(hi), Some(lo)) = (hi, lo) {
-                    out.push((hi * 16 + lo) as u8);
-                    i += 3;
-                    continue;
-                }
-                out.push(bytes[i]);
-                i += 1;
-            }
-            b'+' => {
-                out.push(b' ');
-                i += 1;
-            }
-            b => {
-                out.push(b);
-                i += 1;
-            }
-        }
-    }
-    String::from_utf8_lossy(&out).into_owned()
 }
 
 // ── Tauri commands ──────────────────────────────────────────────────────────────
@@ -388,7 +252,7 @@ pub async fn connect_re_nxt(
 #[tauri::command]
 pub fn re_nxt_status(app: AppHandle) -> Result<ConnectionStatus, String> {
     match load_connection(&app).map_err(|e| e.to_string())? {
-        Some(conn) => Ok(status_from(&conn)),
+        Some(conn) => Ok(conn.status()),
         None => Ok(ConnectionStatus {
             connected: false,
             environment_id: None,

@@ -9,6 +9,11 @@ services:
     volumes:
       - multitool-data:/data
     environment:
+      # Optional. Leave these unset and connect through the app's
+      # Settings → General panel instead — the normal path.
+      # PUBLIC_URL must be set to the externally reachable base URL whenever
+      # the app is behind a proxy, or the OAuth redirect_uri will be wrong.
+      PUBLIC_URL: ${PUBLIC_URL:-}
       RE_CLIENT_ID: ${RE_CLIENT_ID:-}
       RE_CLIENT_SECRET: ${RE_CLIENT_SECRET:-}
       RE_SUBSCRIPTION_KEY: ${RE_SUBSCRIPTION_KEY:-}

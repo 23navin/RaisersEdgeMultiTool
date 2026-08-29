@@ -19,9 +19,10 @@ import * as api from "../../../lib/api";
 import { cn } from "../../../lib/utils";
 import type { ReNxtConnectionStatus } from "../../../types";
 
-// Must match REDIRECT_URI in sky_auth.rs and the Redirect URI registered on
-// the application in the Blackbaud developer portal.
-const REDIRECT_URI = "http://localhost:13631/callback";
+// Must match the Redirect URI registered on the application in the Blackbaud
+// developer portal. Desktop uses the loopback listener in sky_auth.rs; the web
+// build uses this deployment's own /api/oauth/callback route.
+const REDIRECT_URI = api.redirectUri();
 
 export function GeneralTab() {
   const [status, setStatus] = useState<ReNxtConnectionStatus | null>(null);
@@ -51,6 +52,10 @@ export function GeneralTab() {
   };
 
   useEffect(() => {
+    // A web connect round-trips through Blackbaud and lands back here with
+    // the outcome in the query string.
+    const result = api.takeConnectResult();
+    if (result && !result.ok) setError(result.error ?? "Connection failed.");
     refreshStatus();
   }, []);
 
@@ -65,15 +70,16 @@ export function GeneralTab() {
     setBusy(true);
     setError(null);
     try {
-      // Resolves once the user finishes the browser handshake against their
-      // RE NXT environment. The backend persists the connection; the secret
-      // never comes back to the frontend.
+      // Desktop: resolves once the user finishes the handshake in the browser
+      // window that opens. Web: navigates this page to Blackbaud and returns
+      // null — the result arrives via the OAuth callback's redirect back here.
       const s = await api.connectReNxt(
         clientId.trim(),
         clientSecret.trim(),
         subscriptionKey.trim(),
       );
       if (!mounted.current) return;
+      if (!s) return; // navigating away to Blackbaud
       setStatus(s);
       // Clear the secret from the form once it's safely stored backend-side.
       setClientSecret("");
@@ -265,7 +271,9 @@ function ConnectForm({
         </button>
         {busy && (
           <span className="text-[11px] text-neutral-500">
-            Complete sign-in in the browser window that opened.
+            {api.isTauri
+              ? "Complete sign-in in the browser window that opened."
+              : "Redirecting to Blackbaud to sign in…"}
           </span>
         )}
       </div>

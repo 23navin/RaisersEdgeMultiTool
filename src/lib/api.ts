@@ -123,24 +123,66 @@ export const scaffoldMissing = (files: ProfileFileEntry[]) =>
   call<ProfileFileEntry[]>("scaffold_missing", { files });
 
 // ── RE NXT connection ─────────────────────────────────────────────────────────
-// Desktop-shaped today: connect runs the loopback OAuth flow in the Rust
-// shell. The server exposes the same three commands with its own credential
-// story (Phase 4), so the call surface stays identical.
+// Same three operations on both platforms; only how the browser reaches
+// Blackbaud differs.
+//
+// Desktop: the Rust shell binds a loopback listener, opens the system browser,
+// and resolves once the handshake finishes — connectReNxt returns the final
+// status.
+//
+// Web: the server has a real URL, so it just hands back an authorization URL
+// and we navigate there. The page unloads, Blackbaud redirects to
+// /api/oauth/callback, the server persists the connection and bounces back to
+// the app with ?connected=1 (or ?connect_error=…). So on web this call never
+// returns a status — it returns null and the caller reads the result from the
+// query string on the next load.
 
 export const reNxtStatus = () => call<ReNxtConnectionStatus>("re_nxt_status");
 
-export const connectReNxt = (
+export async function connectReNxt(
   clientId: string,
   clientSecret: string,
   subscriptionKey: string,
-) =>
-  call<ReNxtConnectionStatus>("connect_re_nxt", {
-    clientId,
-    clientSecret,
-    subscriptionKey,
-  });
+): Promise<ReNxtConnectionStatus | null> {
+  if (isTauri) {
+    return call<ReNxtConnectionStatus>("connect_re_nxt", {
+      clientId,
+      clientSecret,
+      subscriptionKey,
+    });
+  }
+  const { authorizeUrl } = await call<{ authorizeUrl: string; redirectUri: string }>(
+    "connect_re_nxt",
+    { clientId, clientSecret, subscriptionKey },
+  );
+  window.location.href = authorizeUrl;
+  return null; // navigating away; the callback finishes the job
+}
 
 export const disconnectReNxt = () => call<void>("disconnect_re_nxt");
+
+// The redirect URI that must be registered on the Blackbaud application.
+// Desktop uses the fixed loopback port; web uses this deployment's own origin.
+export const redirectUri = () =>
+  isTauri
+    ? "http://localhost:13631/callback"
+    : `${window.location.origin}/api/oauth/callback`;
+
+// Result of a web connect attempt, handed back through the query string by
+// the server's OAuth callback. Clears the params so a refresh doesn't re-show
+// a stale banner.
+export function takeConnectResult(): { ok: boolean; error?: string } | null {
+  if (isTauri) return null;
+  const params = new URLSearchParams(window.location.search);
+  const connected = params.has("connected");
+  const error = params.get("connect_error");
+  if (!connected && !error) return null;
+  params.delete("connected");
+  params.delete("connect_error");
+  const qs = params.toString();
+  window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : ""));
+  return error ? { ok: false, error } : { ok: true };
+}
 
 // ── platform-shaped operations ────────────────────────────────────────────────
 

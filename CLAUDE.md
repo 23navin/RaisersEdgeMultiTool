@@ -80,6 +80,16 @@ Cannot: touch filesystem                              profile parsing, SKY calls
 - Changes what the user sees → **React**
 - Needs both → component calls a typed fn in `src/lib/api.ts`, backend returns data
 
+**RE NXT connection (both shells).** The model, the on-disk format
+(`re_nxt_connection.json`), and token exchange/refresh live in
+`core/src/creds.rs`, so a connection is portable between desktop and server.
+Only code acquisition differs: desktop binds a loopback listener and opens the
+system browser (`sky_auth.rs`); the server hands the browser an authorization
+URL and receives the redirect at `GET /api/oauth/callback`. Both then call
+`creds::exchange_code`. The server's connection is **server-wide** — one person
+connects through Settings → General and everyone shares it; per-user
+connections need the identity model that doesn't exist yet.
+
 **Session model (both shells).** `load_profile` mints a session under
 `<workspaces_root>/<session_id>/` (`core/src/workspace.rs`), extracts the
 bundle into it, and returns `session_id` on the `LoadedProfile`. Every later
@@ -136,6 +146,7 @@ tauri-import/
 │           ├── lib.rs            # Module exports
 │           ├── api.rs            # The 20 operations as plain fns over a Ctx — both shells wrap these
 │           ├── workspace.rs      # Session dirs + opaque artifact ids + reaper
+│           ├── creds.rs          # RE NXT Connection model, on-disk format, token exchange/refresh
 │           ├── profile.rs        # Bundle load/save/duplicate/create; all YAML structs
 │           ├── validate.rs       # Profile linting (issue codes) + scaffold_missing
 │           ├── db.rs             # DuckDB validation, SQL transforms, ResultSets, sql_path quoting
@@ -151,7 +162,7 @@ tauri-import/
 │   └── src/
 │       ├── main.rs               # Entry point — registers all commands
 │       ├── commands.rs           # #[tauri::command] wrappers: build Ctx from AppHandle, call core::api
-│       └── sky_auth.rs           # RE NXT OAuth connect/status/token (loopback flow — desktop-only)
+│       └── sky_auth.rs           # RE NXT OAuth: loopback listener + system browser (desktop-only half)
 │
 ├── profiles/                     # PROFILE BUNDLES — not compiled in, ship alongside exe
 │   ├── src/<name>/               # Source folder per profile — structure.yaml, instructions.md,
