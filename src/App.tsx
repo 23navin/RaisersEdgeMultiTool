@@ -17,6 +17,7 @@ import type {
   Parameter,
   ReportRunResult,
   QueryStepResult,
+  ResultSet,
   SqlError,
   SyncResult,
   TransformResult,
@@ -54,6 +55,9 @@ export type SyncStatus = "idle" | "running" | "done" | "error";
 // indeterminate bar rather than a percentage.
 export type QueryStatus = "idle" | "running" | "done" | "error";
 
+// A visualization step likewise — one local DuckDB SELECT, no progress to report.
+export type VizStatus = "idle" | "running" | "done" | "error";
+
 export type FileEntry = {
   path: string;
   name: string;
@@ -82,6 +86,14 @@ export type SyncEntry = {
 export type QueryEntry = {
   status: QueryStatus;
   result?: QueryStepResult;
+  error?: string;
+};
+
+// One visualization step's run state, keyed by step label. `data` is the rows
+// the step's SELECT returned, handed straight to the viz component to draw.
+export type VizEntry = {
+  status: VizStatus;
+  data?: ResultSet;
   error?: string;
 };
 
@@ -142,6 +154,7 @@ export default function App() {
   const [generations, setGenerations] = useState<Record<string, GenEntry>>({});
   const [syncs, setSyncs] = useState<Record<string, SyncEntry>>({});
   const [queries, setQueries] = useState<Record<string, QueryEntry>>({});
+  const [visualizations, setVisualizations] = useState<Record<string, VizEntry>>({});
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TopTab>("imports");
   const [exitingTab, setExitingTab] = useState<TopTab | null>(null);
@@ -218,6 +231,8 @@ export default function App() {
       } else if (step.type === "code_table_sync") {
         const st = syncs[step.label];
         stepsDone[step.label] = st?.status === "done" && (st.result?.ok ?? false);
+      } else if (step.type === "visualization") {
+        stepsDone[step.label] = visualizations[step.label]?.status === "done";
       } else {
         stepsDone[step.label] = false;
       }
@@ -260,17 +275,35 @@ export default function App() {
     return keys;
   };
 
-  // Clears every transform that reads this upstream result. Called when the
-  // producing step re-runs and when it's invalidated — a stale join is worse
-  // than a missing one.
+  // Visualization steps that read a given upstream result. Keyed by step label
+  // rather than a composite key — a visualization step holds one result set.
+  const visualizationsConsuming = (field: UpstreamField, label: string): string[] => {
+    if (!loadedProfile) return [];
+    return loadedProfile.structure.steps
+      .filter((s) => s.type === "visualization" && (s[field] ?? []).includes(label))
+      .map((s) => s.label);
+  };
+
+  // Clears every transform and visualization that reads this upstream result.
+  // Called when the producing step re-runs and when it's invalidated — a stale
+  // join, or a stale table on screen, is worse than a missing one.
   const resetTransformsConsuming = (field: UpstreamField, label: string) => {
     const affected = transformsConsuming(field, label);
-    if (!affected.length) return;
-    setGenerations((prev) => {
-      const next = { ...prev };
-      for (const k of affected) delete next[k];
-      return next;
-    });
+    if (affected.length) {
+      setGenerations((prev) => {
+        const next = { ...prev };
+        for (const k of affected) delete next[k];
+        return next;
+      });
+    }
+    const affectedViz = visualizationsConsuming(field, label);
+    if (affectedViz.length) {
+      setVisualizations((prev) => {
+        const next = { ...prev };
+        for (const k of affectedViz) delete next[k];
+        return next;
+      });
+    }
   };
 
   // Changing an input invalidates, in order: transforms that read it, the
@@ -300,6 +333,13 @@ export default function App() {
         if (step.query_output) {
           resetTransformsConsuming("query_input", step.query_output);
         }
+      } else if (step.type === "visualization") {
+        setVisualizations((prev) => {
+          if (!prev[step.label]) return prev;
+          const next = { ...prev };
+          delete next[step.label];
+          return next;
+        });
       } else if (step.type === "code_table_sync") {
         // The rows already pushed to RE can't be un-pushed, but the recorded
         // outcome no longer describes the file on screen, so it stops counting
@@ -531,6 +571,65 @@ export default function App() {
     }
   };
 
+  // Runs a visualization step: the backend executes the step's SELECT over the
+  // uploaded files and whatever upstream results the step declares, and returns
+  // the rows. Nothing is written and nothing is sent to RE — this only re-reads
+  // what earlier steps already produced.
+  const handleRunVisualization = async (stepLabel: string) => {
+    if (!loadedProfile) return;
+    const step = loadedProfile.structure.steps.find((s) => s.label === stepLabel);
+    if (!step) return;
+
+    const filePaths: Record<string, string> = {};
+    for (const ref of step.input ?? []) {
+      const lbl = refLabel(ref);
+      const f = files[lbl];
+      if (f?.status === "valid") filePaths[lbl] = f.path;
+    }
+
+    // Same contract as a transform: a declared label whose producing step
+    // hasn't run is simply absent, and DuckDB names the unresolved placeholder.
+    const queryPaths: Record<string, string> = {};
+    for (const label of step.query_input ?? []) {
+      const producer = loadedProfile.structure.steps.find(
+        (s) => s.type === "re_query" && s.query_output === label,
+      );
+      const res = producer ? queries[producer.label]?.result : undefined;
+      if (res) queryPaths[label] = res.path;
+    }
+
+    const syncPaths: Record<string, string> = {};
+    for (const label of step.sync_input ?? []) {
+      const producer = loadedProfile.structure.steps.find(
+        (s) => s.type === "code_table_sync" && s.sync_output === label,
+      );
+      const res = producer ? syncs[producer.label]?.result : undefined;
+      if (res?.path) syncPaths[label] = res.path;
+    }
+
+    setVisualizations((prev) => ({ ...prev, [stepLabel]: { status: "running" } }));
+
+    try {
+      const data = await invoke<ResultSet>("run_visualization", {
+        filePaths,
+        queryPaths,
+        syncPaths,
+        stepLabel,
+        zipPath: loadedProfile.temp_dir,
+      });
+      setVisualizations((prev) => ({
+        ...prev,
+        [stepLabel]: { status: "done", data },
+      }));
+    } catch (e) {
+      console.error("run_visualization failed:", e);
+      setVisualizations((prev) => ({
+        ...prev,
+        [stepLabel]: { status: "error", error: asString(e) },
+      }));
+    }
+  };
+
   const handleDownload = async (
     stepLabel: string,
     transformIdx: number,
@@ -686,6 +785,8 @@ export default function App() {
           onCodeTableSync={handleCodeTableSync}
           queries={queries}
           onRunQuery={handleRunQuery}
+          visualizations={visualizations}
+          onRunVisualization={handleRunVisualization}
           onReset={handleReset}
         />
       );

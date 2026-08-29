@@ -366,7 +366,7 @@ function validateImport() {
     if (!isStr(step.label) || !step.label) err(`${where}.label must be a non-empty string`);
     else { stepLabels.push(step.label); where = `steps[${i}](${step.label})`; }
     const t = step.type;
-    const STEP_TYPES = ['file_input', 'sql_transform', 're_query', 'code_table_sync', 'manual_instruction'];
+    const STEP_TYPES = ['file_input', 'sql_transform', 're_query', 'code_table_sync', 'visualization', 'manual_instruction'];
     if (!STEP_TYPES.includes(t)) {
       err(`${where}.type must be one of ${STEP_TYPES.join(', ')} (got ${JSON.stringify(t)})`);
       continue;
@@ -474,6 +474,35 @@ function validateImport() {
             if (!inputLabels.has(l)) err(`${where}.input references unknown input label '${l}'`);
           }
         }
+      }
+    } else if (t === 'visualization') {
+      // How to draw it. Same set the frontend VIZ_REGISTRY implements.
+      const VIZ_TYPES = ['table', 'bar', 'line', 'pie', 'kpi'];
+      const v = step.visualization;
+      if (!isMap(v)) {
+        err(`${where} (visualization): needs a visualization: block naming its type`);
+      } else if (!VIZ_TYPES.includes(v.type)) {
+        err(`${where} (visualization): visualization.type must be one of ${VIZ_TYPES.join(', ')} (got ${JSON.stringify(v.type)})`);
+      }
+      // Where the rows come from: a SELECT, or exactly one declared upstream
+      // result shown as-is.
+      const upstream = (isList(step.query_input) ? step.query_input.length : 0)
+                     + (isList(step.sync_input) ? step.sync_input.length : 0);
+      if (step.sql !== undefined && step.sql !== null) {
+        if (!isStr(step.sql) || !step.sql) {
+          err(`${where} (visualization): sql must be a non-empty string`);
+        } else {
+          needsSqlDir = true;
+          referencedSql.add(step.sql);
+          if (!fs.existsSync(path.join(sqlDir, step.sql))) {
+            err(`${where} (visualization): sql references missing file sql/${step.sql}`);
+          }
+        }
+      } else if (upstream !== 1) {
+        err(`${where} (visualization): needs a sql file, or exactly one query_input / sync_input to show as-is (it declares ${upstream})`);
+      }
+      for (const l of stepInputLabels(step.input, `${where}.input`)) {
+        if (!inputLabels.has(l)) err(`${where}.input references unknown input label '${l}'`);
       }
     }
   }

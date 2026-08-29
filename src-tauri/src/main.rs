@@ -22,6 +22,7 @@ fn main() {
             commands::run_profile,
             commands::run_code_table_sync,
             commands::run_re_query,
+            commands::run_visualization,
             commands::run_report,
             commands::run_report_action,
             commands::save_output,

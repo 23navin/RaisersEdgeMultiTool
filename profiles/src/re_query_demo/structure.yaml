@@ -68,6 +68,28 @@ steps:
           left_parenthesis: false
           right_parenthesis: false
 
+  # ── Seeing the result ───────────────────────────────────────────────────────
+  # A visualization step draws rows instead of writing a file. Its `sql` is a
+  # bare SELECT over whatever it declares — here the uploaded file plus the
+  # query result, joined so you can see what RE has against what the vendor
+  # sent. `visualization:` says how to draw them; `table` is the same component
+  # the Reports tab uses.
+  #
+  # Drop the `sql:` line and this step would show {{query:RERecords}} verbatim —
+  # the shortcut when all you want is "what came back".
+  - label: ReviewQueryResult
+    type: visualization
+    input:
+      - Vendor
+    query_input:
+      - RERecords
+    sql: preview_query.sql
+    visualization:
+      type: table
+      title: "What RE returned"
+      config:
+        sortable: true
+
   # ── Consuming the result ────────────────────────────────────────────────────
   # query_input declares the dependency so the verifier can check ordering and
   # the frontend knows which result to hand down.

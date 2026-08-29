@@ -5,13 +5,14 @@
 
 import { CheckIcon } from "lucide-react";
 import type { LoadedProfile, Step } from "../../types";
-import type { FileEntry, GenEntry, SyncEntry, QueryEntry } from "../../App";
+import type { FileEntry, GenEntry, SyncEntry, QueryEntry, VizEntry } from "../../App";
 import { refLabel, stepTransforms } from "../../lib/profile-utils";
 import { StepSelectFiles } from "./steps/StepSelectFiles";
 import { StepGenerateFile } from "./steps/StepGenerateFile";
 import { StepImport } from "./steps/StepImport";
 import { StepCodeTableSync } from "./steps/StepCodeTableSync";
 import { StepQuery } from "./steps/StepQuery";
+import { StepVisualize } from "./steps/StepVisualize";
 
 type MainPanelProps = {
   loadedProfile: LoadedProfile | null;
@@ -27,6 +28,8 @@ type MainPanelProps = {
   onCodeTableSync: (stepLabel: string) => void;
   queries: Record<string, QueryEntry>;
   onRunQuery: (stepLabel: string) => void;
+  visualizations: Record<string, VizEntry>;
+  onRunVisualization: (stepLabel: string) => void;
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -78,6 +81,8 @@ export function MainPanel({
   onCodeTableSync,
   queries,
   onRunQuery,
+  visualizations,
+  onRunVisualization,
 }: MainPanelProps) {
   if (!loadedProfile) {
     return (
@@ -130,6 +135,8 @@ export function MainPanel({
               onCodeTableSync={onCodeTableSync}
               queries={queries}
               onRunQuery={onRunQuery}
+              visualizations={visualizations}
+              onRunVisualization={onRunVisualization}
             />
           ))}
         </div>
@@ -167,6 +174,8 @@ function StepSection({
   onCodeTableSync,
   queries,
   onRunQuery,
+  visualizations,
+  onRunVisualization,
 }: StepSectionProps) {
   const name = `${stepNumber}. ${stepDisplayName(step.label, instructions)}`;
   const heading = <StepHeading name={name} done={done} />;
@@ -329,6 +338,64 @@ function StepSection({
               result: state?.result,
               error: state?.error,
               onRun: () => onCodeTableSync(step.label),
+            }}
+          />
+        </section>
+      );
+    }
+    case "visualization": {
+      const state = visualizations[step.label];
+      // Every source the step reads, in the order it declares them: uploaded
+      // files first, then the named results earlier steps published. `ready`
+      // drives both the checkmarks and whether the button is live.
+      const fileSources = (step.input ?? []).map((r) => {
+        const lbl = refLabel(r);
+        return { label: lbl, ready: files[lbl]?.status === "valid", kind: "file" as const };
+      });
+      const querySources = (step.query_input ?? []).map((label) => {
+        const producer = structure.steps.find(
+          (s) => s.type === "re_query" && s.query_output === label,
+        );
+        return {
+          label,
+          ready: producer ? queries[producer.label]?.status === "done" : false,
+          kind: "query" as const,
+        };
+      });
+      const syncSources = (step.sync_input ?? []).map((label) => {
+        const producer = structure.steps.find(
+          (s) => s.type === "code_table_sync" && s.sync_output === label,
+        );
+        return {
+          label,
+          ready: producer ? syncs[producer.label]?.status === "done" : false,
+          kind: "sync" as const,
+        };
+      });
+      const sources = [...fileSources, ...querySources, ...syncSources];
+      // Same readiness rule as a transform for files (optional inputs may be
+      // absent); an upstream result is only usable once its step has run.
+      const canRun =
+        (step.input ?? []).every((r) => {
+          const lbl = refLabel(r);
+          const def = structure.inputs.find((i) => i.label === lbl);
+          const f = files[lbl];
+          if (def?.required) return f?.status === "valid";
+          return !f || f.status === "valid";
+        }) && [...querySources, ...syncSources].every((s) => s.ready);
+      return (
+        <section id={`step-${step.label}`} className="scroll-mt-[18px]">
+          {heading}
+          <StepVisualize
+            description={stepBody(instructions[step.label])}
+            viz={{
+              spec: step.visualization ?? { type: "table" },
+              sources,
+              canRun,
+              status: state?.status ?? "idle",
+              data: state?.data,
+              error: state?.error,
+              onRun: () => onRunVisualization(step.label),
             }}
           />
         </section>

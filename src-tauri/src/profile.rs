@@ -145,11 +145,25 @@ impl CodeTableRef {
     }
 }
 
+// The display spec on a `visualization` step. Mirrors a report profile's
+// `visualizations:` entry minus `id`/`data` — a step's label is its id, and its
+// rows come from the step's own SQL rather than a named report transform. Both
+// kinds render through the same frontend VIZ_REGISTRY.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct StepVisualization {
+    #[serde(rename = "type")]
+    pub viz_type: String,          // "table" | "bar" | "line" | "pie" | "kpi"
+    pub title: Option<String>,
+    pub config: Option<serde_json::Value>,  // viz-specific (e.g. table columns)
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Step {
     pub label: String,
     #[serde(rename = "type")]
-    pub step_type: String,       // "file_input", "sql_transform", "manual_instruction"
+    pub step_type: String,       // "file_input", "sql_transform", "re_query",
+                                 // "code_table_sync", "visualization",
+                                 // "manual_instruction"
     pub input: Option<Vec<StepInputRef>>,
     pub sql: Option<String>,     // sql_transform single-transform shortcut
     pub output: Option<Vec<String>>, // sql_transform single-transform shortcut
@@ -185,6 +199,13 @@ pub struct Step {
     pub query_input: Option<Vec<String>>,
     // Same shortcut for code_table_sync outcomes read as {{sync:Label}}.
     pub sync_input: Option<Vec<String>>,
+
+    // ── visualization fields ─────────────────────────────────────────────────
+    // Shows a result set on screen instead of writing a file. The step's `sql`
+    // (above) is a bare SELECT over the inputs and upstream results the step
+    // declares; omit it and the one declared query_input / sync_input is shown
+    // as-is. `visualization` says how to draw the rows.
+    pub visualization: Option<StepVisualization>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

@@ -32,7 +32,8 @@ A `.import` file is a zip archive containing:
 structure.yaml      # required — profile metadata, inputs/outputs, steps
 instructions.md     # optional — markdown text per step
 sql/                # optional — .sql files referenced by sql_transform steps,
-                    #            code_table_sync steps, and notice queries
+                    #            code_table_sync and visualization steps, and
+                    #            notice queries
 fixtures/           # optional — mock-mode RE responses:
                     #            queries/<query_output>.json  (re_query steps)
                     #            codetables/<output>.json     (code_tables)
@@ -587,6 +588,108 @@ profile that uses code tables still runs offline. Working example:
 
 ---
 
+## Step type: `visualization`
+
+### Purpose
+Draws rows on screen instead of writing a file. Reads what earlier steps already
+produced — uploaded files, an `re_query` result, a `code_table_sync` outcome —
+runs one `SELECT` over them, and hands the rows to the same viz library the
+Reports tab uses. Nothing is written and nothing is sent to RE, so there is no
+output file, no download, and no live/mock badge. Renders via `StepVisualize`.
+
+Use it to let the user *see* an intermediate result before committing to the
+next step: what a query returned, which rows a sync created, how an uploaded
+file looks once cleaned up.
+
+### YAML
+```yaml
+- label: ReviewQueryResult
+  type: visualization
+  input:                     # optional — uploaded files the SELECT reads
+    - Vendor
+  query_input:               # optional — re_query results it reads
+    - RERecords
+  sync_input:                # optional — code_table_sync outcomes it reads
+    - CreatedCodes
+  sql: preview_query.sql     # bare SELECT; see "Where the rows come from"
+  visualization:
+    type: table              # table | bar | line | pie | kpi
+    title: "What RE returned"
+    config:                  # viz-specific; TableViz takes sortable + columns
+      sortable: true
+```
+
+`visualization:` mirrors a report profile's `visualizations:` entry minus
+`id`/`data` — the step's label is its id, and the rows come from the step's own
+SQL rather than a named report transform. Both kinds render through the same
+`VIZ_REGISTRY`, so **only `table` is really implemented**; the chart types render
+the same placeholder card they do on the Reports tab.
+
+`config` is passed straight to the component. For `table`:
+
+```yaml
+    config:
+      sortable: true
+      columns:                      # optional — omit to show every column
+        - { field: re_email, header: "Email in RE" }
+        - { field: amount, header: "Gift", format: currency }
+```
+
+### Where the rows come from
+The step's `sql` is a **bare SELECT** — no `COPY`, no `{{output:...}}`. It may
+reference anything the step declares:
+
+| Placeholder | Declared via |
+| --- | --- |
+| `{{input:Label}}` | `input:` |
+| `{{query:Label}}` | `query_input:` |
+| `{{sync:Label}}` | `sync_input:` |
+| `{{codetable:Label}}` | the profile's top-level `code_tables:` |
+
+Omit `sql` entirely and the step shows its **single** declared `query_input` or
+`sync_input` verbatim — the backend substitutes
+`SELECT * FROM read_json_auto('{{query:Label}}')` for you. That shortcut needs
+exactly one declared source; with none or several, both verifiers ask for a
+`sql` file saying what to show.
+
+### Ordering
+Same rule as a transform: a `visualization` may only declare results a step
+**earlier** in `steps:` produces. `validate.rs` and `build.sh` both reject a
+forward reference — the shared upstream-family check covers every step type, so
+a visualization is validated exactly like a `sql_transform` consumer.
+
+### Markdown
+```markdown
+<!-- label: ReviewQueryResult -->
+## Review What RE Returned
+
+Shows each record RE sent back beside the email in the vendor file, so you can
+see what the import would change before generating it.
+```
+
+### UI behavior
+- Header row lists every declared source with a green check / red cross for
+  whether the step producing it has run.
+- **Show Data** button is live once every required file input is valid and every
+  declared upstream result has been produced. It reads **Refresh** after a run.
+- Indeterminate progress bar while the SELECT runs (a local DuckDB query reports
+  no progress), green when it lands, red on error.
+- The rendered viz appears below, under `visualization.title`, with a row count
+  beside the button.
+- Re-running the producing `re_query` / `code_table_sync` step, or swapping an
+  input file, clears the drawn result — a stale table on screen is worse than a
+  missing one.
+
+### Backend
+`run_visualization` in `commands.rs` — loads the profile from the temp dir,
+resolves the SELECT, pulls code tables if the profile declares any, and runs it
+through `db::select_rows`. Returns a `ResultSet` (columns + stringified rows),
+the same shape report transforms produce.
+
+Working example: `profiles/src/re_query_demo/` (`ReviewQueryResult`).
+
+---
+
 ## Step type: `manual_instruction`
 
 ### Purpose
@@ -630,6 +733,8 @@ Computed in `App.tsx` (`stepsDone`):
   counts as done; an empty result is a legitimate answer).
 - `code_table_sync` — done when the run finished **and** every row succeeded
   (`status === "done" && result.ok`). A partial run leaves the step open.
+- `visualization` — done when the SELECT returned without error (zero rows still
+  counts; an empty result is a legitimate answer).
 - `manual_instruction` — currently never marked done (no user action tracked).
 
 Generation state is keyed by `${stepLabel}::${transformIdx}` so that
@@ -646,6 +751,7 @@ step label alone — a `code_table_sync` step holds exactly one operation.
 | `sql_transform`      | `label`, `type`, `sql` or `transforms`| `input`, `output`, `notices`, `query_input`, `sync_input`, `transforms[].*` |
 | `re_query`           | `label`, `type`, `query_output`, `ref` or `template` | `input`, `params_sql`, `bind`     |
 | `code_table_sync`    | `label`, `type`, `sql`, `operation`, `code_table` or `code_table_id` | `input`, `sync_output` |
+| `visualization`      | `label`, `type`, `visualization.type`, and either `sql` or exactly one `query_input`/`sync_input` | `input`, `query_input`, `sync_input`, `visualization.title`, `visualization.config` |
 | `manual_instruction` | `label`, `type`                      | —                                        |
 
 ---
