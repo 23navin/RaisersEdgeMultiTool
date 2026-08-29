@@ -253,13 +253,18 @@ function StepSection({
           label,
           ready: gen?.status === "done",
         }));
-        const canGenerate = inputRefs.every((r) => {
+        const filesReady = inputRefs.every((r) => {
           const lbl = refLabel(r);
           const def = structure.inputs.find((i) => i.label === lbl);
           const f = files[lbl];
           if (def?.required) return f?.status === "valid";
           return !f || f.status === "valid";
         });
+        // Query results are hard prerequisites, not optional extras: the SQL
+        // substitutes {{query:Label}} with the file the producing re_query step
+        // wrote, so generating before that step has run can only fail.
+        const canGenerate =
+          filesReady && queryInputs.every((q) => q.ready);
         return {
           inputs: [...inputs, ...queryInputs, ...syncInputs],
           outputs,

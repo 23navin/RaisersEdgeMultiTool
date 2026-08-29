@@ -651,6 +651,7 @@ export default function App() {
     setGenerations({});
     setSyncs({});
     setQueries({});
+    setVisualizations({});
   };
 
   // `zipPath` is the unique selection key — built-in and user profiles can
@@ -663,6 +664,7 @@ export default function App() {
     setGenerations({});
     setSyncs({});
     setQueries({});
+    setVisualizations({});
     setLoadedProfile(null);
     if (zipPath == null) return;
     const summary = profiles.find((p) => p.zip_path === zipPath);
