@@ -21,6 +21,7 @@ Two profile kinds share one bundle format and one loader:
 | Doc | Covers |
 |---|---|
 | **`PROFILE_AUTHORING.md`** | **How to write a profile of either kind, start to finish. Point profile authors here first.** |
+| **`SERVER.md`** | **Deploying, configuring, and operating the web server (config, RE connection, HTTP API, security posture)** |
 | `STEP_TYPES.md` | Per-step-type YAML + UI reference for import profiles |
 | `REPORT_PROFILES.md` | Field-by-field contract + execution details for report profiles |
 | `README.md` | Setup, dev commands, project layout |

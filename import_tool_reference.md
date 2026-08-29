@@ -16,12 +16,12 @@
 
 1. [Project Goals](#1-project-goals)
 2. [Technology Decisions](#2-technology-decisions)
-3. [What Tauri Is and How It Works](#3-what-tauri-is-and-how-it-works)
-4. [The Two-Process Model](#4-the-two-process-model)
+3. [The Two Shells](#3-the-two-shells)
+4. [The Engine and Its Shells](#4-the-engine-and-its-shells)
 5. [Project File Structure](#5-project-file-structure)
 6. [Profile Bundle Format](#6-profile-bundle-format)
 7. [Data Flow — End to End](#7-data-flow--end-to-end)
-8. [The IPC Bridge — How Frontend Talks to Backend](#8-the-ipc-bridge--how-frontend-talks-to-backend)
+8. [The Transport Layer — How Frontend Talks to Backend](#8-the-transport-layer--how-frontend-talks-to-backend)
 9. [Development Cycle](#9-development-cycle)
 10. [Building and Distributing](#10-building-and-distributing)
 11. [Key Dependencies](#11-key-dependencies)
@@ -108,79 +108,145 @@ readable, writable, and testable independently of the application.
 
 ---
 
-## 3. What Tauri Is and How It Works
+## 3. The Two Shells
 
-Tauri is a framework for building desktop applications where:
+The app ships in two forms from one codebase, and the difference is confined to
+a thin layer at the very edge.
 
-- The **user interface** is a web page (HTML, CSS, JavaScript/TypeScript)
-- The **application logic** is a compiled Rust binary
-- The **window** is provided by the operating system's built-in web renderer
-  (WebView2 on Windows, which ships with Windows 11 and is auto-installed on Windows 10)
+**Tauri (desktop)** is a framework for building desktop applications where the
+user interface is a web page, the application logic is a compiled Rust binary,
+and the window is provided by the operating system's built-in web renderer
+(WebView2 on Windows, which ships with Windows 11 and auto-installs on Windows
+10). The web page is bundled inside the binary — no separate server, no network
+connection, no browser installation.
 
-When you run a Tauri app, the Rust binary starts, creates a window, and loads your
-web page into it. The web page is bundled inside the binary — there is no separate
-server, no network connection, no browser installation required.
+**Axum (web)** is a Rust HTTP server. It serves the very same built web page as
+static files and exposes the very same operations as HTTP endpoints. Users
+reach it in an ordinary browser.
 
 ### What Tauri is NOT
 
 - It is not a browser extension
-- It is not a web server
 - It is not Electron (no bundled Chromium, no Node.js runtime)
 - The UI is not a native Windows UI — it is a web page rendered in a WebView
 
 ---
 
-## 4. The Two-Process Model
+## 4. The Engine and Its Shells
 
-This is the single most important concept to internalize.
+This is the single most important concept to internalize. Almost none of the
+code is desktop-specific or web-specific; nearly all of it lives in an engine
+that knows about neither.
 
 ```
-┌─────────────────────────────────────────────┐
-│  RENDERER PROCESS (Frontend)                │
-│                                             │
-│  React + TypeScript                         │
-│  Runs inside the WebView (like a browser)   │
-│  Handles: UI, user interaction, display     │
-│                                             │
-│  CANNOT: touch filesystem, run DuckDB,      │
-│           access system resources           │
-│                                             │
-│  COMMUNICATES via: invoke() calls           │
-└──────────────────┬──────────────────────────┘
-                   │   IPC Bridge
-                   │   (inter-process communication)
-                   │   invoke("command_name", { args })
-                   │   ← returns Result<T, E>
-┌──────────────────▼──────────────────────────┐
-│  MAIN PROCESS (Backend)                     │
-│                                             │
-│  Rust binary                                │
-│  Handles: files, DuckDB, profile parsing    │
-│                                             │
-│  CAN: read/write files, run DuckDB,         │
-│        access system, spawn processes       │
-│                                             │
-│  EXPOSES via: #[tauri::command] functions   │
-└─────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│  FRONTEND — React + TypeScript (src/)                        │
+│  Runs in the desktop WebView or an ordinary browser.         │
+│  Handles: UI, user interaction, display.                     │
+│  CANNOT: touch the filesystem or run DuckDB.                 │
+└────────────────────────────┬─────────────────────────────────┘
+                             │
+                   src/lib/api.ts  — the ONE file that
+                   knows which target it is running in
+                             │
+              ┌──────────────┴──────────────┐
+     invoke() │                             │ fetch('/api/…')
+              ▼                             ▼
+┌──────────────────────────┐   ┌──────────────────────────────┐
+│  DESKTOP SHELL           │   │  WEB SHELL                   │
+│  src-tauri/              │   │  crates/server/              │
+│  #[tauri::command] fns   │   │  POST /api/<command>         │
+│  native dialogs          │   │  upload · download · assets  │
+│  loopback OAuth listener │   │  OAuth callback route        │
+└────────────┬─────────────┘   └───────────────┬──────────────┘
+             │                                 │
+             └────────────────┬────────────────┘
+                              ▼
+          ┌────────────────────────────────────────┐
+          │  ENGINE — crates/core/                 │
+          │  api.rs: every operation as a plain fn │
+          │  profile parsing · DuckDB · validation │
+          │  SKY API calls · sessions · creds      │
+          │  NO tauri, NO http — pure Rust         │
+          └────────────────────────────────────────┘
 ```
+
+Each shell does three things and nothing more: build a `Ctx` (where state lives
+on disk, how to reach RE), call the matching function in `core::api`, and
+translate the result into its transport. The engine cannot tell which shell
+invoked it.
 
 **Rule of thumb:**
-- Does it touch a file, database, or system resource? → **Rust (backend)**
-- Does it change what the user sees? → **React (frontend)**
-- Does it need both? → **Frontend calls backend via invoke(), backend returns data, frontend displays it**
+- Does it touch a file, database, or system resource? → **`crates/core`**, as a
+  plain function in `api.rs`
+- Is it transport- or platform-specific (dialogs, routes, OAuth redirect
+  mechanics)? → **the shell**
+- Does it change what the user sees? → **React**
+- Does it need both? → the component calls a typed function in
+  `src/lib/api.ts`, which reaches the backend the right way for its target
+
+### The `Ctx`
+
+```rust
+pub struct Ctx {
+    pub workspaces_root: PathBuf,     // parent of all session dirs
+    pub user_profiles_dir: PathBuf,   // where user .import bundles live
+    pub transport: Box<dyn Fn() -> Result<Transport, AppError> + Send + Sync>,
+}
+```
+
+That closure is the whole of what the engine knows about credentials. Desktop
+resolves it from the per-user connection file via `sky_auth`; the server
+resolves it from its shared connection store. Either way the engine receives a
+`Transport::Live { access_token, subscription_key }` or `Transport::Mock`.
+
+### Sessions and artifact ids
+
+Because the same code serves one desktop user and many concurrent web users,
+nothing may be keyed on a shared name and no server path may cross the wire.
+
+`load_profile` mints a **session** — a directory under `workspaces_root` — and
+extracts the bundle into it. The client receives an opaque `session_id` and
+echoes it on every later call. Files produced by steps are addressed by
+**artifact id**: a session-relative path like `runs/18d0…/import_file.csv`.
+`Workspace::resolve` re-anchors every id inside its own session and rejects
+`..`, absolute paths, and backslashes.
+
+```
+<workspaces_root>/<session_id>/
+├── profile/          extracted bundle (structure.yaml, sql/, fixtures/)
+├── inputs/           uploaded files (web) — desktop reads local paths directly
+├── queries/          re_query results        → {{query:Label}}
+├── codetables/       code table pulls + sync outcomes → {{codetable:}} / {{sync:}}
+└── runs/<token>/     one dir per transform run → output CSVs
+```
+
+Sessions hold **no in-memory state**. Every call re-reads `structure.yaml` and
+the SQL from the session directory, which is why a stateless HTTP handler and a
+Tauri command can share one implementation. Sessions idle for 24 hours are
+reaped on the next `load_profile`.
 
 ---
 
 ## 5. Project File Structure
 
+A Cargo workspace. The engine is a library crate; each shell is its own crate.
+
 ```
 tauri-import/
 │
-├── src/                              FRONTEND — React app
+├── Cargo.toml                        WORKSPACE root — crates/core, crates/server, src-tauri
+│
+├── src/                              FRONTEND — one React app for both targets
 │   ├── main.tsx                      React entry point — mounts <App /> into index.html
-│   ├── App.tsx                       Root component — holds shared state, makes the invoke() calls
+│   ├── App.tsx                       Root component — holds shared state, calls lib/api.ts
 │   ├── types.ts                      TS mirror of the Rust structs
-│   ├── lib/                          cn() helper, profile helpers, RE call catalog
+│   ├── lib/
+│   │   ├── api.ts                    THE TRANSPORT — invoke() vs fetch(); file pick,
+│   │   │                             save, asset URLs; the only @tauri-apps importer
+│   │   ├── utils.ts                  cn() helper
+│   │   ├── profile-utils.ts          Profile summary/list helpers
+│   │   └── re-calls.ts               TS mirror of the RE call registry
 │   └── components/
 │       ├── Titlebar.tsx              Window chrome + workspace tabs
 │       ├── imports/                  Imports workspace (Sidebar, MainPanel, steps/)
@@ -190,22 +256,37 @@ tauri-import/
 │       ├── shared/                   CodeMirror editor, notice block, panel
 │       └── ui/                       Shadcn primitives
 │
-├── src-tauri/                        BACKEND — Rust binary
-│   ├── Cargo.toml                    Rust dependencies (equivalent to package.json)
+├── crates/
+│   ├── core/                         THE ENGINE — no tauri, no http
+│   │   └── src/
+│   │       ├── lib.rs                Module exports
+│   │       ├── api.rs                Every operation as a plain fn over a Ctx
+│   │       ├── workspace.rs          Session dirs, artifact ids, containment, reaper
+│   │       ├── creds.rs              RE NXT Connection model, storage, token exchange
+│   │       ├── profile.rs            Bundle load/save/duplicate/create; the YAML structs
+│   │       ├── validate.rs           Profile linting + missing-file scaffolding
+│   │       ├── db.rs                 DuckDB execution — validation, transforms, result sets
+│   │       ├── re_calls.rs           The single SKY API executor (Live / Mock transports)
+│   │       ├── code_tables.rs        Code table pulls + code_table_sync writes
+│   │       ├── query_step.rs         The re_query step runner
+│   │       ├── report.rs             The report pipeline
+│   │       └── errors.rs             Shared error enum used across all modules
+│   │
+│   └── server/                       WEB SHELL — Axum
+│       └── src/
+│           ├── main.rs               Routes, uploads, downloads, OAuth callback, SPA
+│           └── creds.rs              Server-wide RE connection store + refresh cache
+│
+├── src-tauri/                        DESKTOP SHELL — Tauri
+│   ├── Cargo.toml                    Depends on multitool-core + tauri
 │   ├── tauri.conf.json               Tauri configuration (window, permissions, bundle)
 │   ├── build.rs                      Tauri build script — do not modify
 │   └── src/
 │       ├── main.rs                   Entry point — starts app, registers commands
-│       ├── commands.rs               #[tauri::command] functions (the backend API)
-│       ├── profile.rs                Bundle load/save/duplicate/create; the YAML structs
-│       ├── validate.rs               Profile linting + missing-file scaffolding
-│       ├── db.rs                     DuckDB execution — validation, transforms, result sets
-│       ├── re_calls.rs               The single SKY API executor (Live / Mock transports)
-│       ├── code_tables.rs            Code table pulls + code_table_sync writes
-│       ├── query_step.rs             The re_query step runner
-│       ├── report.rs                 The report pipeline
-│       ├── sky_auth.rs               RE NXT OAuth + credential storage
-│       └── errors.rs                 Shared error enum used across all modules
+│       ├── commands.rs               #[tauri::command] wrappers over core::api
+│       └── sky_auth.rs               Loopback OAuth listener + system browser
+│
+├── Dockerfile, docker-compose.yml    Web server image + one-volume deployment
 │
 ├── profiles/                         PROFILE BUNDLES — external, not compiled in
 │   ├── src/<name>/                   Source: structure.yaml, instructions.md, sql/,
@@ -227,8 +308,13 @@ tauri-import/
 | `App.tsx` | Shared state (selected profile, files, generations, params) | Filesystem, DuckDB |
 | `imports/MainPanel.tsx` | Step dispatch — one component per `step.type` | Backend calls |
 | `reports/viz/index.tsx` | `VIZ_REGISTRY` — one component per `visualization.type` | Backend calls |
-| `settings/imports/ImportTab.tsx` | The profile editor's state + its own editor `invoke()`s | Import/report execution |
-| `commands.rs` | Tauri command definitions (the API surface) | UI state |
+| `settings/imports/ImportTab.tsx` | The profile editor's state + its own editor calls | Import/report execution |
+| `lib/api.ts` | Choosing invoke() vs fetch(); platform-shaped file pick / save / asset URLs | Business logic |
+| `core/api.rs` | Every operation; resolving ids → paths at the boundary | Transport, UI state |
+| `core/workspace.rs` | Session dirs, artifact ids, containment checks, reaping | Profile semantics |
+| `core/creds.rs` | Connection model, on-disk format, token exchange + refresh | How the code is obtained |
+| `commands.rs` (shell) | Tauri command definitions; Ctx from AppHandle | Business logic |
+| `server/main.rs` (shell) | Routes, multipart, downloads, OAuth callback | Business logic |
 | `profile.rs` | Zip read/write, YAML parsing, instruction splitting | DuckDB, HTTP |
 | `validate.rs` | Structural linting of a bundle, stub generation | Disk I/O |
 | `db.rs` | DuckDB connection, SQL execution, CSV output | Profile parsing, HTTP |
@@ -379,121 +465,232 @@ queries, `fixtures/queries/<query_output>.json` for `re_query` steps, and
 
 ## 7. Data Flow — End to End
 
+The trace below is identical on both targets except at the three marked
+points. Component names are the real ones in `src/components/`.
+
 ### Step 1 — App starts
 
 ```
-main.rs starts the Tauri app
-  → WebView loads, React mounts
-  → ProfilePicker calls invoke("list_profiles")
-  → commands.rs → profile.rs scans the profiles/ folder
-  → Returns list of { name, description, accepts } for each zip
-  → ProfilePicker populates the dropdown
+Desktop: main.rs starts Tauri  │  Web: browser loads the SPA from the server
+  → React mounts, App.tsx runs api.listProfiles()
+  → lib/api.ts picks invoke("list_profiles") or POST /api/list_profiles
+  → core::api::list_profiles: embedded built-ins + .import files in the
+    user profiles dir, each summarised from its structure.yaml
+  → returns ProfileSummary[] — zip_path is a REF ("builtin://x.import"
+    or "user://x.import"), never a filesystem path
+  → imports/Sidebar.tsx populates the picker
 ```
 
-### Step 2 — User selects a profile and drops a file
+### Step 2 — User selects a profile
 
 ```
-User picks a profile from the dropdown
-  → App.tsx stores selectedProfile
-
-User drops or selects a file
-  → FileDropZone calls invoke("validate_file", { filePath, profileName })
-  → commands.rs → profile.rs loads the profile bundle
-      → Checks file extension against profile.accepts
-      → Reads the file header row
-      → Checks all expected_columns are present
-  → Returns Ok(ValidationResult) or Err(message)
-  → FileDropZone shows green checkmark or red error message
-  → If valid: Run button in ResultsPanel becomes enabled
+Sidebar → App.tsx handleSelectProfile(zipPath)
+  → api.loadProfile(zipPath)
+  → core::api::load_profile
+      Workspace::create()          mint <root>/<session_id>/
+      extract bundle              → <session_id>/profile/
+      load_from_dir               parse structure.yaml, instructions.md, sql/
+      stamp session_id + asset_base
+  → LoadedProfile crosses the wire WITHOUT temp_dir; the client holds
+    session_id and echoes it on every later call
+  → imports/MainPanel.tsx renders one section per step
 ```
 
-### Step 3 — User clicks Run
+### Step 3 — User attaches a file  ← differs by target
 
 ```
-ResultsPanel calls invoke("run_profile", { filePath, profileName, outputDir })
-  → commands.rs →
-      profile.rs: load profile bundle, extract SQL, replace {{input_file}}
-      db.rs: open DuckDB connection
-             execute the SQL query
-             write result to output CSV at outputDir/prefix_timestamp.csv
-             return row count
-  → Returns Ok(OutputResult { outputPath, rowCount }) or Err(AppError)
-  → ResultsPanel shows success (path + row count) or error with detail
+StepSelectFiles → api.pickInputFile(label, extensions, sessionId)
+
+  DESKTOP: native dialog returns a local OS path; the backend reads it in place
+  WEB:     <input type=file> → POST /api/sessions/{sid}/inputs (multipart)
+           → server writes <session_id>/inputs/<token>-<name>
+           → returns { path: "inputs/<token>-<name>" }, an artifact id
+
+Either way App.tsx stores { path, name, status: "pending" } and the rest of
+the pipeline is byte-identical.
+
+Validate → api.validateFile(path, label, sessionId)
+  → core::api::validate_file → db::validate_file
+      fresh in-memory DuckDB, DESCRIBE over read_csv_auto/read_xlsx
+      check required columns, nulls, allowed values, digit constraints
+  → ValidationResult { ok, errors, notices } → inline error table
 ```
+
+### Step 4 — User runs a transform
+
+```
+StepGenerateFile → App.tsx handleGenerate
+  collects filePaths (input label → path/id)
+           queryIds  (query_output label → artifact id from an earlier re_query)
+           syncIds   (sync_output label  → artifact id from an earlier sync)
+  → api.runProfile({...})
+  → core::api::run_profile
+      open_session               re-read structure.yaml + SQL from the session
+      resolve every id           → absolute paths, containment-checked
+      code_tables::fetch_all     if the profile declares any  → {{codetable:}}
+      Workspace::new_run_dir()   fresh <session_id>/runs/<token>/
+      db::run_transform          substitute {{input:}} {{output:}} {{query:}}
+                                 {{sync:}} {{codetable:}}, run DuckDB,
+                                 write one CSV per declared output
+      relativize output paths    → artifact ids
+  → TransformResult { outputs: [{label, artifact_id, row_count}], notices }
+```
+
+### Step 5 — User downloads the output  ← differs by target
+
+```
+StepGenerateFile → api.saveOutputFile(sessionId, artifactId, "Label.csv")
+
+  DESKTOP: native Save As dialog → save_output command → fs::copy
+  WEB:     GET /api/sessions/{sid}/artifacts/{id}?name=Label.csv
+           → server streams it with Content-Disposition
+```
+
+The third target-specific point is **instruction images**
+(`StepImport.tsx` → `api.assetUrl`): desktop resolves through Tauri's asset
+protocol, web through `GET /api/sessions/{sid}/assets/{rel}`.
 
 ### How errors surface at each stage
 
-| Stage | Example error | Where it's caught | What user sees |
+| Stage | Example error | Where it's caught | What the user sees |
 |---|---|---|---|
-| Profile load | Zip is corrupt | `profile.rs` | "Could not load profile: ..." |
-| File validation | Wrong extension | `commands.rs` | "This profile accepts .csv, .xlsx only" |
-| Column check | Missing "Item #" | `commands.rs` | "Missing expected columns: Item #" |
-| SQL execution | Type cast fails | `db.rs` | "SQL error: could not cast 'N/A' to DOUBLE in Unit Cost" |
-| File write | Output dir read-only | `db.rs` | "Could not write output file: ..." |
+| Profile load | Zip is corrupt, or an entry escapes the bundle | `core/profile.rs` | "Cannot read zip archive: …" / "…has an unsafe path" |
+| Session | Reaped after 24h idle, or unknown id | `core/workspace.rs` | "Session '…' not found — reload the profile and try again" |
+| Artifact id | `..`, absolute path, or backslash | `core/workspace.rs` | "Invalid artifact id: …" |
+| File validation | Missing required column | `core/db.rs` | Inline table: "Missing expected column: Item #" |
+| SQL execution | Type cast fails | `core/db.rs` | "Transform failed: could not cast 'N/A' to DOUBLE" |
+| Declared output not written | SQL never wrote `{{output:X}}` | `core/db.rs` | "Output 'X' was declared but the SQL did not write to it" |
+| RE call | Token expired, SKY 4xx/5xx | `core/re_calls.rs` | "Network error: SKY API returned 401 …" |
+| Auth | No connection, spent refresh token | `core/creds.rs` | "Not connected…" / "Token endpoint returned 400: …" |
 
 ---
 
-## 8. The IPC Bridge — How Frontend Talks to Backend
+## 8. The Transport Layer — How Frontend Talks to Backend
 
-### Calling a backend command from the frontend
+Components never call `invoke()` or `fetch()` directly. They import a typed
+function from `src/lib/api.ts`, which is the only file in `src/` allowed to
+import from `@tauri-apps/*`.
+
+### Calling the backend from a component
 
 ```typescript
-// src/components/ProfilePicker.tsx
-import { invoke } from "@tauri-apps/api/core";
+import * as api from "../../lib/api";
 
-// invoke<ReturnType>("command_name", { arg1: value1, arg2: value2 })
-// Returns a Promise — always use async/await or .then()/.catch()
-
-const profiles = await invoke<ProfileMeta[]>("list_profiles", {
-  profilesDir: "/path/to/profiles"
+const result = await api.runProfile({
+  filePaths, queryIds, syncIds,
+  sqlFile: transform.sql,
+  sessionId: loadedProfile.session_id,
+  outputLabels: transform.output ?? [],
 });
 ```
 
-### Defining a command in Rust
+### How the transport picks a target
+
+```typescript
+// src/lib/api.ts
+export const isTauri = "__TAURI_INTERNALS__" in window;
+
+async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  if (isTauri) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return invoke<T>(command, args);
+  }
+  const resp = await fetch(`/api/${command}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(args ?? {}),
+  });
+  if (!resp.ok) throw await resp.text();   // same string a rejected invoke() carries
+  return (await resp.json()) as T;
+}
+```
+
+Because Tauri encodes command arguments as camelCase JSON and the server's
+request structs use `#[serde(rename_all = "camelCase")]`, **the two paths send
+byte-identical bodies**. That is what lets one `dist/` serve both targets.
+
+### Defining an operation — all three layers
+
+**1. The engine** (`crates/core/src/api.rs`) — where the work actually happens:
 
 ```rust
-// src-tauri/src/commands.rs
+pub fn run_profile(
+    ctx: &Ctx,
+    file_paths: HashMap<String, String>,
+    query_ids: HashMap<String, String>,
+    /* … */
+) -> Result<TransformResult, AppError> { /* … */ }
+```
 
+**2a. The desktop shell** (`src-tauri/src/commands.rs`):
+
+```rust
 #[tauri::command]
-pub fn list_profiles(profiles_dir: String) -> Result<Vec<ProfileMeta>, String> {
-    profile::list(Path::new(&profiles_dir))
-        .map_err(|e| e.to_string())   // convert AppError to String for the frontend
+pub async fn run_profile(app: AppHandle, /* … */) -> Result<TransformResult, String> {
+    let ctx = ctx(&app)?;
+    // Off the async runtime — the live path uses reqwest::blocking,
+    // which panics inside a Tokio context.
+    tokio::task::spawn_blocking(move || {
+        api::run_profile(&ctx, /* … */).map_err(|e| e.to_string())
+    }).await.map_err(|e| e.to_string())?
 }
 ```
 
-### Registering commands so Tauri knows about them
+**2b. The web shell** (`crates/server/src/main.rs`):
 
 ```rust
-// src-tauri/src/main.rs
-
-fn main() {
-    tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![
-            commands::list_profiles,
-            commands::validate_file,
-            commands::run_profile,
-        ])
-        .run(tauri::generate_context!())
-        .unwrap();
+async fn run_profile(
+    State(s): State<Arc<AppState>>,
+    Json(req): Json<RunProfileReq>,
+) -> ApiResult<TransformResult> {
+    let _permit = s.run_permits.acquire().await.expect("semaphore open");
+    let ws = s.open_workspace(&req.session_id)?;
+    let file_paths = resolve_inputs(&ws, &req.file_paths)?;   // ids → paths
+    let ctx = s.ctx();
+    Ok(Json(blocking(move || api::run_profile(&ctx, file_paths, /* … */)).await?))
 }
 ```
 
-**Every command must be registered here or invoke() will fail silently.**
+**3. The frontend** (`src/lib/api.ts`) — one typed function, as above.
+
+### Registering commands
+
+Desktop commands must appear in `generate_handler![]` in
+`src-tauri/src/main.rs`, or `invoke()` fails silently. Server routes must be
+added to the `Router` in `crates/server/src/main.rs`. **Adding an operation
+means touching all three layers** — engine, both shells, transport module.
 
 ### The command surface
 
-Grouped by area; the full arg/return table lives in [CLAUDE.md](CLAUDE.md#the-backend-commands).
+| Command | Args | Returns |
+|---|---|---|
+| `list_profiles` | — | `ProfileSummary[]` |
+| `load_profile` | `zipPath` (a `builtin://` / `user://` ref) | `LoadedProfile` |
+| `validate_file` | `filePath`, `inputLabel`, `sessionId` | `ValidationResult` |
+| `run_profile` | `filePaths`, `queryIds`, `syncIds`, `sqlFile`, `sessionId`, `outputLabels` | `TransformResult` |
+| `run_re_query` | `filePaths`, `stepLabel`, `sessionId` | `QueryStepResult` |
+| `run_code_table_sync` | `filePaths`, `stepLabel`, `sessionId` | `SyncResult` |
+| `run_visualization` | `filePaths`, `queryIds`, `syncIds`, `stepLabel`, `sessionId` | `ResultSet` |
+| `run_report` | `sessionId`, `paramValues` | `ReportRunResult` |
+| `run_report_action` | `sessionId`, `actionId`, `paramValues` | `ActionResult` |
+| `save_output` *(desktop only)* | `sessionId`, `artifactId`, `destPath` | `void` |
+| `save_profile` | `zipPath`, `files` | `ProfileMutation` |
+| `new_profile` | — | `ProfileMutation` |
+| `duplicate_profile` | `sourceZipPath` | `ProfileMutation` |
+| `delete_profile` | `zipPath` | `void` |
+| `validate_profile` | `files` | `ValidationReport` |
+| `scaffold_missing` | `files` | `ProfileFileEntry[]` |
+| `re_nxt_status` | — | `ConnectionStatus` |
+| `connect_re_nxt` | `clientId`, `clientSecret`, `subscriptionKey` | desktop `ConnectionStatus`; web `{authorizeUrl, redirectUri}` |
+| `disconnect_re_nxt` | — | `void` |
 
-| Area | Commands |
-|---|---|
-| Profiles + imports | `list_profiles`, `load_profile`, `validate_file`, `run_profile`, `run_re_query`, `run_code_table_sync`, `save_output` |
-| Reports | `run_report`, `run_report_action` |
-| In-app profile editor | `new_profile`, `duplicate_profile`, `save_profile`, `delete_profile`, `validate_profile`, `scaffold_missing` |
-| RE NXT connection | `connect_re_nxt`, `re_nxt_status`, `disconnect_re_nxt`, `re_nxt_access_token` |
+`connect_re_nxt` is the one operation whose *shape* differs: desktop blocks
+until the loopback handshake finishes and returns the final status, whereas the
+web version returns a URL to navigate to and completes at
+`GET /api/oauth/callback`. `api.ts` hides the difference behind one function.
 
-Note that the `zipPath` argument on the *run* commands is the extracted temp dir
-(`loadedProfile.temp_dir`), not the `.import` zip — the editor commands are the
-ones that take a real bundle path.
+The web shell also exposes upload, download, asset, and OAuth-callback routes
+that have no desktop equivalent — see **[SERVER.md](SERVER.md) §9**.
 
 ---
 
@@ -501,22 +698,40 @@ ones that take a real bundle path.
 
 ### Starting the dev environment
 
+**Desktop:**
+
 ```bash
 npm run tauri dev
 ```
 
-This single command:
-1. Compiles the Rust backend
-2. Starts the Vite dev server for the frontend
-3. Opens a live window
+This single command compiles the Rust backend, starts the Vite dev server, and
+opens a live window.
+
+**Web server:**
+
+```bash
+npm run build                     # the server serves dist/, not Vite's dev server
+cargo run -p multitool-server
+# → http://localhost:8080
+```
+
+For fast UI iteration against the server, run Vite separately and point it at
+the backend — add a proxy to `vite.config.ts` (`server.proxy['/api'] →
+http://localhost:8080`) and use `npm run dev`. Otherwise re-run `npm run build`
+after frontend edits.
+
+Most work needs only one target: the engine is shared, so a change to
+`crates/core` is exercised by whichever shell is convenient. `cargo test
+--workspace` covers the engine without either.
 
 ### Hot reload behavior
 
 | What you change | What happens |
 |---|---|
-| `.tsx` / `.ts` file | Frontend reloads instantly (< 1 second) |
-| `.css` / Tailwind class | Frontend reloads instantly |
-| `.rs` file | Rust recompiles, window restarts (5–30 seconds) |
+| `.tsx` / `.ts` file | Desktop: reloads instantly. Server: re-run `npm run build` (or proxy Vite) |
+| `.css` / Tailwind class | Same as above |
+| `.rs` in `crates/core` | Both shells recompile (5–30 seconds) |
+| `.rs` in a shell | Only that shell recompiles |
 | `Cargo.toml` (new dependency) | Full recompile, slower |
 | `tauri.conf.json` | Restart `npm run tauri dev` |
 
@@ -545,7 +760,10 @@ Errors appear in the browser devtools console. Open it with:
 
 ## 10. Building and Distributing
 
-### Build command
+Two artifacts come out of one commit. Run `./profiles/build.sh` before either —
+built-ins are embedded at compile time.
+
+### Desktop — build command
 
 ```bash
 npm run tauri build
@@ -580,41 +798,85 @@ Resolved at runtime via `AppHandle::path().app_data_dir()`, plus `profiles/`:
 
 The directory is created on the first `list_profiles`. Dropping a `.import`
 file there makes it available on the next launch, alongside the built-ins; the
-in-app editor (Settings → Imports) writes to the same place. Built-ins are
-addressed by the sentinel `builtin://<filename>` rather than a filesystem path.
+in-app editor (Settings → Imports) writes to the same place. On the server the
+equivalent directory is `DATA_DIR/profiles/`.
+
+Profiles are addressed on the wire by **ref**, never by path:
+`builtin://<filename>` for an embedded bundle, `user://<filename>` for one in
+the profiles directory. `api.rs::resolve_profile_ref` rejects anything else,
+including traversal attempts.
+
+### Web server — build command
+
+```bash
+docker build -t multitool-server .
+```
+
+A two-stage build: Node compiles the SPA, Rust compiles `multitool-server`
+(with DuckDB bundled from source), and the runtime image carries just the
+binary, `dist/`, and a volume at `/data`. Build it directly instead with:
+
+```bash
+npm run build && cargo build --release -p multitool-server
+```
+
+### What ships where
+
+| Target | Artifact | Carries |
+|---|---|---|
+| Desktop | `.msi` / `.exe` | Binary + embedded built-ins + `dist/` |
+| Web | Container image | Binary + embedded built-ins + `dist/`, state on the `/data` volume |
+
+CI builds both from the same tag — see `.github/workflows/build.yml`.
+Deployment and configuration live in **[SERVER.md](SERVER.md)**.
 
 ---
 
 ## 11. Key Dependencies
 
-### Rust (src-tauri/Cargo.toml)
+### Engine — `crates/core/Cargo.toml`
+
+Deliberately free of any framework. This is what makes the dual target
+possible: `cargo tree -p multitool-core` contains **no tauri and no axum**.
 
 | Crate | Purpose |
 |---|---|
-| `tauri` | The framework — window, IPC, file dialogs |
-| `duckdb` | Embedded analytics database — runs your SQL profiles |
-| `serde` + `serde_yaml` | Deserializing profile.yaml into Rust structs |
-| `zip` | Unpacking profile .zip bundles |
-| `serde_json` | Serializing results back to the frontend |
+| `duckdb` (bundled) | Embedded analytics database — runs profile SQL in-process |
+| `serde` + `serde_yaml` | Deserializing structure.yaml into Rust structs |
+| `serde_json` | Fixtures, RE payloads, results to the frontend |
+| `zip` | Reading and writing `.import` bundles |
+| `reqwest` (blocking, rustls) | SKY API calls and the OAuth token endpoint |
+| `chrono` | Timestamps |
+| `getrandom` | CSRF nonce for the OAuth handshake |
 
-```toml
-[dependencies]
-tauri = { version = "2", features = [] }
-duckdb = "1"
-serde = { version = "1", features = ["derive"] }
-serde_yaml = "0.9"
-zip = "2"
-serde_json = "1"
-```
+### Desktop shell — `src-tauri/Cargo.toml`
+
+| Crate | Purpose |
+|---|---|
+| `multitool-core` | The engine |
+| `tauri` | Window, IPC, asset protocol |
+| `tauri-plugin-dialog` | Native open/save dialogs |
+| `tokio` | `spawn_blocking` for the blocking engine calls |
+
+### Web shell — `crates/server/Cargo.toml`
+
+| Crate | Purpose |
+|---|---|
+| `multitool-core` | The engine |
+| `axum` (+ multipart) | HTTP routing, uploads |
+| `tokio` (multi-thread) | Async runtime + the blocking pool |
+| `tower-http` | Static file serving, tracing, body limits |
+| `tracing` + `tracing-subscriber` | Structured logs |
 
 ### Frontend (package.json)
 
 | Package | Purpose |
 |---|---|
 | `react` + `react-dom` | UI framework |
-| `@tauri-apps/api` | `invoke()`, file dialogs, shell commands |
+| `@tauri-apps/api` + `@tauri-apps/plugin-dialog` | `invoke()`, native dialogs — imported **only** by `src/lib/api.ts`, and dynamically, so a browser build never loads them |
 | `tailwindcss` | Utility-first CSS |
 | `@radix-ui/*` / `shadcn/ui` | Accessible, styled UI components |
+| `@uiw/react-codemirror` | The in-app profile editor |
 | `vite` | Frontend build tool and dev server |
 
 ---
@@ -711,20 +973,39 @@ When passing strings into DuckDB or file paths, you'll often need to convert bet
 and `.to_path_buf()` liberally — this is normal, not a sign something is wrong.
 
 **Slow recompiles**
-If you're making many small Rust changes, consider testing the logic in a standalone
-`main.rs` test first, then integrating. Avoid changing `Cargo.toml` unnecessarily as
-adding dependencies triggers the slowest recompiles.
+If you're making many small Rust changes, prefer a unit test in `crates/core`
+(`cargo test -p multitool-core`) over rebuilding a whole shell. Avoid changing
+`Cargo.toml` unnecessarily — adding dependencies triggers the slowest recompiles.
+
+**Adding a framework dependency to `crates/core`**
+The engine must build with neither shell present. Anything Tauri- or
+HTTP-specific belongs in `src-tauri/` or `crates/server/`. Guard rail:
+`cargo tree -p multitool-core` must list no `tauri` and no `axum`.
+
+**Forgetting the other shell**
+A new operation needs a wrapper in *both* `src-tauri/src/commands.rs` and
+`crates/server/src/main.rs`, plus a typed function in `src/lib/api.ts`. Adding
+it to one shell only means the feature silently doesn't exist on the other
+target.
+
+**Putting a server path in a wire type**
+Anything returned to the client must be a `session_id` or an artifact id, never
+an absolute path. A leaked path is both an information disclosure and a bug on
+the web, where the client's filesystem is not the server's.
 
 ### Frontend
 
 **File paths on Windows**
 Windows paths use backslashes. When passing a file path from the frontend to Rust,
-pass it as-is from the Tauri file dialog — don't manipulate it in JavaScript.
-The Tauri dialog APIs return properly formatted paths.
+pass it as-is from the file picker — don't manipulate it in JavaScript.
 
-**invoke() not awaited**
-`invoke()` returns a Promise. Forgetting `await` causes silent failures where the
-UI moves on before the backend has responded.
+**Importing `@tauri-apps/*` outside `src/lib/api.ts`**
+It works on desktop and breaks in a browser. Every platform difference belongs
+behind a function in the transport module.
+
+**Backend call not awaited**
+Every `api.ts` function returns a Promise. Forgetting `await` causes silent
+failures where the UI moves on before the backend has responded.
 
 **State update timing**
 React state updates are asynchronous. If you set state and immediately read it in
@@ -741,10 +1022,16 @@ wrapped in double quotes in SQL: `"Item #"` not `Item #`.
 `read_xlsx()` assumes row 1 is the header. If the vendor file has a title row above
 the headers, add `OFFSET 1` or handle it in a CTE within the SQL.
 
-**{{input_file}} path with backslashes**
-When substituting the file path into SQL on Windows, backslashes in paths may need
-to be escaped or replaced with forward slashes. DuckDB accepts forward slashes on
-Windows: replace `\` with `/` in `db.rs` before injecting into the SQL string.
+**Paths spliced into SQL**
+Every path substituted into SQL text must go through `db::sql_path`, which
+normalizes `\` to `/` (DuckDB accepts forward slashes on Windows) and doubles
+embedded single quotes so a path containing `'` cannot terminate the literal
+early. Never interpolate a raw path.
+
+**A `{{sync:X}}` join failing to bind**
+A sync that attempted zero rows publishes `[]`, so `read_json_auto` has no
+schema to infer. Use `read_json('{{sync:X}}', columns={…})` naming the columns
+you join on.
 
 ---
 
@@ -756,7 +1043,14 @@ Windows: replace `\` with `/` in `db.rs` before injecting into the SQL string.
 | **Renderer process** | The web page / React app running inside the WebView |
 | **Main process** | The Rust binary that owns the window and system access |
 | **IPC** | Inter-process communication — how the frontend and backend talk |
-| **invoke()** | TypeScript function that calls a Rust command and returns a Promise |
+| **invoke()** | Tauri's TypeScript function that calls a Rust command and returns a Promise — used only inside `src/lib/api.ts` |
+| **Shell** | The thin per-target layer around the engine: `src-tauri` (Tauri) or `crates/server` (Axum) |
+| **Engine** | `crates/core` — every operation as a plain function, framework-free |
+| **Ctx** | What an operation needs from its host: state directories plus a transport resolver |
+| **Session** | A per-load working directory; the client holds its opaque `session_id` |
+| **Artifact id** | A session-relative path (e.g. `runs/…/out.csv`) standing in for a server path on the wire |
+| **Profile ref** | `builtin://<file>` or `user://<file>` — how a bundle is addressed instead of by path |
+| **Transport** | Either `Transport::Live { access_token, subscription_key }` or `Transport::Mock` (bundle fixtures) |
 | **#[tauri::command]** | Rust attribute that marks a function as callable from the frontend |
 | **WebView2** | Windows' built-in web renderer (like a lightweight browser engine) — used by Tauri |
 | **DuckDB** | Embedded SQL database that reads files directly and runs analytical queries |

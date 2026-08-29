@@ -236,7 +236,7 @@ referenced by `ref` from both Report profiles and the Data Requests tab. Each
 entry declares `id`, `name`, `kind` (`query_execute` | `rest_get` | `rest_post`),
 typed `params`, and a `result` shape.
 
-- Central definitions: Rust registry `src-tauri/src/re_calls.rs` — the single
+- Central definitions: Rust registry `crates/core/src/re_calls.rs` — the single
   executor, with a `Transport` of **Live** (real SKY API via
   `sky_auth::live_credentials`) or **Mock** (fixture files) — mirrored by the TS
   catalog `src/lib/re-calls.ts` (drives the UI).
@@ -282,7 +282,7 @@ chosen by the command layer:
 `ReportRunResult.mode` (`"live"` | `"mock"`) reports which one ran; the Reports
 tab shows it as a badge.
 
-**Pipeline** (`src-tauri/src/report.rs`):
+**Pipeline** (`crates/core/src/report.rs`):
 
 1. **Params** — supplied `param_values` (falling back to each parameter's
    `default`) become substitutions: `{{param:id}}` for scalars, `{{param:id.key}}`
@@ -354,18 +354,21 @@ tables*. Code table **writes** are an import-side step (`code_table_sync`);
 reports use `actions` for write-back.
 
 **Fixtures convention:** `<bundle>/fixtures/<query.output>.json` — a JSON array of
-row objects, resolved against the extracted bundle (`loaded.temp_dir`). Code
+row objects, resolved against the bundle extracted into the session. Code
 tables use `<bundle>/fixtures/codetables/<output>.json`.
 
-**Commands** (`commands.rs`, registered in `main.rs`; both `async`):
+**Commands** (implemented in `crates/core/src/api.rs`; wrapped as a
+`#[tauri::command]` by the desktop shell and as `POST /api/<command>` by the
+web shell; both `async`):
 
 | Command | Args | Returns |
 |---|---|---|
-| `run_report` | `zipPath`, `paramValues` (map) | `ReportRunResult` (`data`, `queries`, `generated_at`, `mode`) |
-| `run_report_action` | `zipPath`, `actionId`, `paramValues` | `ActionResult` (`ok`, `message`) |
+| `run_report` | `sessionId`, `paramValues` (map) | `ReportRunResult` (`data`, `queries`, `generated_at`, `mode`) |
+| `run_report_action` | `sessionId`, `actionId`, `paramValues` | `ActionResult` (`ok`, `message`) |
 
-`zipPath` is the extracted temp dir (`loadedProfile.temp_dir`), same as
-`run_profile`. Force mock during live testing with `RE_NXT_MOCK=1`.
+`sessionId` is the handle `load_profile` returned; the backend re-reads the
+bundle and fixtures from that session. Force mock during live testing with
+`RE_NXT_MOCK=1`.
 
 ---
 
@@ -373,7 +376,7 @@ tables use `<bundle>/fixtures/codetables/<output>.json`.
 
 - Rust (deserialize-only): `Parameter`, `QueryRef`, `ReportTransform`,
   `Visualization`, `Action`, plus the `kind` + report fields on
-  `ProfileStructure` in `src-tauri/src/profile.rs`.
+  `ProfileStructure` in `crates/core/src/profile.rs`.
 - TypeScript (mirror): the same in `src/types.ts`, plus `ResultSet`,
   `ReportRunResult`, `QueryDebug`, `ActionResult`.
 - Execution (Rust): `db::ResultSet` + `db::query_to_result_set`,
