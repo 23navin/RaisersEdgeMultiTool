@@ -50,12 +50,19 @@ pub struct Connection {
 }
 
 // What the settings UI renders. Deliberately omits tokens/secret.
+//
+// `mock_forced` is reported separately from `connected` on purpose: a
+// deployment can hold a perfectly good connection while RE_NXT_MOCK pins every
+// call to fixtures. Folding that into `connected: false` made a successful
+// sign-in look like a silent failure.
 #[derive(Serialize, Clone, Default)]
 pub struct ConnectionStatus {
     pub connected: bool,
     pub environment_id: Option<String>,
     pub environment_name: Option<String>,
     pub expires_at: Option<i64>,
+    #[serde(default)]
+    pub mock_forced: bool,
 }
 
 impl Connection {
@@ -65,6 +72,7 @@ impl Connection {
             environment_id: self.environment_id.clone(),
             environment_name: self.environment_name.clone(),
             expires_at: Some(self.expires_at),
+            mock_forced: false, // the shell fills this in from its config
         }
     }
 }

@@ -94,7 +94,7 @@ export function SettingsPanel({ open, onClose }: Props) {
 
         {/* Tab body */}
         <div className="flex-1 overflow-auto">
-          {tab === "general" && <GeneralTab />}
+          {tab === "general" && <GeneralTab panelOpen={open} />}
           {tab === "import" && <ImportTab panelOpen={open} />}
         </div>
       </div>

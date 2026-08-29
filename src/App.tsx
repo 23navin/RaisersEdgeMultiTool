@@ -191,6 +191,14 @@ export default function App() {
   // profile the user has already navigated away from get discarded.
   const loadRequestId = useRef(0);
 
+  // Returning from a web OAuth handshake, reveal Settings so the outcome —
+  // connected, or the error the callback reported — is actually seen. Without
+  // this the redirect lands on a normal-looking page and the result is
+  // consumed invisibly by the always-mounted settings panel.
+  useEffect(() => {
+    if (api.hasConnectResult()) setSettingsOpen(true);
+  }, []);
+
   // Load the profile list once on mount.
   useEffect(() => {
     (async () => {

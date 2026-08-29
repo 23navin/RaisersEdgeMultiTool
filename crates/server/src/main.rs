@@ -461,6 +461,9 @@ async fn connect_re_nxt(
     Json(req): Json<ConnectReq>,
 ) -> ApiResult<ConnectStarted> {
     let redirect_uri = s.redirect_uri(&headers);
+    // The single most common cause of a failed handshake is this value not
+    // byte-matching what's registered on the Blackbaud application, so log it.
+    tracing::info!(%redirect_uri, "starting RE NXT authorization");
     let authorize_url = s
         .creds
         .begin_connect(
@@ -512,7 +515,10 @@ async fn oauth_callback(
     };
 
     match outcome {
-        Ok(()) => axum::response::Redirect::to("/?connected=1").into_response(),
+        Ok(()) => {
+            tracing::info!("RE NXT connected");
+            axum::response::Redirect::to("/?connected=1").into_response()
+        }
         Err(msg) => {
             tracing::warn!(error = %msg, "RE NXT connect failed");
             // Send the message back through the SPA so the settings panel can

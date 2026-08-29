@@ -391,5 +391,8 @@ export type ReNxtConnectionStatus = {
   environment_id?: string | null;
   environment_name?: string | null;
   expires_at?: number | null;   // unix seconds until the access token expires
+  // True when RE_NXT_MOCK pins every RE call to bundle fixtures. Independent
+  // of `connected` — a stored connection can exist while mock mode overrides it.
+  mock_forced?: boolean;
 };
 

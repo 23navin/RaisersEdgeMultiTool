@@ -168,6 +168,15 @@ export const redirectUri = () =>
     ? "http://localhost:13631/callback"
     : `${window.location.origin}/api/oauth/callback`;
 
+// True when this page load is the return leg of a web OAuth handshake. Does
+// NOT consume the params — App.tsx uses it to reveal the settings panel so the
+// outcome is actually seen; GeneralTab consumes them with takeConnectResult().
+export function hasConnectResult(): boolean {
+  if (isTauri) return false;
+  const params = new URLSearchParams(window.location.search);
+  return params.has("connected") || params.has("connect_error");
+}
+
 // Result of a web connect attempt, handed back through the query string by
 // the server's OAuth callback. Clears the params so a refresh doesn't re-show
 // a stale banner.

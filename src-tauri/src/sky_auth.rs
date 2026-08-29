@@ -251,15 +251,15 @@ pub async fn connect_re_nxt(
 // Cheap status check for App.tsx on mount — does no network I/O.
 #[tauri::command]
 pub fn re_nxt_status(app: AppHandle) -> Result<ConnectionStatus, String> {
-    match load_connection(&app).map_err(|e| e.to_string())? {
-        Some(conn) => Ok(conn.status()),
-        None => Ok(ConnectionStatus {
-            connected: false,
-            environment_id: None,
-            environment_name: None,
-            expires_at: None,
-        }),
-    }
+    let mock_forced = std::env::var("RE_NXT_MOCK")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    let mut status = match load_connection(&app).map_err(|e| e.to_string())? {
+        Some(conn) => conn.status(),
+        None => ConnectionStatus::default(),
+    };
+    status.mock_forced = mock_forced;
+    Ok(status)
 }
 
 // Forget the stored connection (tokens + credentials).

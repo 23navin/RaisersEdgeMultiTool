@@ -24,7 +24,7 @@ import type { ReNxtConnectionStatus } from "../../../types";
 // build uses this deployment's own /api/oauth/callback route.
 const REDIRECT_URI = api.redirectUri();
 
-export function GeneralTab() {
+export function GeneralTab({ panelOpen = true }: { panelOpen?: boolean }) {
   const [status, setStatus] = useState<ReNxtConnectionStatus | null>(null);
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
@@ -53,11 +53,20 @@ export function GeneralTab() {
 
   useEffect(() => {
     // A web connect round-trips through Blackbaud and lands back here with
-    // the outcome in the query string.
+    // the outcome in the query string. This component is mounted from app
+    // startup (the settings panel is always mounted so it can animate), so
+    // this runs on the return leg even before the panel is revealed.
     const result = api.takeConnectResult();
     if (result && !result.ok) setError(result.error ?? "Connection failed.");
-    refreshStatus();
   }, []);
+
+  // Re-check whenever the panel is opened. The connection can change out from
+  // under this component — another tab, another user on the same server, or
+  // the OAuth round trip itself — and a status fetched once at startup goes
+  // stale silently.
+  useEffect(() => {
+    if (panelOpen) refreshStatus();
+  }, [panelOpen]);
 
   const canConnect =
     clientId.trim() !== "" &&
@@ -115,6 +124,19 @@ export function GeneralTab() {
         <div className="mb-[14px] rounded-[8px] border border-red-200 bg-red-50 px-[12px] py-[9px] text-[12px] text-red-700 flex items-start gap-[7px]">
           <AlertCircleIcon size={14} className="shrink-0 mt-[1px]" />
           <span className="break-words">{error}</span>
+        </div>
+      )}
+
+      {status?.mock_forced && (
+        <div className="mb-[14px] rounded-[8px] border border-amber-200 bg-amber-50 px-[12px] py-[9px] text-[12px] text-amber-800 flex items-start gap-[7px]">
+          <AlertCircleIcon size={14} className="shrink-0 mt-[1px]" />
+          <span className="break-words">
+            <strong className="font-medium">Mock mode is forced on.</strong>{" "}
+            <code className="text-[11px]">RE_NXT_MOCK</code> is set, so every RE
+            call uses the profile's bundled fixtures
+            {status.connected ? " even though a connection is stored" : ""}.
+            Unset it and restart to use the live API.
+          </span>
         </div>
       )}
 

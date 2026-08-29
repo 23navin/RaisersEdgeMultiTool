@@ -157,17 +157,29 @@ impl CredStore {
 
     // ── status + transport ────────────────────────────────────────────────────
 
+    // Reports the stored connection AND whether mock mode is pinned on. These
+    // are independent: a connection can exist while RE_NXT_MOCK forces every
+    // call to fixtures, and the UI must be able to say so rather than claiming
+    // the sign-in failed.
     pub fn status(&self) -> ConnectionStatus {
-        if self.force_mock {
-            return ConnectionStatus::default();
-        }
-        match creds::load_connection(&self.connection_path) {
+        let mut status = match creds::load_connection(&self.connection_path) {
             Ok(Some(conn)) => conn.status(),
-            _ => ConnectionStatus::default(),
-        }
+            Ok(None) => ConnectionStatus::default(),
+            Err(e) => {
+                // Don't silently look disconnected when the file is unreadable.
+                tracing::error!(
+                    path = %self.connection_path.display(),
+                    error = %e,
+                    "cannot read RE NXT connection file"
+                );
+                ConnectionStatus::default()
+            }
+        };
+        status.mock_forced = self.force_mock;
+        status
     }
 
-    // True when a live connection exists — cheap, no network.
+    // True when a usable live connection exists — cheap, no network.
     pub fn is_connected(&self) -> bool {
         !self.force_mock
             && matches!(creds::load_connection(&self.connection_path), Ok(Some(_)))
