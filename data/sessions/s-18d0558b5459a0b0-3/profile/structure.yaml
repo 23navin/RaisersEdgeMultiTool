@@ -1,0 +1,125 @@
+---
+id: code_table_crossref
+name: Code Table Cross-Reference Demo
+version: 1.0.0
+min_app_version: 0.2.0
+
+# ── Code tables ───────────────────────────────────────────────────────────────
+# Pulled from RE before any SQL runs, and re-pulled on every Generate / Add
+# entries click — so once the sync step below has created the missing entries,
+# the next run of the import transform sees them.
+#
+# `output` names the {{codetable:<output>}} placeholder the SQL reads with
+# read_json_auto. Columns are the API's TableEntry fields: table_entries_id,
+# long_description, short_description, numeric_value, sequence, is_active,
+# is_system_entry, code_tables_id, code_tables_name.
+#
+# Mock mode reads fixtures/codetables/ConstituentCodes.json instead, so the
+# whole profile runs offline. The fixture is static, so a sync never changes it —
+# which is exactly why the final transform also reads {{sync:NewCodes}}: the ids
+# come from the sync's own result, and the loop closes in both modes.
+code_tables:
+  - id: constituent_codes
+    name: "Constituent Codes"
+    include_inactive: false
+    output: ConstituentCodes
+
+inputs:
+  - label: Constituents
+    type: csv
+    required: true
+    validation:
+      - label: constituent_id
+        required: true
+        type: number
+        digits: 5
+      - label: last_name
+        required: true
+        type: string
+      # Deliberately not required — the sample file carries one blank code, and
+      # every SQL file here filters blanks out rather than treating them as a
+      # missing code table entry.
+      - label: constituent_code
+        required: false
+        type: string
+
+outputs:
+  # The audit file: one row per distinct code found in the upload, flagged OK
+  # or MISSING against the live table.
+  - label: Code_Check
+    type: csv
+  # The finished import file.
+  - label: Import_File
+    type: csv
+
+steps:
+  - label: AddSourceFile
+    type: file_input
+    input:
+      - label: Constituents
+        validate: true
+
+  # ── Cross-reference ─────────────────────────────────────────────────────────
+  # Compares every distinct constituent_code in the upload against the pulled
+  # code table. Produces a downloadable audit CSV covering matched *and*
+  # unmatched values, plus an on-screen notice listing only the unavailable
+  # ones — that notice is the "table of unavailable options".
+  - label: CheckCodeTable
+    type: sql_transform
+    input:
+      - Constituents
+    sql: crossref_report.sql
+    output:
+      - Code_Check
+    notices:
+      - label: "Codes not available in RE"
+        sql: missing_values.sql
+        description: >
+          These constituent codes appear in the uploaded file but have no entry
+          in RE's Constituent Codes table. Add them with the next step, or the
+          rows using them will import without a code.
+
+  # ── Offer to add them ───────────────────────────────────────────────────────
+  # Every row this SQL returns becomes one create against the code table. It
+  # selects the same missing values as the notice above, but with the API's
+  # writable TableEntry column names. Running the step is the user's choice —
+  # nothing here is automatic, and the badge next to the button says whether
+  # the writes will actually reach RE.
+  - label: AddMissingCodes
+    type: code_table_sync
+    code_table: "Constituent Codes"
+    operation: create
+    input:
+      - Constituents
+    sql: add_missing_values.sql
+    # Names this step's outcome rows so later SQL can read {{sync:NewCodes}}.
+    # One row per attempted write: the source SQL's own columns, plus
+    # table_entries_id (the id RE assigned), sync_status, sync_error,
+    # sync_row, sync_operation and sync_mode.
+    sync_output: NewCodes
+
+  # ── Build the import file ───────────────────────────────────────────────────
+  # Reads both the re-pulled code table and the sync step's own outcome rows, so
+  # the ids RE just assigned resolve immediately — in mock mode too, where the
+  # static fixture never changes. Requires the sync step to have been run.
+  - label: CreateImportFile
+    type: sql_transform
+    input:
+      - Constituents
+    # Declared dependency on the sync step above — same contract as query_input.
+    # The producing step must come earlier in `steps:`; both verifiers enforce it.
+    sync_input:
+      - NewCodes
+    sql: primary_transform.sql
+    output:
+      - Import_File
+    notices:
+      - label: "Rows still without a code"
+        sql: unresolved_rows.sql
+        description: >
+          These rows carry a code that still isn't in RE. They're included in
+          the import file with an empty re_code_id. Run the Add Missing Codes
+          step and generate again to resolve them.
+
+  - label: Import
+    type: manual_instruction
