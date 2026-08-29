@@ -16,6 +16,13 @@ Upload the vendor file. It needs a `record_id` and a `new_email` column.
 Sends the file's `record_id` values to RE and pulls back each record's current
 name and email. Nothing is written — this is a read.
 
+<!-- label: ReviewQueryResult -->
+## Review What RE Returned
+
+Shows each record RE sent back beside the email in the vendor file, so you can
+see what the import would change before generating it. Nothing is written — this
+only re-reads the query result.
+
 <!-- label: CreateImportFile -->
 ## Generate Import File
 

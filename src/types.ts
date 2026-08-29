@@ -72,10 +72,19 @@ export type SqlTransform = {
   sync_input?: string[];    // code_table_sync outcomes this transform reads
 };
 
+// The display spec on a `visualization` step. Mirrors a report profile's
+// `visualizations:` entry minus id/data — the step's label is its id and the
+// rows come from the step's own SQL. Both kinds render through VIZ_REGISTRY.
+export type StepVisualization = {
+  type: string;            // "table" | "bar" | "line" | "pie" | "kpi"
+  title?: string;
+  config?: unknown;        // viz-specific (e.g. table column definitions)
+};
+
 export type Step = {
   label: string;
   // "file_input" | "sql_transform" | "re_query" | "code_table_sync"
-  // | "manual_instruction"
+  // | "visualization" | "manual_instruction"
   type: string;
   input?: StepInputRef[];  // file_input: one upload row per entry. sql_transform: single-transform shortcut.
   sql?: string;            // sql_transform single-transform shortcut; code_table_sync: rows to push
@@ -101,6 +110,9 @@ export type Step = {
   // sql_transform: code_table_sync outcomes this transform reads as
   // {{sync:<label>}}.
   sync_input?: string[];
+  // visualization: how to draw the rows the step's `sql` returns. Omit `sql`
+  // and the step's single query_input / sync_input is shown as-is.
+  visualization?: StepVisualization;
 };
 
 // A code table pulled from RE before SQL runs, exposed to it as

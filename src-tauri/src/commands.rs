@@ -260,6 +260,92 @@ pub async fn run_code_table_sync(
     .map_err(|e| e.to_string())?
 }
 
+// ── run_visualization ─────────────────────────────────────────────────────────
+// Called by: the Imports tab when the user runs a `visualization` step.
+// Runs the step's SELECT over the uploaded files plus whatever upstream results
+// it declares, and returns the rows for the frontend viz component to draw.
+// Nothing is written and nothing is sent to RE — a visualization only reads what
+// earlier steps already produced.
+
+#[tauri::command]
+pub async fn run_visualization(
+    app: AppHandle,
+    file_paths: HashMap<String, String>,   // input_label → file_path
+    query_paths: HashMap<String, String>,  // query_output label → result JSON path
+    sync_paths: HashMap<String, String>,   // sync_output label → outcome JSON path
+    step_label: String,
+    zip_path: String,
+) -> Result<db::ResultSet, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<db::ResultSet, String> {
+        let loaded = profile::load_from_dir(Path::new(&zip_path)).map_err(|e| e.to_string())?;
+        let step = loaded
+            .structure
+            .steps
+            .iter()
+            .find(|s| s.label == step_label && s.step_type == "visualization")
+            .ok_or_else(|| format!("No visualization step labelled '{}'", step_label))?;
+
+        // Either the step names a SELECT, or it shows one declared upstream
+        // result verbatim — the zero-SQL case for "just show me what came back".
+        let sql = match step.sql.as_deref() {
+            Some(name) => loaded
+                .sql_files
+                .get(name)
+                .ok_or_else(|| format!("SQL file '{}' not found in profile", name))?
+                .clone(),
+            None => default_visualization_sql(step)?,
+        };
+
+        // A visualization SELECT may join against code tables like any other.
+        let code_table_paths = if loaded.structure.code_tables.is_empty() {
+            HashMap::new()
+        } else {
+            let transport = resolve_transport(&app)?;
+            let run_dir = std::env::temp_dir().join(format!("codetables-{}", loaded.structure.id));
+            code_tables::fetch_all(&loaded, &transport, &run_dir).map_err(|e| e.to_string())?
+        };
+
+        let sources = db::SqlSources::new()
+            .with(db::KIND_CODETABLE, &code_table_paths)
+            .with(db::KIND_QUERY, &query_paths)
+            .with(db::KIND_SYNC, &sync_paths);
+
+        db::select_rows(&file_paths, &sources, &sql).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// The SELECT a visualization gets when it names no `sql` file: read the single
+// upstream result it declares straight through. More than one declared source is
+// ambiguous, so that case asks the author for SQL saying how to combine them.
+fn default_visualization_sql(step: &profile::Step) -> Result<String, String> {
+    let mut sources: Vec<(&str, &str)> = Vec::new();
+    for label in step.query_input.iter().flatten() {
+        sources.push((db::KIND_QUERY, label.as_str()));
+    }
+    for label in step.sync_input.iter().flatten() {
+        sources.push((db::KIND_SYNC, label.as_str()));
+    }
+    match sources.as_slice() {
+        [(kind, label)] => Ok(format!(
+            "SELECT * FROM read_json_auto('{{{{{}:{}}}}}')",
+            kind, label
+        )),
+        [] => Err(format!(
+            "visualization step '{}' needs either a `sql` file or exactly one \
+             query_input / sync_input to display",
+            step.label
+        )),
+        _ => Err(format!(
+            "visualization step '{}' declares {} upstream results — name a `sql` \
+             file saying how to combine them",
+            step.label,
+            sources.len()
+        )),
+    }
+}
+
 // Returns the NoticeQuery list attached to the first transform whose `sql`
 // field matches `sql_file`. Walks both the multi-transform `transforms` form
 // and the legacy single-transform shortcut on the step itself.
@@ -420,4 +506,89 @@ pub fn validate_profile(files: Vec<ProfileFileEntry>) -> Result<ValidationReport
 #[tauri::command]
 pub fn scaffold_missing(files: Vec<ProfileFileEntry>) -> Result<Vec<ProfileFileEntry>, String> {
     validate::scaffold_missing(&files).map_err(|e| e.to_string())
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::re_calls::Transport;
+
+    fn demo() -> LoadedProfile {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../profiles/src/re_query_demo");
+        profile::load_from_dir(&dir).expect("re_query_demo should load")
+    }
+
+    fn vendor_input(loaded: &LoadedProfile) -> HashMap<String, String> {
+        let csv = loaded.temp_dir.join("test-files").join("sample_vendor.csv");
+        HashMap::from([("Vendor".to_string(), csv.to_string_lossy().to_string())])
+    }
+
+    fn step_by_type<'a>(loaded: &'a LoadedProfile, step_type: &str) -> &'a profile::Step {
+        loaded
+            .structure
+            .steps
+            .iter()
+            .find(|s| s.step_type == step_type)
+            .unwrap_or_else(|| panic!("demo has a {} step", step_type))
+    }
+
+    // The visualization step's SELECT is run the same way run_visualization runs
+    // it: query result on disk, {{query:Label}} resolved through SqlSources.
+    #[test]
+    fn visualization_sql_renders_the_query_result() {
+        let loaded = demo();
+        let res = crate::query_step::run_query(
+            &loaded,
+            step_by_type(&loaded, "re_query"),
+            &vendor_input(&loaded),
+            &HashMap::new(),
+            &Transport::Mock,
+            &std::env::temp_dir().join("viz-step-test"),
+        )
+        .expect("query runs");
+
+        let step = step_by_type(&loaded, "visualization");
+        let sql = loaded
+            .sql_files
+            .get(step.sql.as_deref().expect("demo viz names a sql file"))
+            .expect("sql present");
+        let query_paths = HashMap::from([(res.query_output.clone(), res.path.clone())]);
+        let sources = db::SqlSources::new().with(db::KIND_QUERY, &query_paths);
+        let rows = db::select_rows(&vendor_input(&loaded), &sources, sql).expect("viz runs");
+
+        // One row per record RE returned, labelled with what the import will do.
+        // The fixture's four records line up with the sample file as: two emails
+        // changed, one already matches, one record the vendor file never sent.
+        assert_eq!(rows.rows.len(), 4, "columns: {:?}", rows.columns);
+        let outcome = rows.columns.iter().position(|c| c == "Outcome").unwrap();
+        let outcomes: Vec<&str> = rows.rows.iter().map(|r| r[outcome].as_str()).collect();
+        assert_eq!(outcomes.iter().filter(|o| **o == "will update").count(), 2);
+        assert_eq!(outcomes.iter().filter(|o| **o == "unchanged").count(), 1);
+        assert_eq!(outcomes.iter().filter(|o| **o == "not in file").count(), 1);
+    }
+
+    // With no `sql`, a single declared upstream result is shown verbatim.
+    #[test]
+    fn default_sql_reads_the_one_declared_source() {
+        let mut step = demo().structure.steps[0].clone();
+        step.sql = None;
+        step.query_input = Some(vec!["RERecords".to_string()]);
+        step.sync_input = None;
+        assert_eq!(
+            default_visualization_sql(&step).unwrap(),
+            "SELECT * FROM read_json_auto('{{query:RERecords}}')"
+        );
+    }
+
+    // Zero or several sources are ambiguous — the author has to write the SELECT.
+    #[test]
+    fn default_sql_needs_exactly_one_source() {
+        let mut step = demo().structure.steps[0].clone();
+        step.sql = None;
+        step.query_input = None;
+        step.sync_input = None;
+        assert!(default_visualization_sql(&step).is_err());
+
+        step.query_input = Some(vec!["A".to_string(), "B".to_string()]);
+        assert!(default_visualization_sql(&step).is_err());
+    }
 }

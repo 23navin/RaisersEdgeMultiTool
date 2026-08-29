@@ -531,11 +531,89 @@ pub fn validate_profile(files: &[ProfileFileEntry]) -> ValidationReport {
                 }
             }
 
+            "visualization" => {
+                // How to draw the rows. Same registry the report kind uses, so
+                // the accepted set must stay in step with VIZ_REGISTRY.
+                const VIZ_TYPES: [&str; 5] = ["table", "bar", "line", "pie", "kpi"];
+                match step.visualization.as_ref() {
+                    None => issues.push(err(
+                        "yaml.visualization.no_spec",
+                        format!(
+                            "visualization step '{}' needs a `visualization:` block naming its `type`",
+                            step.label
+                        ),
+                        Some(step_loc()),
+                        false,
+                    )),
+                    Some(v) if !VIZ_TYPES.contains(&v.viz_type.as_str()) => issues.push(err(
+                        "yaml.visualization.bad_type",
+                        format!(
+                            "visualization step '{}' has type '{}'; expected one of {}",
+                            step.label,
+                            v.viz_type,
+                            VIZ_TYPES.join(", ")
+                        ),
+                        Some(step_loc()),
+                        false,
+                    )),
+                    Some(_) => {}
+                }
+
+                // Where the rows come from: a SELECT, or exactly one declared
+                // upstream result shown as-is.
+                let upstream: usize = step.query_input.as_ref().map_or(0, |v| v.len())
+                    + step.sync_input.as_ref().map_or(0, |v| v.len());
+                match step.sql.as_deref() {
+                    Some(name) => {
+                        referenced_sql.insert(name.to_string());
+                        if !sql_files.contains_key(name) {
+                            issues.push(err(
+                                "yaml.visualization.missing_sql",
+                                format!(
+                                    "visualization step '{}' references missing file sql/{}",
+                                    step.label, name
+                                ),
+                                Some(IssueLocation::Sql {
+                                    path: format!("sql/{}", name),
+                                    line: None,
+                                }),
+                                true,
+                            ));
+                        }
+                    }
+                    None if upstream == 1 => {}
+                    None => issues.push(err(
+                        "yaml.visualization.no_source",
+                        format!(
+                            "visualization step '{}' needs a `sql` file, or exactly one query_input / sync_input to show as-is (it declares {})",
+                            step.label, upstream
+                        ),
+                        Some(step_loc()),
+                        false,
+                    )),
+                }
+
+                for r in step.input.as_deref().unwrap_or(&[]) {
+                    let lbl = ref_label(r);
+                    if !valid_input_labels.contains(lbl.as_str()) {
+                        issues.push(err(
+                            "yaml.input_ref.undeclared",
+                            format!(
+                                "Step '{}' references undeclared input '{}'",
+                                step.label, lbl
+                            ),
+                            Some(step_loc()),
+                            false,
+                        ));
+                    }
+                }
+            }
+
             other => {
                 issues.push(err(
                     "yaml.unknown_step_type",
                     format!(
-                        "Step '{}' has unknown type '{}'. Expected file_input, sql_transform, re_query, code_table_sync, or manual_instruction.",
+                        "Step '{}' has unknown type '{}'. Expected file_input, sql_transform, re_query, code_table_sync, visualization, or manual_instruction.",
                         step.label, other
                     ),
                     Some(step_loc()),

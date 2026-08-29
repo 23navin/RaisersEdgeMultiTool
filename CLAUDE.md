@@ -99,6 +99,7 @@ tauri-import/
 │       │       ├── StepGenerateFile.tsx  # sql_transform
 │       │       ├── StepQuery.tsx         # re_query
 │       │       ├── StepCodeTableSync.tsx # code_table_sync
+│       │       ├── StepVisualize.tsx     # visualization
 │       │       └── StepImport.tsx        # manual_instruction
 │       ├── reports/              # REPORTS workspace
 │       │   ├── ReportsPage.tsx   # Refresh + stale handling + viz layout
@@ -155,6 +156,7 @@ Every command must be registered in `main.rs` inside `generate_handler![]` or `i
 | `run_profile` | `App.tsx` on generate click | `filePaths` (map of input label → file path), `queryPaths` (query label → result JSON), `syncPaths` (sync label → outcome JSON), `sqlFile`, `zipPath`, `outputLabels` | `TransformResult` |
 | `run_re_query` | `App.tsx` on an `re_query` step | `filePaths`, `stepLabel`, `zipPath` | `QueryStepResult` |
 | `run_code_table_sync` | `App.tsx` on a `code_table_sync` step | `filePaths`, `stepLabel`, `zipPath` | `SyncResult` |
+| `run_visualization` | `App.tsx` on a `visualization` step | `filePaths`, `queryPaths`, `syncPaths`, `stepLabel`, `zipPath` | `ResultSet` |
 | `save_output` | `App.tsx` on download click | `srcPath`, `destPath` | `void` |
 
 **Reports** (`commands.rs` → `report.rs`; both `async`)
@@ -185,7 +187,8 @@ Every command must be registered in `main.rs` inside `generate_handler![]` or `i
 | `re_nxt_access_token` | Callers needing a live token (async) | _(AppHandle only)_ | `String` |
 
 `zipPath` for `validate_file`, `run_profile`, `run_re_query`,
-`run_code_table_sync`, `run_report`, and `run_report_action` is actually the
+`run_code_table_sync`, `run_visualization`, `run_report`, and
+`run_report_action` is actually the
 extracted temp dir from `loadedProfile.temp_dir`, not the original `.import` zip.
 Naming kept for backwards compatibility — the backend re-reads `structure.yaml`,
 SQL, and fixtures from that directory. `save_profile` / `delete_profile` /
@@ -256,7 +259,7 @@ steps:
 ```
 
 Step types supported: `file_input`, `sql_transform`, `re_query`,
-`code_table_sync`, `manual_instruction`.
+`code_table_sync`, `visualization`, `manual_instruction`.
 Validation is not its own step type — it's a per-row checkbox inside a
 `file_input` step.
 
@@ -318,6 +321,9 @@ Render hierarchy:
     + indeterminate progress + the resulting `{{query:Label}}` hint.
   - `imports/steps/StepCodeTableSync.tsx` for `code_table_sync` — live/mock
     badge, operation-labelled button, success/partial callout + failures table.
+  - `imports/steps/StepVisualize.tsx` for `visualization` — source readiness
+    row + Show Data button, then the rows drawn by the shared report
+    `VIZ_REGISTRY`. Reads only; writes no file.
   - `imports/steps/StepImport.tsx` for `manual_instruction` — renders the
     markdown body with image assets resolved against `loadedProfile.temp_dir`.
 - `reports/ReportsPage.tsx` renders `ReportInputs` (from `parameters`) plus one
@@ -331,8 +337,8 @@ Render hierarchy:
 
 The `loadedProfile.temp_dir` is threaded through `MainPanel` to each step
 component and passed back to `validate_file`, `run_profile`, `run_re_query`,
-`run_code_table_sync`, and `run_report` so Rust can re-read validation rules,
-SQL, and fixtures.
+`run_code_table_sync`, `run_visualization`, and `run_report` so Rust can
+re-read validation rules, SQL, and fixtures.
 
 ---
 
@@ -398,7 +404,9 @@ SQL, and fixtures.
   `./profiles/build.sh` and restart `npm run tauri dev`; built-ins are embedded
   at compile time via `include_bytes!`
 - **Report chart renders as an empty dashed box?** → only `table` is implemented
-  in `VIZ_REGISTRY`; `bar`/`line`/`pie`/`kpi` are placeholder stubs
+  in `VIZ_REGISTRY`; `bar`/`line`/`pie`/`kpi` are placeholder stubs. A
+  `visualization` step in an import profile draws through the same registry, so
+  the same limit applies
 - **Report profile passes in-app Validate but fails `build.sh`?** → `validate.rs`
   implements the import rules; the report sections are only checked by `build.sh`
 

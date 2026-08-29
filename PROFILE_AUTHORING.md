@@ -620,6 +620,7 @@ Everything you can declare, in one place. Follow the link for exact field lists.
 | Notices | `notices` on a transform | Post-run informational tables (never fail the step) |
 | Query step | `steps[].type: re_query` | Reads RE mid-pipeline → `{{query:Label}}` |
 | Sync step | `steps[].type: code_table_sync` | Writes code table entries → optional `{{sync:Label}}` |
+| Visualization step | `steps[].type: visualization` | Draws a result set on screen — no file written ([details](STEP_TYPES.md#step-type-visualization)) |
 | Instruction step | `steps[].type: manual_instruction` | Prose-only closing step |
 
 ### Report-only
@@ -656,8 +657,8 @@ Every placeholder the runtime substitutes, and where it is legal.
 | `{{input_file}}` | Same, single-input alias | Same | The transform declares exactly one input |
 | `{{output:Label}}` | Temp path for that output file | Import transform SQL | The label declared in `outputs:` and the step's `output:` |
 | `{{codetable:Label}}` | JSON path of a pulled code table | Any SQL, both kinds | A `code_tables:` entry whose `output` is `Label` |
-| `{{query:Label}}` | JSON path of a query result | Import transform SQL (with `query_input`), report transform SQL | An earlier `re_query` step's `query_output`, or a report `queries[].output` |
-| `{{sync:Label}}` | JSON path of a sync step's outcome rows | Import transform SQL | An earlier `code_table_sync` step's `sync_output`, declared in `sync_input` |
+| `{{query:Label}}` | JSON path of a query result | Import transform SQL and `visualization` SQL (with `query_input`), report transform SQL | An earlier `re_query` step's `query_output`, or a report `queries[].output` |
+| `{{sync:Label}}` | JSON path of a sync step's outcome rows | Import transform SQL and `visualization` SQL | An earlier `code_table_sync` step's `sync_output`, declared in `sync_input` |
 | `{{rows:col}}` | JSON **array** of that column's values from `params_sql` (deduped, blanks dropped, order kept) | `re_query` step `template` | The value is *exactly* the placeholder, e.g. `filter_values: "{{rows:record_id}}"` |
 | `{{value:col}}` | The first row's cell from `params_sql`, substituted inline | `re_query` step `template` | — |
 | `{{param:id}}` / `{{param:id.from}}` / `{{param:id.to}}` | A report parameter's value | Report `queries[].template` / `bind` | A matching `parameters[].id` |
@@ -681,11 +682,14 @@ Everything an import step publishes for a later step follows the same pattern.
 Learn it once and both families read the same:
 
 ```
-producer step        names its result       consumer transform      SQL reads
-─────────────        ────────────────       ──────────────────      ─────────
+producer step        names its result       consumer step           SQL reads
+─────────────        ────────────────       ─────────────           ─────────
 re_query          →  query_output: Foo   →  query_input: [Foo]   →  {{query:Foo}}
 code_table_sync   →  sync_output:  Bar   →  sync_input:  [Bar]    →  {{sync:Bar}}
 ```
+
+A consumer is any later step that declares the label — a `sql_transform` that
+joins it into an output file, or a `visualization` that draws it.
 
 Three rules the verifiers enforce:
 
