@@ -670,15 +670,16 @@ see what the import would change before generating it.
 ### UI behavior
 - Header row lists every declared source with a green check / red cross for
   whether the step producing it has run.
-- **Show Data** button is live once every required file input is valid and every
-  declared upstream result has been produced. It reads **Refresh** after a run.
-- Indeterminate progress bar while the SELECT runs (a local DuckDB query reports
-  no progress), green when it lands, red on error.
-- The rendered viz appears below, under `visualization.title`, with a row count
-  beside the button.
+- **The step runs itself.** There is no button to press: the moment every
+  required file input is valid and every declared upstream result has been
+  produced, the SELECT runs and the viz draws. There is no progress bar — the
+  same row shows `waiting on sources`, then `Loading…`, then the row count.
+- The rendered viz appears below, under `visualization.title`.
 - Re-running the producing `re_query` / `code_table_sync` step, or swapping an
   input file, clears the drawn result — a stale table on screen is worse than a
-  missing one.
+  missing one — and the step redraws by itself once that source is ready again.
+- A small **Refresh** icon re-reads on demand, for when an input file changed on
+  disk outside the app. It is disabled until the sources are ready.
 
 ### Backend
 `run_visualization` in `commands.rs` — loads the profile from the temp dir,

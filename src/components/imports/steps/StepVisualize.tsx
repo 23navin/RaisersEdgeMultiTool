@@ -6,12 +6,25 @@
 // is written and nothing is sent to RE, so there is no output file, no download
 // and no live/mock badge: the data is already local by the time this runs.
 //
+// Because it only re-reads local data, the step is self-refreshing: it runs
+// itself as soon as every source it declares is ready, and again after an
+// upstream change invalidates the drawn result. There is nothing to press and
+// no progress to report, so the button is a manual re-read, not a gate.
+//
 // The drawing itself is delegated to the report VIZ_REGISTRY, so a table here
 // and a table on the Reports tab are the same component.
 
-import { BarChart3Icon, FileTextIcon, DatabaseIcon, CheckIcon, XIcon, type LucideIcon } from "lucide-react";
+import { useEffect, useRef } from "react";
+import {
+  BarChart3Icon,
+  FileTextIcon,
+  DatabaseIcon,
+  CheckIcon,
+  XIcon,
+  RefreshCwIcon,
+  type LucideIcon,
+} from "lucide-react";
 import { Button } from "../../ui/button";
-import { cn } from "../../../lib/utils";
 import { VIZ_REGISTRY } from "../../reports/viz";
 import type { ResultSet, StepVisualization } from "../../../types";
 
@@ -35,13 +48,12 @@ export type VizRow = {
   onRun: () => void;
 };
 
-const baseBtn =
-  "rounded-none h-[32px] px-[14px] text-[13px] font-medium border-0 shadow-none transform-gpu";
-const activeBtn = "bg-[#1a1a1a] hover:bg-[#2a2a2a] text-white cursor-pointer";
-const doneBtn =
-  "bg-[#e0ddd8] hover:bg-[#d4d0c9] text-neutral-500 hover:text-neutral-700 disabled:opacity-100 cursor-pointer";
-const notReadyBtn =
-  "bg-neutral-200 hover:bg-neutral-200 text-neutral-400 disabled:opacity-100 cursor-not-allowed";
+// Secondary control: the step already refreshes itself, so this is only for a
+// re-read when the underlying file changed outside the app.
+const refreshBtn =
+  "rounded-none h-[26px] w-[26px] p-0 shrink-0 border-0 shadow-none transform-gpu " +
+  "bg-transparent hover:bg-[#efece7] text-neutral-500 hover:text-neutral-800 " +
+  "disabled:opacity-40 disabled:hover:bg-transparent cursor-pointer disabled:cursor-not-allowed";
 
 const SOURCE_ICON: Record<VizSource["kind"], LucideIcon> = {
   file: FileTextIcon,
@@ -72,9 +84,24 @@ export function StepVisualize({
   description?: string;
   viz: VizRow;
 }) {
-  const disabled = !viz.canRun || viz.status === "running";
-  const btnStyle =
-    viz.status === "done" ? doneBtn : viz.canRun ? activeBtn : notReadyBtn;
+  // Self-refresh. `idle` means "no result on hand" — the state a fresh step
+  // starts in and the state App.tsx puts it back into whenever something
+  // upstream is re-run or swapped — so an idle step whose sources are all ready
+  // is exactly a step that should draw itself. The ref collapses each readiness
+  // edge to a single run: StrictMode fires effects twice, and an unrelated
+  // re-render must not queue a second identical query.
+  const fired = useRef(false);
+  useEffect(() => {
+    if (!viz.canRun || viz.status !== "idle") {
+      fired.current = false;
+      return;
+    }
+    if (fired.current) return;
+    fired.current = true;
+    viz.onRun();
+    // onRun is rebuilt on every render of App; the readiness edge is the
+    // trigger, so it is deliberately not a dependency.
+  }, [viz.canRun, viz.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // An unknown type is a profile error the verifier already flags; render the
   // fallback rather than crashing a step the user is looking at.
@@ -88,10 +115,11 @@ export function StepVisualize({
         </p>
       )}
 
-      {/* What it's drawing, and whether each piece is ready yet */}
-      <div className="flex items-center gap-[8px] mb-[10px]">
+      {/* What it's drawing, whether each piece is ready yet, and how the last
+          run went — the step's whole status line now that it runs itself. */}
+      <div className="flex items-center gap-[8px]">
         <BarChart3Icon size={16} className="text-neutral-400 shrink-0" />
-        <div className="flex flex-wrap items-center gap-[2px] min-w-0">
+        <div className="flex flex-wrap items-center gap-[2px] min-w-0 flex-1">
           {viz.sources.length > 0 ? (
             viz.sources.map((s) => <SourceNode key={`${s.kind}:${s.label}`} source={s} />)
           ) : (
@@ -100,46 +128,36 @@ export function StepVisualize({
             </span>
           )}
         </div>
-      </div>
 
-      <div className="flex items-center gap-[8px]">
-        <Button
-          type="button"
-          onClick={viz.onRun}
-          disabled={disabled}
-          className={`${baseBtn} ${btnStyle}`}
-        >
-          <BarChart3Icon size={13} />
-          {viz.status === "running"
-            ? "Loading…"
-            : viz.status === "done"
-            ? "Refresh"
-            : "Show Data"}
-        </Button>
-
-        {/* Indeterminate — a local DuckDB SELECT reports no progress. */}
-        <div className="flex-1 h-[5px] bg-neutral-200 overflow-hidden">
-          {viz.status === "running" ? (
-            <div className="h-full w-1/3 bg-neutral-400 animate-pulse" />
-          ) : (
-            <div
-              className={cn(
-                "h-full transition-[width] duration-200",
-                viz.status === "done"
-                  ? "w-full bg-green-500"
-                  : viz.status === "error"
-                  ? "w-full bg-red-500"
-                  : "w-0",
-              )}
-            />
-          )}
-        </div>
-
+        {viz.status === "running" && (
+          <span className="text-[11px] text-neutral-400 whitespace-nowrap">
+            Loading…
+          </span>
+        )}
         {viz.status === "done" && viz.data && (
           <span className="text-[11px] text-neutral-500 whitespace-nowrap">
             {viz.data.rows.length} row{viz.data.rows.length === 1 ? "" : "s"}
           </span>
         )}
+        {viz.status === "idle" && !viz.canRun && (
+          <span className="text-[11px] text-neutral-400 whitespace-nowrap">
+            waiting on sources
+          </span>
+        )}
+
+        <Button
+          type="button"
+          onClick={viz.onRun}
+          disabled={!viz.canRun || viz.status === "running"}
+          title="Refresh"
+          aria-label="Refresh"
+          className={refreshBtn}
+        >
+          <RefreshCwIcon
+            size={13}
+            className={viz.status === "running" ? "animate-spin" : undefined}
+          />
+        </Button>
       </div>
 
       {viz.status === "done" && viz.data && (

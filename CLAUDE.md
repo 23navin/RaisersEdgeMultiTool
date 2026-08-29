@@ -362,8 +362,11 @@ Render hierarchy:
   - `imports/steps/StepCodeTableSync.tsx` for `code_table_sync` — live/mock
     badge, operation-labelled button, success/partial callout + failures table.
   - `imports/steps/StepVisualize.tsx` for `visualization` — source readiness
-    row + Show Data button, then the rows drawn by the shared report
-    `VIZ_REGISTRY`. Reads only; writes no file.
+    row, then the rows drawn by the shared report `VIZ_REGISTRY`. Reads only;
+    writes no file, and no progress bar. Self-refreshing: an effect runs the
+    step whenever it is `idle` with every source ready, which is both the
+    first-ready moment and every time App.tsx clears the result after an
+    upstream change. The icon button is a manual re-read, not a gate.
   - `imports/steps/StepImport.tsx` for `manual_instruction` — renders the
     markdown body with image assets resolved against `loadedProfile.asset_base`
     via `api.assetUrl` (asset protocol on desktop, session endpoint on web).
