@@ -1,0 +1,7 @@
+[
+  { "constituent_name": "Ada Lovelace",     "gift_id": 1001, "gift_amount": 250.00, "gift_date": "2026-05-04" },
+  { "constituent_name": "Grace Hopper",      "gift_id": 1002, "gift_amount": 1000.00, "gift_date": "2026-05-09" },
+  { "constituent_name": "Alan Turing",       "gift_id": 1003, "gift_amount": 75.50, "gift_date": "2026-05-12" },
+  { "constituent_name": "Katherine Johnson", "gift_id": 1004, "gift_amount": 500.00, "gift_date": "2026-05-21" },
+  { "constituent_name": "Margaret Hamilton", "gift_id": 1005, "gift_amount": 125.25, "gift_date": "2026-05-28" }
+]

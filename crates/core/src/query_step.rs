@@ -27,7 +27,7 @@ use crate::report::apply_subs;
 #[derive(Debug, Serialize)]
 pub struct QueryStepResult {
     pub query_output: String, // the label later SQL uses as {{query:<label>}}
-    pub path: String,         // JSON file the rows were written to
+    pub artifact_id: String,  // where the rows were written — abs path from run_query, relativized to an opaque id by api.rs before crossing the wire
     pub row_count: usize,
     pub mode: String, // "live" | "mock"
     // The request actually sent, after substitution — the same debugging aid
@@ -115,7 +115,7 @@ pub fn run_query(
 
     Ok(QueryStepResult {
         query_output: query_output.to_string(),
-        path: path.to_string_lossy().to_string(),
+        artifact_id: path.to_string_lossy().to_string(),
         row_count,
         mode: transport.label().to_string(),
         resolved_request: request,
@@ -215,7 +215,7 @@ mod tests {
     use std::path::Path;
 
     fn load() -> LoadedProfile {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../profiles/src/re_query_demo");
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../profiles/src/re_query_demo");
         profile::load_from_dir(&dir).expect("re_query_demo should load")
     }
 
@@ -307,7 +307,7 @@ mod tests {
         assert!(vals.is_array(), "filter_values was: {}", vals);
         assert_eq!(vals.as_array().unwrap().len(), 4);
 
-        let body = fs::read_to_string(&res.path).expect("result written");
+        let body = fs::read_to_string(&res.artifact_id).expect("result written");
         assert!(body.contains("Ada Lovelace"));
     }
 
@@ -326,7 +326,7 @@ mod tests {
         .expect("query runs");
 
         let mut query_paths = HashMap::new();
-        query_paths.insert(res.query_output.clone(), res.path.clone());
+        query_paths.insert(res.query_output.clone(), res.artifact_id.clone());
 
         let sql = loaded.sql_files.get("build_import.sql").expect("sql present");
         let sources = db::SqlSources::new().with(db::KIND_QUERY, &query_paths);

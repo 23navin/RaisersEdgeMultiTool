@@ -1,0 +1,5 @@
+[
+  { "table_entries_id": "6",  "long_description": "Alpha",    "short_description": "ALP", "numeric_value": 0, "sequence": 1, "is_active": true,  "is_system_entry": false, "code_tables_id": "43", "code_tables_name": "Constituent Codes" },
+  { "table_entries_id": "7",  "long_description": "Beta",     "short_description": "BET", "numeric_value": 0, "sequence": 2, "is_active": true,  "is_system_entry": false, "code_tables_id": "43", "code_tables_name": "Constituent Codes" },
+  { "table_entries_id": "8",  "long_description": "Employee", "short_description": "EMP", "numeric_value": 0, "sequence": 3, "is_active": true,  "is_system_entry": false, "code_tables_id": "43", "code_tables_name": "Constituent Codes" }
+]

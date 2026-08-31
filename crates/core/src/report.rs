@@ -13,6 +13,7 @@
 
 use std::collections::HashMap;
 use std::fs;
+use std::path::Path;
 
 use duckdb::Connection;
 use serde::Serialize;
@@ -57,6 +58,7 @@ pub fn run_report(
     loaded: &LoadedProfile,
     param_values: &HashMap<String, Value>,
     transport: &Transport,
+    run_dir: &Path,
 ) -> Result<ReportRunResult, AppError> {
     let structure = &loaded.structure;
 
@@ -64,20 +66,12 @@ pub fn run_report(
     //    substitutions: {{param:id}} for scalars, {{param:id.key}} for objects.
     let subs = build_param_subs(loaded, param_values);
 
-    // 2. Fresh per-run temp dir for the query results (mock or live).
-    //
-    // The directory is unique per run, not per report. Keying it on the report
-    // id alone meant two runs of the same report shared one directory: the
-    // second run's remove_dir_all could delete the first's files mid-flight, or
-    // both could race to remove it and the loser got NotFound. Nothing is
-    // cleared here because nothing is ever reused — each run gets its own dir,
-    // and the OS reclaims temp.
-    let run_dir = std::env::temp_dir().join(format!(
-        "report-run-{}-{}",
-        structure.id,
-        unique_run_token()
-    ));
-    fs::create_dir_all(&run_dir)
+    // 2. `run_dir` is a fresh per-run directory minted by the caller
+    //    (workspace.rs) for the query results (mock or live). Unique per run,
+    //    not per report — two concurrent runs must never share one. Nothing is
+    //    cleared here because nothing is ever reused; the session reaper
+    //    reclaims it.
+    fs::create_dir_all(run_dir)
         .map_err(|e| AppError::IoError(format!("Cannot create report run dir: {}", e)))?;
 
     // 3. Pull any declared code tables — transforms reference them as
@@ -169,6 +163,7 @@ pub fn run_report_action(
     action_id: &str,
     param_values: &HashMap<String, Value>,
     transport: &Transport,
+    run_dir: &Path,
 ) -> Result<ActionResult, AppError> {
     let action = loaded
         .structure
@@ -183,7 +178,7 @@ pub fn run_report_action(
         }
     }
 
-    let run = run_report(loaded, param_values, transport)?;
+    let run = run_report(loaded, param_values, transport, run_dir)?;
 
     let input_label = action
         .input
@@ -333,20 +328,6 @@ fn scalar_to_string(v: &Value) -> String {
     }
 }
 
-// Distinct per run within a process. The counter alone would collide across
-// processes (concurrent `cargo test` binaries, a second app instance), and the
-// clock alone can repeat under a coarse timer, so use both.
-fn unique_run_token() -> String {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    format!("{:x}-{:x}", nanos, n)
-}
-
 pub(crate) fn apply_subs(s: &str, subs: &[(String, String)]) -> String {
     let mut out = s.to_string();
     for (placeholder, value) in subs {
@@ -380,12 +361,19 @@ fn bind_to_value(bind: &HashMap<String, Value>) -> Value {
 mod tests {
     use super::*;
     use crate::profile;
-    use std::path::Path;
+    use crate::workspace;
+    use std::path::PathBuf;
 
     fn load() -> LoadedProfile {
         let dir =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../profiles/src/gift_activity");
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../profiles/src/gift_activity");
         profile::load_from_dir(&dir).expect("gift_activity should load")
+    }
+
+    fn run_dir() -> PathBuf {
+        std::env::temp_dir()
+            .join("report-test-runs")
+            .join(workspace::unique_token())
     }
 
     fn params() -> HashMap<String, Value> {
@@ -400,7 +388,8 @@ mod tests {
     #[test]
     fn run_report_produces_resultset() {
         let loaded = load();
-        let res = run_report(&loaded, &params(), &Transport::Mock).expect("run_report ok");
+        let res =
+            run_report(&loaded, &params(), &Transport::Mock, &run_dir()).expect("run_report ok");
 
         assert_eq!(res.mode, "mock");
         let rs = res.data.get("ConstituentGifts").expect("ConstituentGifts present");
@@ -421,8 +410,9 @@ mod tests {
     #[test]
     fn run_action_counts_ids() {
         let loaded = load();
-        let r = run_report_action(&loaded, "save_re_query", &params(), &Transport::Mock)
-            .expect("action ok");
+        let r =
+            run_report_action(&loaded, "save_re_query", &params(), &Transport::Mock, &run_dir())
+                .expect("action ok");
         assert!(r.ok);
         assert!(r.message.contains("5 record"), "message was: {}", r.message);
         assert!(r.message.contains("Report Gifts"));
@@ -434,10 +424,14 @@ mod tests {
     // pipeline against that temp dir — not the source folder.
     #[test]
     fn run_report_from_builtin() {
+        let dest = std::env::temp_dir()
+            .join("report-test-builtin")
+            .join(workspace::unique_token());
         let loaded =
-            profile::load_builtin("gift_activity.import").expect("builtin loads");
+            profile::load_builtin_into("gift_activity.import", &dest).expect("builtin loads");
         assert_eq!(loaded.structure.kind.as_deref(), Some("report"));
-        let res = run_report(&loaded, &params(), &Transport::Mock).expect("run_report ok");
+        let res =
+            run_report(&loaded, &params(), &Transport::Mock, &run_dir()).expect("run_report ok");
         assert_eq!(res.data.get("ConstituentGifts").unwrap().rows.len(), 5);
     }
 }

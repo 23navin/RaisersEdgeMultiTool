@@ -152,11 +152,18 @@ export type Notice = {
   rows: string[][];
 };
 
+// Returned by validate_file. Mirrors db::ValidationResult.
+export type ValidationResult = {
+  ok: boolean;
+  errors: ValidationError[];
+  notices: Notice[];
+};
+
 // One file emitted by a sql_transform. A transform can produce many of these
 // when its SQL uses {{output:Label}} placeholders, one per declared output.
 export type OutputFile = {
   label: string;
-  path: string;
+  artifact_id: string;     // opaque id resolved server-side, inside the session
   row_count: number;
 };
 
@@ -271,7 +278,7 @@ export type ReportRunResult = {
 // Returned by run_re_query. Mirrors query_step::QueryStepResult.
 export type QueryStepResult = {
   query_output: string;    // the label later SQL uses as {{query:<label>}}
-  path: string;            // JSON file the rows were written to
+  artifact_id: string;     // opaque id of the JSON the rows were written to
   row_count: number;
   mode: string;            // "live" (real SKY API) | "mock"
   resolved_request: unknown; // request after {{rows:}}/{{value:}} substitution
@@ -294,9 +301,10 @@ export type SyncResult = {
   message: string;
   mode: string;            // "live" (real SKY API) | "mock"
   // Set when the step declares sync_output: the label later SQL reads as
-  // {{sync:<label>}}, and the JSON file the outcome rows were written to.
+  // {{sync:<label>}}, and the opaque id of the JSON the outcome rows were
+  // written to.
   sync_output?: string | null;
-  path?: string | null;
+  artifact_id?: string | null;
 };
 
 // Returned by run_report_action. Mirrors report::ActionResult.
@@ -312,7 +320,12 @@ export type LoadedProfile = {
   structure: ProfileStructure;
   instructions: Record<string, string>; // step label → markdown content
   sql_files: Record<string, string>;    // filename → SQL content
-  temp_dir: string;
+  // Opaque session handle — echoed back on every later call in place of a
+  // filesystem path. Minted by load_profile.
+  session_id: string;
+  // Base for relative asset references in instructions.md (images). Desktop:
+  // the extracted profile dir; web (later): a URL prefix.
+  asset_base: string;
   files: ProfileFileEntry[];             // raw editable text files (structure.yaml, instructions.md, sql/*.sql)
 };
 
@@ -378,5 +391,8 @@ export type ReNxtConnectionStatus = {
   environment_id?: string | null;
   environment_name?: string | null;
   expires_at?: number | null;   // unix seconds until the access token expires
+  // True when RE_NXT_MOCK pins every RE call to bundle fixtures. Independent
+  // of `connected` — a stored connection can exist while mock mode overrides it.
+  mock_forced?: boolean;
 };
 

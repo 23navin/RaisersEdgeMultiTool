@@ -6,11 +6,11 @@ rendered in the UI**. Use this when planning changes — both YAML shape and
 component behavior live here side by side.
 
 Authoritative code locations:
-- YAML parsing (Rust): `src-tauri/src/profile.rs`
+- YAML parsing (Rust): `crates/core/src/profile.rs`
 - Type mirror (TS): `src/types.ts`
 - Step → component dispatch: `src/components/imports/MainPanel.tsx` (`switch (step.type)`)
-- Instruction section parser: `parse_instructions()` in `src-tauri/src/profile.rs`
-- Step-type acceptance: `src-tauri/src/validate.rs` and `profiles/build.sh` — both
+- Instruction section parser: `parse_instructions()` in `crates/core/src/profile.rs`
+- Step-type acceptance: `crates/core/src/validate.rs` and `profiles/build.sh` — both
   reject unknown types
 
 **Scope:** this file covers **import** profiles. Report profiles (`kind: report`)
@@ -109,8 +109,8 @@ Body markdown for this step…
 - The `##` heading inside a section is what the UI displays as the step name.
   If absent, the YAML `label` is shown.
 - Inline backticks render as code chips in the rendered prose.
-- `![alt](assets/path.png)` images resolve against the profile's extracted
-  `temp_dir` and render in `manual_instruction` sections.
+- `![alt](assets/path.png)` images resolve against the profile's `asset_base`
+  and render in `manual_instruction` sections.
 
 ---
 
@@ -670,15 +670,16 @@ see what the import would change before generating it.
 ### UI behavior
 - Header row lists every declared source with a green check / red cross for
   whether the step producing it has run.
-- **Show Data** button is live once every required file input is valid and every
-  declared upstream result has been produced. It reads **Refresh** after a run.
-- Indeterminate progress bar while the SELECT runs (a local DuckDB query reports
-  no progress), green when it lands, red on error.
-- The rendered viz appears below, under `visualization.title`, with a row count
-  beside the button.
+- **The step runs itself.** There is no button to press: the moment every
+  required file input is valid and every declared upstream result has been
+  produced, the SELECT runs and the viz draws. There is no progress bar — the
+  same row shows `waiting on sources`, then `Loading…`, then the row count.
+- The rendered viz appears below, under `visualization.title`.
 - Re-running the producing `re_query` / `code_table_sync` step, or swapping an
   input file, clears the drawn result — a stale table on screen is worse than a
-  missing one.
+  missing one — and the step redraws by itself once that source is ready again.
+- A small **Refresh** icon re-reads on demand, for when an input file changed on
+  disk outside the app. It is disabled until the sources are ready.
 
 ### Backend
 `run_visualization` in `commands.rs` — loads the profile from the temp dir,
@@ -719,7 +720,9 @@ If there are exceptions, contact `vendor@example.com`.
 ### UI behavior
 - The `##` heading is shown as the step heading.
 - Body renders as prose: paragraphs, inline `code`, images.
-- Images load from `temp_dir/assets/...` via Tauri's `convertFileSrc`.
+- Images load from `asset_base/assets/...` — resolved by `api.assetUrl`, which
+  uses Tauri's asset protocol on desktop and the session asset endpoint on the
+  web. Either way the profile author just writes `![alt](assets/x.png)`.
 
 ---
 
@@ -760,13 +763,13 @@ step label alone — a `code_table_sync` step holds exactly one operation.
 
 To add a new step type or change an existing one, touch:
 
-1. **`src-tauri/src/profile.rs`** — extend `Step` / `StepInputRef` if new fields are needed; serde handles the YAML mapping.
+1. **`crates/core/src/profile.rs`** — extend `Step` / `StepInputRef` if new fields are needed; serde handles the YAML mapping.
 2. **`src/types.ts`** — mirror any new field in the TS `Step` type.
 3. **`src/components/imports/MainPanel.tsx`** — add a `case "your_type":` in the
    `StepSection` switch, dispatching to a new or existing component.
 4. **`src/App.tsx`** — extend state shape / handlers if the new step needs
    to track per-step data beyond the existing `files` and `generations` maps.
-5. **`src-tauri/src/validate.rs`** and **`profiles/build.sh`** — both reject
+5. **`crates/core/src/validate.rs`** and **`profiles/build.sh`** — both reject
    unknown step types, so a new one must be added to each or bundles won't verify.
 6. **An example profile** — add a corresponding YAML+MD example under
    `profiles/src/<name>/` and rebuild with `profiles/build.sh` so you can

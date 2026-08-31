@@ -6,6 +6,8 @@
 // on the left so they don't overlap the app name.
 
 import { useRef } from "react";
+import { cn } from "../lib/utils";
+import { isTauri } from "../lib/api";
 import {
   FileInputIcon,
   SendIcon,
@@ -80,9 +82,14 @@ export function Titlebar({ activeTab, onTabChange, onOpenSettings }: TitlebarPro
       {/* Left — traffic-light spacer + app name.
           Wrapped in an h-[32px] block to match the tab pill's height so
           both rows sit on the same horizontal baseline. */}
+      {/* The 90px gutter reserves space for macOS traffic lights; in a
+          browser there are none, so the name sits at the normal inset. */}
       <div
         data-tauri-drag-region
-        className="min-w-[220px] flex items-center gap-[9px] pl-[90px]"
+        className={cn(
+          "min-w-[220px] flex items-center gap-[9px]",
+          isTauri ? "pl-[90px]" : "pl-[16px]",
+        )}
       >
         <div
           data-tauri-drag-region

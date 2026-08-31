@@ -4,7 +4,7 @@
 // card — the OAuth setup for the Data Requests / Reports features.
 //
 // Follows the ImportTab convention: this component owns its state and is the
-// only place here that calls invoke(). The backend (sky_auth.rs) runs the
+// only place here that calls the backend (via lib/api.ts). sky_auth.rs runs the
 // actual OAuth handshake; this UI just collects the three credentials, kicks
 // off connect_re_nxt, and reflects connection status.
 
@@ -15,15 +15,16 @@ import {
   ExternalLinkIcon,
   Loader2Icon,
 } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
+import * as api from "../../../lib/api";
 import { cn } from "../../../lib/utils";
 import type { ReNxtConnectionStatus } from "../../../types";
 
-// Must match REDIRECT_URI in sky_auth.rs and the Redirect URI registered on
-// the application in the Blackbaud developer portal.
-const REDIRECT_URI = "http://localhost:13631/callback";
+// Must match the Redirect URI registered on the application in the Blackbaud
+// developer portal. Desktop uses the loopback listener in sky_auth.rs; the web
+// build uses this deployment's own /api/oauth/callback route.
+const REDIRECT_URI = api.redirectUri();
 
-export function GeneralTab() {
+export function GeneralTab({ panelOpen = true }: { panelOpen?: boolean }) {
   const [status, setStatus] = useState<ReNxtConnectionStatus | null>(null);
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
@@ -43,7 +44,7 @@ export function GeneralTab() {
 
   const refreshStatus = async () => {
     try {
-      const s = await invoke<ReNxtConnectionStatus>("re_nxt_status");
+      const s = await api.reNxtStatus();
       if (mounted.current) setStatus(s);
     } catch (e) {
       if (mounted.current) setError(String(e));
@@ -51,8 +52,21 @@ export function GeneralTab() {
   };
 
   useEffect(() => {
-    refreshStatus();
+    // A web connect round-trips through Blackbaud and lands back here with
+    // the outcome in the query string. This component is mounted from app
+    // startup (the settings panel is always mounted so it can animate), so
+    // this runs on the return leg even before the panel is revealed.
+    const result = api.takeConnectResult();
+    if (result && !result.ok) setError(result.error ?? "Connection failed.");
   }, []);
+
+  // Re-check whenever the panel is opened. The connection can change out from
+  // under this component — another tab, another user on the same server, or
+  // the OAuth round trip itself — and a status fetched once at startup goes
+  // stale silently.
+  useEffect(() => {
+    if (panelOpen) refreshStatus();
+  }, [panelOpen]);
 
   const canConnect =
     clientId.trim() !== "" &&
@@ -65,15 +79,16 @@ export function GeneralTab() {
     setBusy(true);
     setError(null);
     try {
-      // Resolves once the user finishes the browser handshake against their
-      // RE NXT environment. The backend persists the connection; the secret
-      // never comes back to the frontend.
-      const s = await invoke<ReNxtConnectionStatus>("connect_re_nxt", {
-        clientId: clientId.trim(),
-        clientSecret: clientSecret.trim(),
-        subscriptionKey: subscriptionKey.trim(),
-      });
+      // Desktop: resolves once the user finishes the handshake in the browser
+      // window that opens. Web: navigates this page to Blackbaud and returns
+      // null — the result arrives via the OAuth callback's redirect back here.
+      const s = await api.connectReNxt(
+        clientId.trim(),
+        clientSecret.trim(),
+        subscriptionKey.trim(),
+      );
       if (!mounted.current) return;
+      if (!s) return; // navigating away to Blackbaud
       setStatus(s);
       // Clear the secret from the form once it's safely stored backend-side.
       setClientSecret("");
@@ -88,7 +103,7 @@ export function GeneralTab() {
     setBusy(true);
     setError(null);
     try {
-      await invoke("disconnect_re_nxt");
+      await api.disconnectReNxt();
       if (!mounted.current) return;
       setStatus({ connected: false });
     } catch (e) {
@@ -109,6 +124,19 @@ export function GeneralTab() {
         <div className="mb-[14px] rounded-[8px] border border-red-200 bg-red-50 px-[12px] py-[9px] text-[12px] text-red-700 flex items-start gap-[7px]">
           <AlertCircleIcon size={14} className="shrink-0 mt-[1px]" />
           <span className="break-words">{error}</span>
+        </div>
+      )}
+
+      {status?.mock_forced && (
+        <div className="mb-[14px] rounded-[8px] border border-amber-200 bg-amber-50 px-[12px] py-[9px] text-[12px] text-amber-800 flex items-start gap-[7px]">
+          <AlertCircleIcon size={14} className="shrink-0 mt-[1px]" />
+          <span className="break-words">
+            <strong className="font-medium">Mock mode is forced on.</strong>{" "}
+            <code className="text-[11px]">RE_NXT_MOCK</code> is set, so every RE
+            call uses the profile's bundled fixtures
+            {status.connected ? " even though a connection is stored" : ""}.
+            Unset it and restart to use the live API.
+          </span>
         </div>
       )}
 
@@ -265,7 +293,9 @@ function ConnectForm({
         </button>
         {busy && (
           <span className="text-[11px] text-neutral-500">
-            Complete sign-in in the browser window that opened.
+            {api.isTauri
+              ? "Complete sign-in in the browser window that opened."
+              : "Redirecting to Blackbaud to sign in…"}
           </span>
         )}
       </div>

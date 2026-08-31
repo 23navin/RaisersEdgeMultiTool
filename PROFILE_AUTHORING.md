@@ -133,7 +133,7 @@ The script refuses to pack a profile that fails verification, so a green run
 means the bundle is structurally sound.
 
 If your profile is a **built-in** (compiled into the binary via `include_bytes!`
-in `src-tauri/src/profile.rs`), you must run `build.sh` *before* the Rust build
+in `crates/core/src/profile.rs`), you must run `build.sh` *before* the Rust build
 — the `.import` file has to exist on disk at compile time — and then restart
 `npm run tauri dev` to pick it up.
 
@@ -638,7 +638,7 @@ Everything you can declare, in one place. Follow the link for exact field lists.
 - **DuckDB** runs every SQL file. Any DuckDB SQL is legal: CTEs, window
   functions, `CREATE TEMP TABLE`, `read_csv_auto`, `read_xlsx`,
   `read_json_auto`, `read_json(..., columns={...})`.
-- **The RE call registry** (`src-tauri/src/re_calls.rs`) owns auth, the async
+- **The RE call registry** (`crates/core/src/re_calls.rs`) owns auth, the async
   job flow, polling, and result normalization. Profiles never see HTTP.
 - **`API reference/`** holds the SKY OpenAPI specs (`query.yaml`,
   `codetable.yaml`, `constituent.yaml`, and more) plus
@@ -787,7 +787,7 @@ in-app editor.
 | Audience | How |
 |---|---|
 | One user, one machine | Copy the `.import` into their app-data `profiles/` folder |
-| Everyone, forever | Add the source under `profiles/src/`, run `build.sh`, add the filename to `BUILTIN_PROFILES` in `src-tauri/src/profile.rs`, rebuild |
+| Everyone, forever | Add the source under `profiles/src/`, run `build.sh`, add the filename to `BUILTIN_PROFILES` in `crates/core/src/profile.rs`, rebuild |
 
 Built-ins and user profiles can share an `id`; the sidebar keys on the bundle
 path, so a duplicate name is expected and harmless.

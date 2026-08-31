@@ -21,6 +21,7 @@ Two profile kinds share one bundle format and one loader:
 | Doc | Covers |
 |---|---|
 | **`PROFILE_AUTHORING.md`** | **How to write a profile of either kind, start to finish. Point profile authors here first.** |
+| **`SERVER.md`** | **Deploying, configuring, and operating the web server (config, RE connection, HTTP API, security posture)** |
 | `STEP_TYPES.md` | Per-step-type YAML + UI reference for import profiles |
 | `REPORT_PROFILES.md` | Field-by-field contract + execution details for report profiles |
 | `README.md` | Setup, dev commands, project layout |
@@ -56,21 +57,47 @@ RE_NXT_MOCK=1 npm run tauri dev
 
 ---
 
-## Architecture — The Two-Process Model
+## Architecture — Engine + Shells
+
+The Rust engine lives in `crates/core` (no Tauri, no HTTP) and is wrapped by
+thin shells. The desktop shell (`src-tauri`) exposes each `core::api` operation
+as a `#[tauri::command]`; a web shell (`crates/server`, Axum) exposes the same
+operations as `POST /api/<command>`. One React app serves both — it calls the
+backend through `src/lib/api.ts`, which picks `invoke()` inside the Tauri
+webview and `fetch()` in a plain browser.
 
 ```
-Frontend (Renderer)          IPC Bridge              Backend (Main Process)
-─────────────────────        ──────────────          ──────────────────────
-React + TypeScript           invoke()                Rust binary
-src/                         ← Promise →             src-tauri/src/
-Handles: UI, display         returns Result<T,E>     Handles: files, DuckDB,
-Cannot: touch filesystem                             profile parsing
+Frontend (React, src/)      src/lib/api.ts          Backends
+─────────────────────       ───────────────         ─────────────────────────
+components                  isTauri ? invoke()      src-tauri  → core::api
+  ↓ typed fns                       : fetch()       crates/server → core::api
+Handles: UI, display        same JSON both ways     crates/core: files, DuckDB,
+Cannot: touch filesystem                              profile parsing, SKY calls
 ```
 
 **Rule of thumb:**
-- Touches a file, database, or system resource → **Rust**
+- Touches a file, database, or system resource → **`crates/core`** (plain fn in `api.rs`)
+- Tauri- or HTTP-specific glue (dialogs, OAuth loopback, routes) → **the shell**
 - Changes what the user sees → **React**
-- Needs both → Frontend calls backend via `invoke()`, backend returns data, frontend displays it
+- Needs both → component calls a typed fn in `src/lib/api.ts`, backend returns data
+
+**RE NXT connection (both shells).** The model, the on-disk format
+(`re_nxt_connection.json`), and token exchange/refresh live in
+`core/src/creds.rs`, so a connection is portable between desktop and server.
+Only code acquisition differs: desktop binds a loopback listener and opens the
+system browser (`sky_auth.rs`); the server hands the browser an authorization
+URL and receives the redirect at `GET /api/oauth/callback`. Both then call
+`creds::exchange_code`. The server's connection is **server-wide** — one person
+connects through Settings → General and everyone shares it; per-user
+connections need the identity model that doesn't exist yet.
+
+**Session model (both shells).** `load_profile` mints a session under
+`<workspaces_root>/<session_id>/` (`core/src/workspace.rs`), extracts the
+bundle into it, and returns `session_id` on the `LoadedProfile`. Every later
+call echoes `sessionId` back; files produced by steps cross the wire as
+**opaque artifact ids** (session-relative paths, containment-checked on
+resolve) — the client never sees a server path. Stale sessions are reaped
+after 24h on the next `load_profile`.
 
 ---
 
@@ -81,8 +108,9 @@ tauri-import/
 ├── src/                          # FRONTEND — React app
 │   ├── main.tsx                  # React entry point
 │   ├── types.ts                  # Shared TypeScript types — mirrors Rust structs exactly
-│   ├── App.tsx                   # Root component — all shared state + all invoke() calls
+│   ├── App.tsx                   # Root component — all shared state + backend calls
 │   ├── lib/
+│   │   ├── api.ts                # THE transport module — invoke() vs fetch(), file pick/save, asset URLs
 │   │   ├── utils.ts              # cn() helper for Tailwind class composition
 │   │   ├── profile-utils.ts      # Profile summary/list helpers
 │   │   └── re-calls.ts           # TS mirror of the RE call registry (drives UI labels/params)
@@ -112,21 +140,30 @@ tauri-import/
 │       ├── shared/               # CodeMirrorEditor, NoticeBlock, Panel
 │       └── ui/                   # Shadcn primitives (button, popover, command)
 │
-├── src-tauri/                    # BACKEND — Rust binary
-│   ├── Cargo.toml                # Rust dependencies
+├── Cargo.toml                    # WORKSPACE root — members: crates/core, src-tauri
+├── crates/
+│   └── core/                     # ENGINE — framework-neutral (no tauri dep)
+│       └── src/
+│           ├── lib.rs            # Module exports
+│           ├── api.rs            # The 20 operations as plain fns over a Ctx — both shells wrap these
+│           ├── workspace.rs      # Session dirs + opaque artifact ids + reaper
+│           ├── creds.rs          # RE NXT Connection model, on-disk format, token exchange/refresh
+│           ├── profile.rs        # Bundle load/save/duplicate/create; all YAML structs
+│           ├── validate.rs       # Profile linting (issue codes) + scaffold_missing
+│           ├── db.rs             # DuckDB validation, SQL transforms, ResultSets, sql_path quoting
+│           ├── re_calls.rs       # The one place a SKY API call is executed (Query + Code Table)
+│           ├── code_tables.rs    # Pulls RE code tables into SQL; runs code_table_sync writes
+│           │                     #   and publishes their outcomes as {{sync:Label}}
+│           ├── query_step.rs     # Runs an re_query step: SQL params → RE query → JSON for later SQL
+│           ├── report.rs         # Report pipeline: params → queries → transforms → result sets
+│           └── errors.rs         # Shared AppError enum
+│
+├── src-tauri/                    # DESKTOP SHELL — Tauri binary
+│   ├── Cargo.toml                # Depends on multitool-core + tauri
 │   └── src/
 │       ├── main.rs               # Entry point — registers all commands
-│       ├── commands.rs           # #[tauri::command] functions (thin API layer)
-│       ├── profile.rs            # Bundle load/save/duplicate/create; all YAML structs
-│       ├── validate.rs           # Profile linting (issue codes) + scaffold_missing
-│       ├── db.rs                 # DuckDB validation, SQL transforms, ResultSets
-│       ├── re_calls.rs           # The one place a SKY API call is executed (Query + Code Table)
-│       ├── code_tables.rs        # Pulls RE code tables into SQL; runs code_table_sync writes
-│       │                         #   and publishes their outcomes as {{sync:Label}}
-│       ├── query_step.rs         # Runs an re_query step: SQL params → RE query → JSON for later SQL
-│       ├── report.rs             # Report pipeline: params → queries → transforms → result sets
-│       ├── sky_auth.rs           # RE NXT OAuth connect/status/token
-│       └── errors.rs             # Shared AppError enum
+│       ├── commands.rs           # #[tauri::command] wrappers: build Ctx from AppHandle, call core::api
+│       └── sky_auth.rs           # RE NXT OAuth: loopback listener + system browser (desktop-only half)
 │
 ├── profiles/                     # PROFILE BUNDLES — not compiled in, ship alongside exe
 │   ├── src/<name>/               # Source folder per profile — structure.yaml, instructions.md,
@@ -145,26 +182,27 @@ tauri-import/
 ## The Backend Commands
 
 Every command must be registered in `main.rs` inside `generate_handler![]` or `invoke()` fails silently.
+Command bodies live in `crates/core/src/api.rs`; `commands.rs` only builds a `Ctx` and forwards.
 
-**Profiles and imports** (`commands.rs`)
+**Profiles and imports** (`commands.rs` → `core::api`)
+
+| Command | Called from (via `lib/api.ts`) | Args | Returns |
+|---|---|---|---|
+| `list_profiles` | `App.tsx` on mount — returns embedded built-ins (`builtin://<file>`) + `.import` files in `app_data_dir()/profiles/` (`user://<file>`) | _(none)_ | `ProfileSummary[]` |
+| `load_profile` | `App.tsx` on profile select — mints a session, extracts the bundle into it | `zipPath` (a profile ref, see below) | `LoadedProfile` (carries `session_id` + `asset_base`) |
+| `validate_file` | `App.tsx` on validate click | `filePath`, `inputLabel`, `sessionId` | `ValidationResult` |
+| `run_profile` | `App.tsx` on generate click | `filePaths` (input label → local file path), `queryIds` (query label → artifact id), `syncIds` (sync label → artifact id), `sqlFile`, `sessionId`, `outputLabels` | `TransformResult` (outputs carry `artifact_id`) |
+| `run_re_query` | `App.tsx` on an `re_query` step | `filePaths`, `stepLabel`, `sessionId` | `QueryStepResult` (carries `artifact_id`) |
+| `run_code_table_sync` | `App.tsx` on a `code_table_sync` step | `filePaths`, `stepLabel`, `sessionId` | `SyncResult` (carries `artifact_id`) |
+| `run_visualization` | `App.tsx` on a `visualization` step | `filePaths`, `queryIds`, `syncIds`, `stepLabel`, `sessionId` | `ResultSet` |
+| `save_output` | `App.tsx` on download click (desktop Save As) | `sessionId`, `artifactId`, `destPath` | `void` |
+
+**Reports** (`commands.rs` → `core::api` → `report.rs`; both `async`)
 
 | Command | Called from | Args | Returns |
 |---|---|---|---|
-| `list_profiles` | `App.tsx` on mount | _(none from frontend; `AppHandle` injected by Tauri)_ — returns embedded built-ins + `.import` files in `app_data_dir()/profiles/` | `ProfileSummary[]` |
-| `load_profile` | `App.tsx` on profile select | `zipPath` | `LoadedProfile` |
-| `validate_file` | `App.tsx` on validate click | `filePath`, `inputLabel`, `zipPath` | `ValidationResult` |
-| `run_profile` | `App.tsx` on generate click | `filePaths` (map of input label → file path), `queryPaths` (query label → result JSON), `syncPaths` (sync label → outcome JSON), `sqlFile`, `zipPath`, `outputLabels` | `TransformResult` |
-| `run_re_query` | `App.tsx` on an `re_query` step | `filePaths`, `stepLabel`, `zipPath` | `QueryStepResult` |
-| `run_code_table_sync` | `App.tsx` on a `code_table_sync` step | `filePaths`, `stepLabel`, `zipPath` | `SyncResult` |
-| `run_visualization` | `App.tsx` on a `visualization` step | `filePaths`, `queryPaths`, `syncPaths`, `stepLabel`, `zipPath` | `ResultSet` |
-| `save_output` | `App.tsx` on download click | `srcPath`, `destPath` | `void` |
-
-**Reports** (`commands.rs` → `report.rs`; both `async`)
-
-| Command | Called from | Args | Returns |
-|---|---|---|---|
-| `run_report` | `ReportsPage` Refresh | `zipPath`, `paramValues` | `ReportRunResult` (`data`, `queries`, `generated_at`, `mode`) |
-| `run_report_action` | `ReportsPage` action button | `zipPath`, `actionId`, `paramValues` | `ActionResult` |
+| `run_report` | `ReportsPage` Refresh | `sessionId`, `paramValues` | `ReportRunResult` (`data`, `queries`, `generated_at`, `mode`) |
+| `run_report_action` | `ReportsPage` action button | `sessionId`, `actionId`, `paramValues` | `ActionResult` |
 
 **In-app profile editor** (`commands.rs` → `profile.rs` / `validate.rs`)
 
@@ -172,7 +210,7 @@ Every command must be registered in `main.rs` inside `generate_handler![]` or `i
 |---|---|---|---|
 | `new_profile` | Settings → Imports, "New profile" | _(AppHandle only)_ | `ProfileMutation` |
 | `duplicate_profile` | Settings → Imports, "Duplicate" or opening a built-in | `sourceZipPath` | `ProfileMutation` |
-| `save_profile` | Settings → Imports, Save | `zipPath`, `files` | `ProfileMutation` |
+| `save_profile` | Settings → Imports, Save | `zipPath` (a `user://` ref), `files` | `ProfileMutation` |
 | `delete_profile` | Settings → Imports, Delete (refuses built-ins) | `zipPath` | `void` |
 | `validate_profile` | Settings → Imports, Validate | `files` | `ValidationReport` |
 | `scaffold_missing` | Settings → Imports, "Scaffold missing files" | `files` | `ProfileFileEntry[]` |
@@ -186,14 +224,12 @@ Every command must be registered in `main.rs` inside `generate_handler![]` or `i
 | `disconnect_re_nxt` | Settings → General | _(AppHandle only)_ | `void` |
 | `re_nxt_access_token` | Callers needing a live token (async) | _(AppHandle only)_ | `String` |
 
-`zipPath` for `validate_file`, `run_profile`, `run_re_query`,
-`run_code_table_sync`, `run_visualization`, `run_report`, and
-`run_report_action` is actually the
-extracted temp dir from `loadedProfile.temp_dir`, not the original `.import` zip.
-Naming kept for backwards compatibility — the backend re-reads `structure.yaml`,
-SQL, and fixtures from that directory. `save_profile` / `delete_profile` /
-`duplicate_profile` take the **real** `.import` path instead, since they write
-the bundle.
+The pipeline commands (`validate_file`, `run_*`, `run_report*`) take
+`sessionId` — the opaque handle `load_profile` returned — and the backend
+re-reads `structure.yaml`, SQL, and fixtures from that session's `profile/`
+dir. `save_profile` / `delete_profile` / `duplicate_profile` take a **profile
+ref** instead (`builtin://<file>` or `user://<file>`), since they address the
+bundle itself. No command accepts or returns a raw server path.
 
 **Live vs mock.** Every RE-touching command picks a `Transport`: `Live` when a
 connection exists (`sky_auth::has_connection`) and `RE_NXT_MOCK` is unset,
@@ -202,9 +238,9 @@ returned to the frontend and shown as a badge.
 
 ### Profile sources
 
-- **Built-ins**: embedded at compile-time via `include_bytes!` in `profile.rs::BUILTIN_PROFILES`. The `.import` files must exist when Rust builds — run `profiles/build.sh` first if you've changed a built-in's source.
+- **Built-ins**: embedded at compile-time via `include_bytes!` in `crates/core/src/profile.rs::BUILTIN_PROFILES`. The `.import` files must exist when Rust builds — run `profiles/build.sh` first if you've changed a built-in's source.
 - **User profiles**: `.import` files in `app_data_dir()/profiles/` — resolved via `AppHandle::path()`. macOS: `~/Library/Application Support/com.navin.tauri-import/profiles/`. Auto-created on first `list_profiles`.
-- **`zip_path` shapes**: user profiles use a real fs path; built-ins use the sentinel `builtin://<filename>`. `load_profile` strips that prefix and extracts from in-memory bytes.
+- **`zip_path` shapes**: both are refs now — `user://<filename>` (resolved inside the user profiles dir, bare filenames only) and `builtin://<filename>` (extracted from in-memory bytes). Resolution + traversal checks live in `api.rs::resolve_profile_ref`.
 - **Frontend selection keys on `zip_path`, not `id`** — a built-in and a user profile can share an `id`; only `zip_path` is unique.
 
 ---
@@ -300,10 +336,14 @@ Column names with spaces, `#`, `/` etc. must be double-quoted in SQL: `"Item #"`
 
 ## Frontend State Architecture
 
-`App.tsx` owns all shared state (`files`, `generations`, `selectedProfile`) and
-is the **only** place that calls `invoke()`. Handlers (`handleFileSelect`,
-`handleValidate`, `handleGenerate`, `handleDownload`, `handleSelectProfile`)
-live in `App.tsx` and are passed down as props.
+`App.tsx` owns all shared state (`files`, `generations`, `selectedProfile`)
+and calls the backend exclusively through the typed functions in
+`src/lib/api.ts` — no component imports `@tauri-apps/*` directly; `api.ts` is
+the only file that does. Handlers (`handleFileSelect`, `handleValidate`,
+`handleGenerate`, `handleDownload`, `handleSelectProfile`) live in `App.tsx`
+and are passed down as props. Besides `App.tsx`, two settings components call
+`api.ts` themselves: `settings/imports/ImportTab.tsx` (the profile editor) and
+`settings/general/GeneralTab.tsx` (the RE NXT connection).
 
 Render hierarchy:
 - `App.tsx` → `Titlebar` + the active workspace (`imports/ImportsPage`,
@@ -322,37 +362,40 @@ Render hierarchy:
   - `imports/steps/StepCodeTableSync.tsx` for `code_table_sync` — live/mock
     badge, operation-labelled button, success/partial callout + failures table.
   - `imports/steps/StepVisualize.tsx` for `visualization` — source readiness
-    row + Show Data button, then the rows drawn by the shared report
-    `VIZ_REGISTRY`. Reads only; writes no file.
+    row, then the rows drawn by the shared report `VIZ_REGISTRY`. Reads only;
+    writes no file, and no progress bar. Self-refreshing: an effect runs the
+    step whenever it is `idle` with every source ready, which is both the
+    first-ready moment and every time App.tsx clears the result after an
+    upstream change. The icon button is a manual re-read, not a gate.
   - `imports/steps/StepImport.tsx` for `manual_instruction` — renders the
-    markdown body with image assets resolved against `loadedProfile.temp_dir`.
+    markdown body with image assets resolved against `loadedProfile.asset_base`
+    via `api.assetUrl` (asset protocol on desktop, session endpoint on web).
 - `reports/ReportsPage.tsx` renders `ReportInputs` (from `parameters`) plus one
   component per `visualizations` entry, looked up in
   `reports/viz/index.tsx`'s `VIZ_REGISTRY` — the report-side mirror of
   `MainPanel`'s step dispatch. Only `TableViz` is implemented; the chart types
   render placeholders.
-- `settings/imports/ImportTab.tsx` owns the in-app profile editor and is the
-  one exception to the "only `App.tsx` calls `invoke()`" rule — it runs the
-  editor commands itself and keeps its view children pure.
+- `settings/imports/ImportTab.tsx` owns the in-app profile editor — it runs
+  the editor commands itself and keeps its view children pure.
 
-The `loadedProfile.temp_dir` is threaded through `MainPanel` to each step
+`loadedProfile.session_id` is threaded through `MainPanel` to each step
 component and passed back to `validate_file`, `run_profile`, `run_re_query`,
-`run_code_table_sync`, `run_visualization`, and `run_report` so Rust can
-re-read validation rules, SQL, and fixtures.
+`run_code_table_sync`, `run_visualization`, and `run_report` so the backend
+can re-read validation rules, SQL, and fixtures from that session.
 
 ---
 
 ## Types
 
-`src/types.ts` mirrors the Rust structs in `profile.rs` exactly. If you change a struct in Rust, update the matching type in `types.ts`. Import all types from `types.ts` — never inline them.
+`src/types.ts` mirrors the Rust structs in `crates/core` (`profile.rs`, `db.rs`, `query_step.rs`, `code_tables.rs`, `report.rs`) exactly. If you change a struct in Rust, update the matching type in `types.ts`. Import all types from `types.ts` — never inline them.
 
 ---
 
 ## Error Handling
 
-- All Rust errors flow through `AppError` in `errors.rs`
-- Commands convert `AppError` to `String` for the frontend via `.map_err(|e| e.to_string())`
-- Every `invoke()` call in TypeScript must be wrapped in `try/catch` — rejections carry the Rust error string
+- All Rust errors flow through `AppError` in `crates/core/src/errors.rs`
+- Shell wrappers convert `AppError` to `String` for the frontend via `.map_err(|e| e.to_string())`
+- Every `api.ts` call in TypeScript must be wrapped in `try/catch` — rejections carry the Rust error string (identical on the invoke and fetch paths)
 
 ---
 
@@ -360,10 +403,12 @@ re-read validation rules, SQL, and fixtures.
 
 ### Rust
 - All functions that can fail return `Result<T, AppError>`
-- On Windows: replace `\` with `/` in file paths before injecting into SQL strings (DuckDB accepts both)
+- Any path spliced into SQL text goes through `db::sql_path` (normalizes `\`→`/` and doubles embedded quotes)
+- Engine code (`crates/core`) must never import `tauri` — shell concerns stay in the shells
 
 ### TypeScript / React
-- Always `await` every `invoke()` call — forgetting causes silent failures
+- Always `await` every `api.ts` call — forgetting causes silent failures
+- New backend operations go in `core/src/api.rs` + a thin wrapper in each shell + a typed fn in `src/lib/api.ts`
 - State shared across components lives in `App.tsx`
 - File paths come from Tauri's file dialog APIs — do not manipulate them in JS
 
@@ -376,12 +421,12 @@ re-read validation rules, SQL, and fixtures.
 ## Common Pitfalls
 
 - **Forgot to register a command?** → Check `generate_handler![]` in `main.rs`
-- **`invoke()` silently failing?** → Confirm the command is registered and you `await`-ed the call
+- **Backend call silently failing?** → Confirm the command is registered in `generate_handler![]` and you `await`-ed the call
 - **DuckDB column error?** → Wrap column names with special characters in double quotes
 - **Windows path backslash in SQL?** → Replace `\` with `/` in `db.rs` before string substitution
 - **Excel header not on row 1?** → Add `OFFSET 1` or use a CTE in the profile SQL
 - **State read too early?** → Use the value returned by the setter callback, not the stale state variable
-- **`validate_file` / `run_profile` `zipPath` arg is the extracted temp dir, not the .import zip** → naming is misleading; the backend reads `structure.yaml` and SQL straight from that directory
+- **Pipeline command failing with "Session not found"?** → the session was reaped (24h idle) or the backend restarted; reload the profile to mint a new one
 - **`{{input_file}}` errors in a multi-input transform** → use `{{input:Label}}` placeholders to disambiguate, one per declared input
 - **`{{codetable:X}}` errors?** → the label must match a `code_tables:` entry's
   `output`, not the RE table's name. Both `validate.rs` and `build.sh` check this
@@ -402,7 +447,7 @@ re-read validation rules, SQL, and fixtures.
 - **Two profiles with the same name in the sidebar?** → built-in and user profile share an `id`; this is expected. Select on `zip_path`, never on `id`
 - **Edited a built-in profile's source and nothing changed?** → run
   `./profiles/build.sh` and restart `npm run tauri dev`; built-ins are embedded
-  at compile time via `include_bytes!`
+  at compile time via `include_bytes!` (in `crates/core/src/profile.rs`)
 - **Report chart renders as an empty dashed box?** → only `table` is implemented
   in `VIZ_REGISTRY`; `bar`/`line`/`pie`/`kpi` are placeholder stubs. A
   `visualization` step in an import profile draws through the same registry, so
@@ -415,6 +460,9 @@ re-read validation rules, SQL, and fixtures.
 ## What NOT to Do
 
 - Do not modify `build.rs` — it is the Tauri build script
+- Do not import `@tauri-apps/*` outside `src/lib/api.ts` — platform branching lives there
+- Do not add Tauri (or Axum) dependencies to `crates/core` — it must build shell-free
+- Do not put raw server paths in wire types — use `session_id` + artifact ids
 - Do not put file I/O or DuckDB logic in React components
 - Do not put UI state management in Rust commands
 - Do not manipulate Windows file paths in JavaScript

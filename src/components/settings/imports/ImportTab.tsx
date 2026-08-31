@@ -1,17 +1,15 @@
 // ImportTab.tsx
 //
 // Orchestrator for the Import-profiles tab. Owns all state, runs every
-// invoke() call, and threads handlers down to ProfileSidebar / ProfileEditor.
+// backend call (via lib/api.ts), and threads handlers down to ProfileSidebar / ProfileEditor.
 // The view children are pure — they don't talk to the backend themselves.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircleIcon } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
+import * as api from "../../../lib/api";
 import type {
   ProfileSummary,
-  LoadedProfile,
   ProfileFileEntry,
-  ProfileMutation,
   ValidationReport,
 } from "../../../types";
 import {
@@ -56,7 +54,7 @@ export function ImportTab({ panelOpen }: { panelOpen: boolean }) {
   };
 
   const refreshList = async (): Promise<ProfileSummary[]> => {
-    const list = await invoke<ProfileSummary[]>("list_profiles");
+    const list = await api.listProfiles();
     setProfiles(list);
     return list;
   };
@@ -78,9 +76,7 @@ export function ImportTab({ panelOpen }: { panelOpen: boolean }) {
     setBusy(true);
 
     try {
-      const loaded = await invoke<LoadedProfile>("load_profile", {
-        zipPath: summary.zip_path,
-      });
+      const loaded = await api.loadProfile(summary.zip_path);
       if (loadReqId.current !== reqId) return;
       const files = sortProfileFiles(loaded.files);
       setEditor({ summary, files });
@@ -110,7 +106,7 @@ export function ImportTab({ panelOpen }: { panelOpen: boolean }) {
 
   const runValidate = async (files: ProfileFileEntry[]): Promise<ValidationReport | null> => {
     try {
-      const report = await invoke<ValidationReport>("validate_profile", { files });
+      const report = await api.validateProfile(files);
       setValidationReport(report);
       setIssuesCollapsed(false);
       return report;
@@ -136,9 +132,7 @@ export function ImportTab({ panelOpen }: { panelOpen: boolean }) {
     setBusy(true);
     setError(null);
     try {
-      const files = await invoke<ProfileFileEntry[]>("scaffold_missing", {
-        files: editor.files,
-      });
+      const files = await api.scaffoldMissing(editor.files);
       const sorted = sortProfileFiles(files);
       setEditor({ ...editor, files: sorted });
       setDirty(true);
@@ -159,7 +153,7 @@ export function ImportTab({ panelOpen }: { panelOpen: boolean }) {
     setBusy(true);
     setError(null);
     try {
-      const mut = await invoke<ProfileMutation>("new_profile");
+      const mut = await api.newProfile();
       await refreshList();
       const files = sortProfileFiles(mut.loaded.files);
       setEditor({ summary: mut.summary, files });
@@ -179,9 +173,7 @@ export function ImportTab({ panelOpen }: { panelOpen: boolean }) {
     setBusy(true);
     setError(null);
     try {
-      const mut = await invoke<ProfileMutation>("duplicate_profile", {
-        sourceZipPath: editor.summary.zip_path,
-      });
+      const mut = await api.duplicateProfile(editor.summary.zip_path);
       await refreshList();
       const files = sortProfileFiles(mut.loaded.files);
       setEditor({ summary: mut.summary, files });
@@ -201,7 +193,7 @@ export function ImportTab({ panelOpen }: { panelOpen: boolean }) {
     setBusy(true);
     setError(null);
     try {
-      await invoke("delete_profile", { zipPath: editor.summary.zip_path });
+      await api.deleteProfile(editor.summary.zip_path);
       await refreshList();
       setEditor(null);
       setSelectedZipPath(null);
@@ -226,10 +218,7 @@ export function ImportTab({ panelOpen }: { panelOpen: boolean }) {
     setBusy(true);
     setError(null);
     try {
-      const mut = await invoke<ProfileMutation>("save_profile", {
-        zipPath: editor.summary.zip_path,
-        files: editor.files,
-      });
+      const mut = await api.saveProfile(editor.summary.zip_path, editor.files);
       await refreshList();
       const files = sortProfileFiles(mut.loaded.files);
       setEditor({ summary: mut.summary, files });
@@ -257,10 +246,7 @@ export function ImportTab({ panelOpen }: { panelOpen: boolean }) {
     try {
       const report = await runValidate(editor.files);
       if (!report || report.error_count > 0 || report.warning_count > 0) return;
-      const mut = await invoke<ProfileMutation>("save_profile", {
-        zipPath: editor.summary.zip_path,
-        files: editor.files,
-      });
+      const mut = await api.saveProfile(editor.summary.zip_path, editor.files);
       await refreshList();
       const files = sortProfileFiles(mut.loaded.files);
       setEditor({ summary: mut.summary, files });

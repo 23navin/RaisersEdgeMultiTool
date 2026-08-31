@@ -5,11 +5,11 @@
 
 import { useEffect, useState } from "react";
 import { ImageIcon } from "lucide-react";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { assetUrl } from "../../../lib/api";
 
 type Props = {
   markdown: string;
-  tempDir: string;
+  assetBase: string;
 };
 
 type Block =
@@ -63,23 +63,29 @@ function renderInlineMd(text: string) {
   });
 }
 
-function ImageBlock({ alt, src, tempDir }: { alt: string; src: string; tempDir: string }) {
+function ImageBlock({ alt, src, assetBase }: { alt: string; src: string; assetBase: string }) {
   const [resolvedSrc, setResolvedSrc] = useState<string | null>(null);
   const [errored, setErrored] = useState(false);
 
   useEffect(() => {
-    if (!tempDir) {
+    if (!assetBase) {
       setResolvedSrc(null);
       return;
     }
-    try {
-      // Convert the OS path to an asset URL Tauri can serve.
-      const full = `${tempDir}/${src}`.replace(/\\/g, "/");
-      setResolvedSrc(convertFileSrc(full));
-    } catch {
-      setErrored(true);
-    }
-  }, [src, tempDir]);
+    let cancelled = false;
+    // Resolve to a URL the platform can serve — Tauri's asset protocol on
+    // desktop, the session asset endpoint on the web.
+    assetUrl(assetBase, src)
+      .then((url) => {
+        if (!cancelled) setResolvedSrc(url);
+      })
+      .catch(() => {
+        if (!cancelled) setErrored(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [src, assetBase]);
 
   if (!resolvedSrc || errored) {
     return (
@@ -100,7 +106,7 @@ function ImageBlock({ alt, src, tempDir }: { alt: string; src: string; tempDir: 
   );
 }
 
-export function StepImport({ markdown, tempDir }: Props) {
+export function StepImport({ markdown, assetBase }: Props) {
   const blocks = parseBlocks(markdown);
 
   return (
@@ -112,7 +118,7 @@ export function StepImport({ markdown, tempDir }: Props) {
               key={i}
               alt={block.alt}
               src={block.src}
-              tempDir={tempDir}
+              assetBase={assetBase}
             />
           );
         }

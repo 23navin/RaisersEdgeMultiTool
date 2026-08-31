@@ -11,8 +11,7 @@ import {
   CheckIcon,
   XIcon,
 } from "lucide-react";
-import { open } from "@tauri-apps/plugin-dialog";
-import { basename } from "@tauri-apps/api/path";
+import { pickInputFile } from "../../../lib/api";
 import { Button } from "../../ui/button";
 import { NoticeBlock } from "../../shared/NoticeBlock";
 import type { FileStatus } from "../../../App";
@@ -30,6 +29,7 @@ export type FileInputRow = {
 type Props = {
   description: string;
   rows: FileInputRow[];
+  sessionId: string;
   onFileSelect: (inputLabel: string, path: string, name: string) => void;
   onValidate: (inputLabel: string) => void;
   onClear: (inputLabel: string) => void;
@@ -64,11 +64,13 @@ const notReadyBtn =
 
 function FileRow({
   row,
+  sessionId,
   onFileSelect,
   onValidate,
   onClear,
 }: {
   row: FileInputRow;
+  sessionId: string;
   onFileSelect: (inputLabel: string, path: string, name: string) => void;
   onValidate: (inputLabel: string) => void;
   onClear: (inputLabel: string) => void;
@@ -90,15 +92,11 @@ function FileRow({
     const extensions =
       inputType === "xlsx" ? ["xlsx", "xls"] : [inputType || "csv"];
     try {
-      const selected = await open({
-        multiple: false,
-        filters: [{ name: inputLabel, extensions }],
-      });
-      if (typeof selected !== "string") return; // user cancelled
-      const name = await basename(selected);
-      onFileSelect(inputLabel, selected, name);
+      const picked = await pickInputFile(inputLabel, extensions, sessionId);
+      if (!picked) return; // user cancelled
+      onFileSelect(inputLabel, picked.path, picked.name);
     } catch (e) {
-      console.error("file dialog failed:", e);
+      console.error("file pick failed:", e);
     }
   };
 
@@ -201,6 +199,7 @@ function FileRow({
 export function StepSelectFiles({
   description,
   rows,
+  sessionId,
   onFileSelect,
   onValidate,
   onClear,
@@ -217,6 +216,7 @@ export function StepSelectFiles({
           <FileRow
             key={row.inputLabel}
             row={row}
+            sessionId={sessionId}
             onFileSelect={onFileSelect}
             onValidate={onValidate}
             onClear={onClear}

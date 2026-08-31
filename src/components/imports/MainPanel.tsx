@@ -92,7 +92,7 @@ export function MainPanel({
     );
   }
 
-  const { structure, instructions, temp_dir } = loadedProfile;
+  const { structure, instructions, asset_base, session_id } = loadedProfile;
   const description = profileDescription(instructions["_header"]);
 
   return (
@@ -123,7 +123,8 @@ export function MainPanel({
               done={stepsDone[step.label] ?? false}
               structure={structure}
               instructions={instructions}
-              tempDir={temp_dir}
+              assetBase={asset_base}
+              sessionId={session_id}
               files={files}
               generations={generations}
               onFileSelect={onFileSelect}
@@ -153,7 +154,8 @@ type StepSectionProps = Omit<MainPanelProps, "loadedProfile" | "stepsDone"> & {
   done: boolean;
   structure: LoadedProfile["structure"];
   instructions: Record<string, string>;
-  tempDir: string;
+  assetBase: string;
+  sessionId: string;
 };
 
 function StepSection({
@@ -162,7 +164,8 @@ function StepSection({
   done,
   structure,
   instructions,
-  tempDir,
+  assetBase,
+  sessionId,
   files,
   generations,
   onFileSelect,
@@ -201,6 +204,7 @@ function StepSection({
           <StepSelectFiles
             description={stepBody(instructions[step.label])}
             rows={rows}
+            sessionId={sessionId}
             onFileSelect={onFileSelect}
             onValidate={onValidate}
             onClear={onClearFile}
@@ -249,13 +253,18 @@ function StepSection({
           label,
           ready: gen?.status === "done",
         }));
-        const canGenerate = inputRefs.every((r) => {
+        const filesReady = inputRefs.every((r) => {
           const lbl = refLabel(r);
           const def = structure.inputs.find((i) => i.label === lbl);
           const f = files[lbl];
           if (def?.required) return f?.status === "valid";
           return !f || f.status === "valid";
         });
+        // Query results are hard prerequisites, not optional extras: the SQL
+        // substitutes {{query:Label}} with the file the producing re_query step
+        // wrote, so generating before that step has run can only fail.
+        const canGenerate =
+          filesReady && queryInputs.every((q) => q.ready);
         return {
           inputs: [...inputs, ...queryInputs, ...syncInputs],
           outputs,
@@ -407,7 +416,7 @@ function StepSection({
           {heading}
           <StepImport
             markdown={stepBody(instructions[step.label])}
-            tempDir={tempDir}
+            assetBase={assetBase}
           />
         </section>
       );

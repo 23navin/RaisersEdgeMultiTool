@@ -20,20 +20,20 @@ use crate::errors::AppError;
 // files must exist at build time (run profiles/build.sh).
 
 const BUILTIN_PROFILES: &[(&str, &[u8])] = &[
-    ("test1.import", include_bytes!("../../profiles/test1.import")),
-    ("test2.import", include_bytes!("../../profiles/test2.import")),
-    ("test3.import", include_bytes!("../../profiles/test3.import")),
-    ("test4.import", include_bytes!("../../profiles/test4.import")),
+    ("test1.import", include_bytes!("../../../profiles/test1.import")),
+    ("test2.import", include_bytes!("../../../profiles/test2.import")),
+    ("test3.import", include_bytes!("../../../profiles/test3.import")),
+    ("test4.import", include_bytes!("../../../profiles/test4.import")),
     // Demonstrates the re_query step feeding a later sql_transform.
-    ("re_query_demo.import", include_bytes!("../../profiles/re_query_demo.import")),
+    ("re_query_demo.import", include_bytes!("../../../profiles/re_query_demo.import")),
     // Demonstrates the code_tables section + the code_table_sync step.
-    ("code_table_demo.import", include_bytes!("../../profiles/code_table_demo.import")),
+    ("code_table_demo.import", include_bytes!("../../../profiles/code_table_demo.import")),
     // Same pieces, ordered as a cross-reference workflow: audit the file's codes
     // against the table, then offer to create the missing ones before importing.
-    ("code_table_crossref.import", include_bytes!("../../profiles/code_table_crossref.import")),
+    ("code_table_crossref.import", include_bytes!("../../../profiles/code_table_crossref.import")),
     // Report-kind built-in. Verified + packed by profiles/build.sh like the
     // others (the verifier branches on `kind: report`).
-    ("gift_activity.import", include_bytes!("../../profiles/gift_activity.import")),
+    ("gift_activity.import", include_bytes!("../../../profiles/gift_activity.import")),
 ];
 
 // ── YAML structs ──────────────────────────────────────────────────────────────
@@ -342,7 +342,18 @@ pub struct LoadedProfile {
     pub structure: ProfileStructure,
     pub instructions: HashMap<String, String>, // step label → markdown content
     pub sql_files: HashMap<String, String>,    // filename → SQL content
-    pub temp_dir: PathBuf,                     // where the zip was extracted
+    // Where the bundle was extracted. Backend-internal — the engine reads
+    // fixtures and SQL from here, but it never crosses the wire: the client
+    // holds `session_id` instead and every command resolves it server-side.
+    #[serde(skip_serializing)]
+    pub temp_dir: PathBuf,
+    // Opaque handle the client echoes back on every later call in place of a
+    // filesystem path. Empty until api.rs stamps it after minting a session.
+    pub session_id: String,
+    // Base the client prepends to relative asset references (images in
+    // instructions.md). Desktop: the extracted profile dir, served via the
+    // asset protocol. Web (later): a URL prefix the server rewrites in.
+    pub asset_base: String,
     pub files: Vec<ProfileFileEntry>,          // raw editable text files (used by the profile editor)
 }
 
@@ -385,40 +396,48 @@ pub fn parse_instructions(md_content: &str) -> HashMap<String, String> {
 }
 
 // ── Bundle loader ─────────────────────────────────────────────────────────────
-// Unzips a profile bundle into a system temp directory.
-// Reads structure.yaml, instructions.md, and all .sql files.
-// Returns a LoadedProfile ready for the rest of the app to use.
+// Unzips a profile bundle into the caller-supplied directory (a fresh
+// session's profile dir — see workspace.rs), reads structure.yaml,
+// instructions.md, and all .sql files, and returns a LoadedProfile.
+// Each load gets its own directory, so concurrent loads of the same bundle
+// can't wipe each other the way the old shared /tmp/import-tool-<stem>/ did.
 
-pub fn load_profile(zip_path: &Path) -> Result<LoadedProfile, AppError> {
+pub fn load_profile_into(zip_path: &Path, dest_dir: &Path) -> Result<LoadedProfile, AppError> {
     let file = fs::File::open(zip_path)
         .map_err(|e| AppError::IoError(format!("Cannot open profile zip: {}", e)))?;
     let mut archive = zip::ZipArchive::new(file)
         .map_err(|e| AppError::IoError(format!("Cannot read zip archive: {}", e)))?;
-
-    let stem = zip_path.file_stem().unwrap_or_default().to_string_lossy();
-    let temp_dir = extract_to_clean_temp_dir(&mut archive, &stem)?;
-    load_from_dir(&temp_dir)
+    extract_to_clean_dir(&mut archive, dest_dir)?;
+    load_from_dir(dest_dir)
 }
 
-// Extract to /tmp/import-tool-<stem>/, wiping any prior contents first so
-// stale entries from earlier extractions (different bundle, Finder-style zip
-// with __MACOSX/ siblings, etc.) don't leak into the loaded profile.
-fn extract_to_clean_temp_dir<R: Read + std::io::Seek>(
+// Extract into `dest_dir`, wiping any prior contents first so stale entries
+// from earlier extractions (different bundle, Finder-style zip with __MACOSX/
+// siblings, etc.) don't leak into the loaded profile.
+fn extract_to_clean_dir<R: Read + std::io::Seek>(
     archive: &mut zip::ZipArchive<R>,
-    stem: &str,
-) -> Result<PathBuf, AppError> {
-    let temp_dir = std::env::temp_dir().join(format!("import-tool-{}", stem));
-    if temp_dir.exists() {
-        fs::remove_dir_all(&temp_dir)
-            .map_err(|e| AppError::IoError(format!("Cannot clear temp dir: {}", e)))?;
+    dest_dir: &Path,
+) -> Result<(), AppError> {
+    if dest_dir.exists() {
+        fs::remove_dir_all(dest_dir)
+            .map_err(|e| AppError::IoError(format!("Cannot clear extract dir: {}", e)))?;
     }
-    fs::create_dir_all(&temp_dir)
-        .map_err(|e| AppError::IoError(format!("Cannot create temp dir: {}", e)))?;
+    fs::create_dir_all(dest_dir)
+        .map_err(|e| AppError::IoError(format!("Cannot create extract dir: {}", e)))?;
 
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i)
             .map_err(|e| AppError::IoError(e.to_string()))?;
-        let out_path = temp_dir.join(entry.name());
+        // enclosed_name() sanitizes the entry path: absolute paths and `..`
+        // hops come back None, so a crafted bundle can't write outside
+        // dest_dir (zip-slip).
+        let Some(rel) = entry.enclosed_name() else {
+            return Err(AppError::ParseError(format!(
+                "Bundle entry {:?} has an unsafe path",
+                entry.name()
+            )));
+        };
+        let out_path = dest_dir.join(rel);
         if entry.is_dir() {
             fs::create_dir_all(&out_path)
                 .map_err(|e| AppError::IoError(e.to_string()))?;
@@ -433,14 +452,14 @@ fn extract_to_clean_temp_dir<R: Read + std::io::Seek>(
                 .map_err(|e| AppError::IoError(e.to_string()))?;
         }
     }
-    Ok(temp_dir)
+    Ok(())
 }
 
 // ── load_builtin ──────────────────────────────────────────────────────────────
-// Mirrors load_profile but reads the zip from embedded bytes instead of disk.
-// `name` is the BUILTIN_PROFILES key (e.g. "test1.import").
+// Mirrors load_profile_into but reads the zip from embedded bytes instead of
+// disk. `name` is the BUILTIN_PROFILES key (e.g. "test1.import").
 
-pub fn load_builtin(name: &str) -> Result<LoadedProfile, AppError> {
+pub fn load_builtin_into(name: &str, dest_dir: &Path) -> Result<LoadedProfile, AppError> {
     let bytes = BUILTIN_PROFILES.iter()
         .find(|(n, _)| *n == name)
         .map(|(_, b)| *b)
@@ -448,10 +467,8 @@ pub fn load_builtin(name: &str) -> Result<LoadedProfile, AppError> {
 
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes))
         .map_err(|e| AppError::IoError(format!("Cannot read builtin zip: {}", e)))?;
-
-    let stem = Path::new(name).file_stem().unwrap_or_default().to_string_lossy();
-    let temp_dir = extract_to_clean_temp_dir(&mut archive, &stem)?;
-    load_from_dir(&temp_dir)
+    extract_to_clean_dir(&mut archive, dest_dir)?;
+    load_from_dir(dest_dir)
 }
 
 // ── load_from_dir ─────────────────────────────────────────────────────────────
@@ -499,6 +516,11 @@ pub fn load_from_dir(dir: &Path) -> Result<LoadedProfile, AppError> {
         instructions,
         sql_files,
         temp_dir: dir.to_path_buf(),
+        // Stamped by api.rs once the load is tied to a session. Tests and
+        // other direct load_from_dir callers never serialize the profile, so
+        // the empty defaults are harmless there.
+        session_id: String::new(),
+        asset_base: String::new(),
         files,
     })
 }
@@ -828,54 +850,16 @@ fn read_source_zip_bytes(source_zip_path: &str) -> Result<Vec<u8>, AppError> {
     }
 }
 
-// Re-extract the saved bundle into its temp dir so the in-memory LoadedProfile
-// the frontend already holds keeps matching what's on disk. Drops stale files
-// that no longer exist in the new bundle.
-fn refresh_temp_dir(zip_path: &Path) -> Result<PathBuf, AppError> {
-    let stem = zip_path
-        .file_stem()
-        .unwrap_or_default()
-        .to_string_lossy();
-    let temp_dir = std::env::temp_dir().join(format!("import-tool-{}", stem));
-    if temp_dir.exists() {
-        fs::remove_dir_all(&temp_dir)
-            .map_err(|e| AppError::IoError(format!("Cannot clear temp dir: {}", e)))?;
-    }
-    fs::create_dir_all(&temp_dir)
-        .map_err(|e| AppError::IoError(format!("Cannot create temp dir: {}", e)))?;
-
-    let file = fs::File::open(zip_path)
-        .map_err(|e| AppError::IoError(format!("Cannot reopen .import: {}", e)))?;
-    let mut archive = zip::ZipArchive::new(file)
-        .map_err(|e| AppError::IoError(e.to_string()))?;
-    for i in 0..archive.len() {
-        let mut entry = archive.by_index(i)
-            .map_err(|e| AppError::IoError(e.to_string()))?;
-        let out_path = temp_dir.join(entry.name());
-        if entry.is_dir() {
-            fs::create_dir_all(&out_path)
-                .map_err(|e| AppError::IoError(e.to_string()))?;
-        } else {
-            if let Some(parent) = out_path.parent() {
-                fs::create_dir_all(parent)
-                    .map_err(|e| AppError::IoError(e.to_string()))?;
-            }
-            let mut out_file = fs::File::create(&out_path)
-                .map_err(|e| AppError::IoError(e.to_string()))?;
-            std::io::copy(&mut entry, &mut out_file)
-                .map_err(|e| AppError::IoError(e.to_string()))?;
-        }
-    }
-    Ok(temp_dir)
-}
-
 // Save edits to an existing user .import. Reads the new id/name/version
 // from the supplied structure.yaml so the returned ProfileSummary reflects
 // what's actually inside the bundle. Binary assets in the existing .import
 // (e.g. images referenced from instructions.md) are preserved verbatim.
+// `extract_dir` is where the freshly-saved bundle is re-extracted (a new
+// session's profile dir) so the returned LoadedProfile matches disk.
 pub fn save_user_profile(
     zip_path: &str,
     files: &[ProfileFileEntry],
+    extract_dir: &Path,
 ) -> Result<(ProfileSummary, LoadedProfile), AppError> {
     let path = ensure_user_zip(zip_path)?;
 
@@ -896,8 +880,7 @@ pub fn save_user_profile(
     } else {
         write_import_zip(path, files)?;
     }
-    let temp_dir = refresh_temp_dir(path)?;
-    let loaded = load_from_dir(&temp_dir)?;
+    let loaded = load_profile_into(path, extract_dir)?;
 
     let summary = ProfileSummary {
         id: structure.id,
@@ -928,8 +911,12 @@ fn pick_unique_path(dir: &Path, stem: &str) -> PathBuf {
 }
 
 // Create a fresh user profile with minimal structure.yaml and instructions.md.
-// `profiles_dir` is the per-user profiles directory (under app_data_dir).
-pub fn create_new_profile(profiles_dir: &Path) -> Result<(ProfileSummary, LoadedProfile), AppError> {
+// `profiles_dir` is the per-user profiles directory (under app_data_dir);
+// `extract_dir` is where the new bundle is extracted for the returned profile.
+pub fn create_new_profile(
+    profiles_dir: &Path,
+    extract_dir: &Path,
+) -> Result<(ProfileSummary, LoadedProfile), AppError> {
     fs::create_dir_all(profiles_dir)
         .map_err(|e| AppError::IoError(format!("Cannot create profiles dir: {}", e)))?;
 
@@ -973,8 +960,7 @@ pub fn create_new_profile(profiles_dir: &Path) -> Result<(ProfileSummary, Loaded
     ];
 
     write_import_zip(&zip_path, &files)?;
-    let temp_dir = refresh_temp_dir(&zip_path)?;
-    let loaded = load_from_dir(&temp_dir)?;
+    let loaded = load_profile_into(&zip_path, extract_dir)?;
 
     let summary = ProfileSummary {
         id: loaded.structure.id.clone(),
@@ -994,6 +980,7 @@ pub fn create_new_profile(profiles_dir: &Path) -> Result<(ProfileSummary, Loaded
 pub fn duplicate_profile(
     source_zip_path: &str,
     profiles_dir: &Path,
+    extract_dir: &Path,
 ) -> Result<(ProfileSummary, LoadedProfile), AppError> {
     // Read the source bundle's raw bytes; we'll re-zip from this without ever
     // calling fs::read_to_string on binary entries.
@@ -1044,8 +1031,7 @@ pub fn duplicate_profile(
 
     let zip_path = pick_unique_path(profiles_dir, &new_id);
     rewrite_import_zip(&source_bytes, &zip_path, &overrides)?;
-    let temp_dir = refresh_temp_dir(&zip_path)?;
-    let loaded = load_from_dir(&temp_dir)?;
+    let loaded = load_profile_into(&zip_path, extract_dir)?;
 
     let summary = ProfileSummary {
         id: loaded.structure.id.clone(),
@@ -1118,7 +1104,7 @@ mod tests {
     #[test]
     fn report_bundle_parses() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../profiles/src/gift_activity");
+            .join("../../profiles/src/gift_activity");
         let loaded = load_from_dir(&dir).expect("gift_activity should load");
         let s = &loaded.structure;
 
@@ -1141,7 +1127,7 @@ mod tests {
     // Existing import bundles must still parse unchanged after the schema grew.
     #[test]
     fn import_bundle_still_parses() {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../profiles/src/test1");
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../profiles/src/test1");
         let loaded = load_from_dir(&dir).expect("test1 should load");
         assert!(loaded.structure.kind.is_none());
         assert!(!loaded.structure.steps.is_empty());
