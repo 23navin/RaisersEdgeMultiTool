@@ -189,8 +189,7 @@ function ConnectedCard({
           />
           <div className="min-w-0">
             <div className="text-[13px] font-medium text-neutral-900">
-              Connected
-              {status.environment_name ? ` · ${status.environment_name}` : ""}
+              {status.environment_name ? `${status.environment_name}` : ""}
             </div>
             {status.environment_id && (
               <div className="text-[11px] text-neutral-500 mt-[2px]">
