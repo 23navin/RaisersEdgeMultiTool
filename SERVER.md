@@ -395,10 +395,11 @@ message; the frontend transport throws that string, exactly as a rejected
 | `POST /api/list_profiles` | `{}` | `ProfileSummary[]` |
 | `POST /api/load_profile` | `{zipPath}` | `LoadedProfile` (with `session_id`, `asset_base`) |
 | `POST /api/validate_file` | `{filePath, inputLabel, sessionId}` | `ValidationResult` |
-| `POST /api/run_profile` | `{filePaths, queryIds, syncIds, sqlFile, sessionId, outputLabels}` | `TransformResult` |
+| `POST /api/run_profile` | `{filePaths, queryIds, syncIds, formIds, sqlFile, sessionId, outputLabels}` | `TransformResult` |
 | `POST /api/run_re_query` | `{filePaths, stepLabel, sessionId}` | `QueryStepResult` |
 | `POST /api/run_code_table_sync` | `{filePaths, stepLabel, sessionId}` | `SyncResult` |
-| `POST /api/run_visualization` | `{filePaths, queryIds, syncIds, stepLabel, sessionId}` | `ResultSet` |
+| `POST /api/run_visualization` | `{filePaths, queryIds, syncIds, formIds, stepLabel, sessionId}` | `ResultSet` |
+| `POST /api/run_user_input` | `{filePaths, queryIds, syncIds, formIds, stepLabel, sessionId, values}` | `UserInputResult` |
 | `POST /api/run_report` | `{sessionId, paramValues}` | `ReportRunResult` |
 | `POST /api/run_report_action` | `{sessionId, actionId, paramValues}` | `ActionResult` |
 | `POST /api/save_profile` | `{zipPath, files}` | `ProfileMutation` |
