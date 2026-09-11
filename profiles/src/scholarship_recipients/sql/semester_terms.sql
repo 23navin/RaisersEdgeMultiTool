@@ -1,12 +1,16 @@
 -- semester_terms.sql — rows_sql for the SemesterDates step.
 --
 -- One row per award term still in play: the distinct "Award QTR/YR" values
--- (F25, SP26, …) on rows whose Foundation Project matches a fund in RE. Terms
--- that appear only on unmatched rows are left out — those rows never reach the
--- import file, so there is nothing to date.
+-- (F25, SP26, …) on rows that resolve to a fund — either because the
+-- Foundation Project is a fund id in RE, or because the previous step mapped it
+-- to one. Terms that appear only on rows with neither are left out; those rows
+-- never reach the import file, so there is nothing to date.
 --
--- The step draws one start/end date pair per row returned here, keyed on
--- `term` (structure.yaml's key_column).
+-- That dependency on the override form is why this step declares
+-- `form_input: [FundOverrides]` and comes after it: mapping a project can bring
+-- a whole new term into play, and this list has to grow when it does. The
+-- date fields are required, so listing a term that can never import would
+-- block the run instead of just cluttering it.
 
 WITH src AS (
   -- COLUMNS('^Award') picks the "Award QTR/YR" column by prefix. Its real
@@ -22,9 +26,24 @@ WITH src AS (
 funds AS (
   SELECT DISTINCT UPPER(TRIM(CAST(fund_id AS VARCHAR))) AS fund_key
   FROM read_json_auto('{{query:Funds}}')
+),
+overrides AS (
+  -- key = the Foundation Project the operator mapped; replacement_fund_id =
+  -- the fund they picked. Read with an explicit column list: a form with no
+  -- rows publishes [], which read_json_auto has no schema to infer from.
+  SELECT
+    UPPER(TRIM(key))                 AS source_key,
+    UPPER(TRIM(replacement_fund_id)) AS replacement_key
+  FROM read_json('{{form:FundOverrides}}', columns={
+    key: 'VARCHAR', replacement_fund_id: 'VARCHAR'
+  })
+  WHERE replacement_fund_id IS NOT NULL AND TRIM(replacement_fund_id) <> ''
 )
 SELECT DISTINCT s.term
 FROM src s
-JOIN funds f ON UPPER(s.fund_id) = f.fund_key
+LEFT JOIN funds  direct ON UPPER(s.fund_id) = direct.fund_key
+LEFT JOIN overrides o   ON UPPER(s.fund_id) = o.source_key
+LEFT JOIN funds  mapped ON o.replacement_key = mapped.fund_key
 WHERE s.term IS NOT NULL AND s.term <> ''
+  AND COALESCE(direct.fund_key, mapped.fund_key) IS NOT NULL
 ORDER BY s.term

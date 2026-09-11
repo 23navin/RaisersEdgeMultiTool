@@ -1,9 +1,9 @@
 # Scholarship Recipients
 
 Turns a foundation scholarship award list into an RE import file. The run asks
-RE which funds exist, shows you the projects that match none of them, collects a
-start and end date for each award term, and writes the file for the rows that
-matched.
+RE which funds exist, lets you point the projects that match none of them at the
+right fund, collects a start and end date for each award term, and writes the
+file for the rows that resolved.
 
 ---
 
@@ -26,21 +26,27 @@ can report what *didn't* match. Nothing is written and nothing changes in RE.
 Without a connection (or with mock mode on) this reads the bundled fixture
 instead, and the badge on the step says which one you got.
 
-<!-- label: ReviewUnmatched -->
-## Check the projects that don't match a fund
+<!-- label: FundOverrides -->
+## Point the unmatched projects at a fund
 
 Each row here is a `Foundation Project` value with no matching fund id in RE,
 shown with the project title it arrived under and how many award rows it covers.
+An empty table means every project matched and there's nothing to do.
 
-**These rows are excluded from everything after this step.** Take the list back
-to the foundation, or have the fund created in RE and re-run the query above.
-An empty table means every project matched.
+Where a project is really a fund you recognise under another name, pick that
+fund from the dropdown — it lists every fund RE returned, searchable by id or by
+description — and those award rows import against it.
+
+Leave a row blank when the fund genuinely doesn't exist yet. **Rows left
+unmapped are excluded from everything after this step**: take them back to the
+foundation, or have the fund created in RE and re-run the query above.
 
 <!-- label: SemesterDates -->
 ## Set each term's dates
 
-One row per award term left in the file after the unmatched projects were
-dropped — `F25`, `SP26`, and so on. Fill in the start and end date for each one;
+One row per award term still in play — `F25`, `SP26`, and so on. Terms that
+exist only on rows you left unmapped above aren't listed, and pointing a project
+at a fund can make a new term appear here. Fill in the start and end date for each one;
 they become the `Date From` and `Date To` on every award row carrying that term.
 
 The dates save as you type. A term left blank isn't an error, but its rows won't
@@ -54,7 +60,7 @@ single `Project Details` field, the dates for that row's term, and the matched
 fund id.
 
 If anything was left out, the notice under the button names each row and says
-why — an unmatched project, or a term still missing its dates.
+why — a project with no fund chosen, or a term still missing its dates.
 
 <!-- label: Import -->
 ## Import into RE

@@ -818,7 +818,7 @@ and is heavily commented in place. Start from whichever is closest.
 | `re_query_demo` | `re_query`: `params_sql` → `{{rows:col}}` → RE → `{{query:Label}}` joined into the import file |
 | `code_table_demo` | `code_tables:` pull + a `code_table_sync` step |
 | `code_table_crossref` | The full loop: audit codes against RE, offer to create the missing ones, then read `{{sync:…}}` back so the new ids land in the import file |
-| `scholarship_recipients` | A `user_input` form whose rows come out of the uploaded file (one date pair per award term), feeding the import transform as `{{form:…}}` |
+| `scholarship_recipients` | Two chained `user_input` forms: one maps unmatched projects to funds via a dropdown built from the live RE fund list (`options_sql`), the other collects a date pair per award term — the second's questions depend on the first's answers |
 | `gift_activity` | The complete report profile: parameters → query → transform → table viz → write-back action |
 
 ```bash
