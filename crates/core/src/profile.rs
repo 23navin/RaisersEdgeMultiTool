@@ -34,6 +34,9 @@ const BUILTIN_PROFILES: &[(&str, &[u8])] = &[
     // Report-kind built-in. Verified + packed by profiles/build.sh like the
     // others (the verifier branches on `kind: report`).
     ("gift_activity.import", include_bytes!("../../../profiles/gift_activity.import")),
+    // Demonstrates the user_input step: a form whose rows come out of the
+    // uploaded file, feeding a later transform as {{form:Label}}.
+    ("scholarship_recipients.import", include_bytes!("../../../profiles/scholarship_recipients.import")),
 ];
 
 // ── YAML structs ──────────────────────────────────────────────────────────────

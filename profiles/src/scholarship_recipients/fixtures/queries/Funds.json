@@ -1,0 +1,7 @@
+[
+  { "fund_id": "SCH-1001", "fund_description": "Presidential Scholarship Endowment" },
+  { "fund_id": "SCH-1002", "fund_description": "Engineering Dean's Scholarship" },
+  { "fund_id": "SCH-1003", "fund_description": "Agricultural Sciences Award" },
+  { "fund_id": "SCH-1004", "fund_description": "First Generation Student Fund" },
+  { "fund_id": "SCH-2010", "fund_description": "Alumni Association Memorial Scholarship" }
+]

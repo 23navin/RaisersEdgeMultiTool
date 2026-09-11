@@ -1,0 +1,143 @@
+---
+id: scholarship_recipients
+name: Scholarship Recipients
+version: 1.0.0
+min_app_version: 0.2.0
+
+# Turns a foundation scholarship award list into an RE gift/award import file.
+#
+# The shape of the run:
+#   upload ─▶ ask RE for every fund id ─▶ show the projects that match nothing
+#          ─▶ ask the operator for each term's start and end date
+#          ─▶ write the import file for the rows that matched
+#
+# Rows whose Foundation Project isn't a fund in RE are reported once and then
+# dropped: every later step joins on the fund, so they simply stop travelling.
+
+inputs:
+  - label: Recipients
+    type: xlsx
+    required: true
+    # The award list as the foundation sends it. The "Award QTR/YR" header is a
+    # two-line cell in the source workbook — the label below carries the same
+    # newline, so it matches exactly rather than through the fuzzy fallback.
+    validation:
+      - label: BroncoID
+        required: true
+        type: number
+      - label: "Award \nQTR/YR"
+        required: true
+        type: string
+      - label: Foundation Project
+        required: true
+        type: string
+      - label: Project Title
+        required: true
+        type: string
+      - label: Amount
+        required: true
+        type: number
+
+outputs:
+  - label: Import_File
+    type: csv
+
+steps:
+  - label: AddSourceFile
+    type: file_input
+    input:
+      - label: Recipients
+        validate: true
+
+  # ── Every fund in RE ────────────────────────────────────────────────────────
+  # A static query — no params_sql, because the step asks for the whole fund
+  # list rather than looking up the ids in the file. The match then happens
+  # locally in SQL, which also lets the next step show what *didn't* match.
+  #
+  # ⚠ DRAFT: type_id and the query_field_id values below are placeholders from
+  # the SKY spec's own examples. Replace them with this environment's —
+  # discover them with GET /query/querytypes and
+  # GET /query/v2/queryfields/root. Keep the `user_alias` names (fund_id,
+  # fund_description): every SQL file here selects by those aliases.
+  # Mock mode ignores `template` entirely and reads
+  # fixtures/queries/Funds.json, so the profile runs end to end offline.
+  - label: FetchFunds
+    type: re_query
+    ref: re.query.execute
+    query_output: Funds
+    template:
+      type_id: 20
+      sql_generation_mode: Query
+      result_layout: MultiRow
+      select_fields:
+        - { query_field_id: 1001, user_alias: fund_id }
+        - { query_field_id: 1002, user_alias: fund_description }
+
+  # ── What won't import ───────────────────────────────────────────────────────
+  # Reads only; writes nothing. Every Foundation Project in the upload that has
+  # no fund in RE, with its project title and how many award rows it covers.
+  # This is the list to take back to the foundation — those rows are excluded
+  # from the import file below.
+  - label: ReviewUnmatched
+    type: visualization
+    input:
+      - Recipients
+    query_input:
+      - Funds
+    sql: unmatched_projects.sql
+    visualization:
+      type: table
+      title: "Foundation Projects with no matching Fund ID"
+      config:
+        sortable: true
+
+  # ── The dates the file doesn't carry ────────────────────────────────────────
+  # rows_sql returns one row per term still in play (F25, SP26, …) — read off
+  # the upload, and only for rows that matched a fund, so a term that exists
+  # solely on excluded rows never gets asked about. Each row gets a start and
+  # end date box; the filled rows are published as {{form:SemesterDates}}.
+  - label: SemesterDates
+    type: user_input
+    input:
+      - Recipients
+    query_input:
+      - Funds
+    rows_sql: semester_terms.sql
+    key_column: term
+    fields:
+      - id: date_from
+        label: Start date
+        type: date
+        required: true
+      - id: date_to
+        label: End date
+        type: date
+        required: true
+    form_output: SemesterDates
+
+  # ── The import file ─────────────────────────────────────────────────────────
+  # Joins all three: the upload, the fund list, and the dates just collected.
+  # Both joins are inner, so a row missing either is absent from the output —
+  # the notices below say exactly which rows that was and why.
+  - label: CreateImportFile
+    type: sql_transform
+    input:
+      - Recipients
+    query_input:
+      - Funds
+    form_input:
+      - SemesterDates
+    sql: build_import.sql
+    output:
+      - Import_File
+    notices:
+      - label: "Rows left out of the import file"
+        sql: excluded_rows.sql
+        description: >
+          These award rows are not in the file above. Either the Foundation
+          Project isn't a fund in RE, or the term has no dates filled in yet.
+          Fill in the missing dates and generate again; take the unmatched
+          projects back to the foundation.
+
+  - label: Import
+    type: manual_instruction
