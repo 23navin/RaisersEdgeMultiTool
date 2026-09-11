@@ -18,10 +18,15 @@ WITH src AS (
   -- read through the harness's flattened-header projection (runs of whitespace
   -- collapsed to one space, ends trimmed), so the name below is what the SQL
   -- sees no matter how the export's whitespace shifts.
+  -- all_varchar=true is what keeps the fund match working. A Foundation Project
+  -- like 946117 is a *number* in the workbook, so DuckDB types the column DOUBLE
+  -- and CAST(... AS VARCHAR) renders it "946117.0" — which matches no fund id RE
+  -- ever returns. Reading every cell as text gives back exactly what the cell
+  -- shows, and preserves any leading zeros an id column carries.
   SELECT
     TRIM(CAST("Award QTR/YR" AS VARCHAR))       AS term,
     TRIM(CAST("Foundation Project" AS VARCHAR)) AS fund_id
-  FROM read_xlsx('{{input:Recipients}}')
+  FROM read_xlsx('{{input:Recipients}}', all_varchar=true)
 ),
 funds AS (
   SELECT DISTINCT UPPER(TRIM(CAST(fund_id AS VARCHAR))) AS fund_key

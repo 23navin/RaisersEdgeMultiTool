@@ -936,6 +936,44 @@ mod tests {
         assert!(!rows.rows.is_empty(), "the workbook has award rows");
     }
 
+    // Numeric-looking identifiers are the other way a workbook column lies about
+    // itself. Excel stores a Foundation Project like 10001 as a number, so
+    // DuckDB types the column DOUBLE and the obvious cast renders "10001.0" —
+    // which matches no id any API returns, and fails silently as "nothing
+    // matched" rather than as an error. Reading the file with all_varchar=true
+    // gives back what the cell shows; this pins both halves, because the
+    // profiles rely on that option surviving the flattening rewrite.
+    #[test]
+    fn numeric_ids_read_as_written_only_with_all_varchar() {
+        let sources = SqlSources::new();
+        let naive = select_rows(
+            &billings(),
+            &sources,
+            "SELECT CAST(\"Foundation Project\" AS VARCHAR) AS id \
+             FROM read_xlsx('{{input:Recipients}}') LIMIT 1",
+        )
+        .expect("plain read resolves");
+        assert!(
+            naive.rows[0][0].ends_with(".0"),
+            "expected the DOUBLE round-trip this guards against, got {:?}",
+            naive.rows[0][0]
+        );
+
+        let text = select_rows(
+            &billings(),
+            &sources,
+            "SELECT CAST(\"Foundation Project\" AS VARCHAR) AS id \
+             FROM read_xlsx('{{input:Recipients}}', all_varchar=true) LIMIT 1",
+        )
+        .expect("all_varchar read resolves — and keeps the flattened headers");
+        assert!(
+            !text.rows[0][0].contains('.'),
+            "all_varchar should give the cell as written, got {:?}",
+            text.rows[0][0]
+        );
+        assert_eq!(text.rows[0][0], naive.rows[0][0].trim_end_matches(".0"));
+    }
+
     // A header that needs no flattening is untouched, so existing profiles keep
     // reading their files exactly as before.
     #[test]

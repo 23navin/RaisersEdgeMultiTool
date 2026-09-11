@@ -13,6 +13,8 @@ WITH src AS (
   -- "Bronco ID" and "Award QTR/YR" are two-line cells in the workbook. The
   -- harness flattens every header's line breaks before the SQL sees the file,
   -- so they are quoted here exactly as they read on screen.
+  -- all_varchar=true: numeric-looking ids must not arrive as "946117.0".
+  -- See semester_terms.sql for why.
   SELECT
     TRIM(CAST("Bronco ID" AS VARCHAR))          AS bronco_id,
     TRIM(CAST("Award QTR/YR" AS VARCHAR))       AS term,
@@ -22,7 +24,7 @@ WITH src AS (
       REPLACE(REPLACE(TRIM(CAST("Amount" AS VARCHAR)), '$', ''), ',', '')
       AS DOUBLE
     )                                           AS amount
-  FROM read_xlsx('{{input:Recipients}}')
+  FROM read_xlsx('{{input:Recipients}}', all_varchar=true)
 ),
 funds AS (
   SELECT DISTINCT

@@ -344,6 +344,14 @@ Rules that bite:
   `"Item #"`.
 - `{{input:Label}}` is the path to that input's file. Use `read_csv_auto(...)`
   for CSV and `read_xlsx(...)` for Excel.
+- **Reading a column of identifiers? Use `read_xlsx(..., all_varchar=true)`.**
+  Excel stores a value like `946117` as a *number*, so DuckDB types the column
+  `DOUBLE` and `CAST(... AS VARCHAR)` renders it `"946117.0"` — which matches no
+  id any API returns. It also drops the leading zeros off things like
+  `"011111111"`. The failure is silent: the join simply matches nothing, and
+  every row looks unmatched. `all_varchar=true` hands back exactly what each
+  cell shows; parse the columns you actually want as numbers yourself
+  (`TRY_CAST(REPLACE(…, '$', '') AS DOUBLE)` for money, and so on).
 - `{{input_file}}` is a legacy alias for the same thing, valid **only** when the
   transform declares exactly one input. Prefer the labeled form.
 - Excel headers must be on row 1; otherwise skip rows with a CTE or `OFFSET`.

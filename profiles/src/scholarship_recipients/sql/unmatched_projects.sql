@@ -12,10 +12,12 @@
 -- that value is what downstream SQL joins on as `key`.
 
 WITH src AS (
+  -- all_varchar=true: numeric-looking ids must not arrive as "946117.0".
+  -- See semester_terms.sql for why.
   SELECT
     TRIM(CAST("Foundation Project" AS VARCHAR)) AS fund_id,
     TRIM(CAST("Project Title" AS VARCHAR))      AS project_title
-  FROM read_xlsx('{{input:Recipients}}')
+  FROM read_xlsx('{{input:Recipients}}', all_varchar=true)
 ),
 funds AS (
   SELECT DISTINCT UPPER(TRIM(CAST(fund_id AS VARCHAR))) AS fund_key
