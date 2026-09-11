@@ -1022,6 +1022,15 @@ callback or restructure the flow.
 DuckDB requires column names with spaces, #, /, or other special characters to be
 wrapped in double quotes in SQL: `"Item #"` not `Item #`.
 
+**Multi-line Excel headers**
+A header typed as a stacked cell arrives as a column named `"Award \r\n QTR/YR"`,
+which no author can quote reliably. `db::flattened_relation` wraps every input
+read in a projection that renames such headers to their flattened form (runs of
+whitespace collapsed to one space, ends trimmed), so SQL and `validation:` labels
+both use `"Award QTR/YR"`. The rewrite fires where `{{input:Label}}` is the path
+argument of a `read_*()` call; anywhere else the placeholder still resolves to a
+plain path, just without flattening.
+
 **Excel files with merged cells or header rows above row 1**
 `read_xlsx()` assumes row 1 is the header. If the vendor file has a title row above
 the headers, add `OFFSET 1` or handle it in a CTE within the SQL.

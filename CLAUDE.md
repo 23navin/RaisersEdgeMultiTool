@@ -343,6 +343,14 @@ Three placeholder forms are substituted at runtime:
 
 Column names with spaces, `#`, `/` etc. must be double-quoted in SQL: `"Item #"`.
 
+**Multi-line headers are flattened.** Where `{{input:Label}}` is the path
+argument of a `read_*()` call, the whole call is rewritten to a projection that
+renames every header to its flattened form — each run of whitespace collapsed to
+one space, ends trimmed (`db::flattened_relation`). So a stacked Excel cell that
+arrives as `"Award \r\n QTR/YR"` is quoted in SQL, and named in a `validation:`
+label, as `"Award QTR/YR"`. Files whose headers are already clean are read
+through the bare `read_*()` call, unchanged.
+
 ---
 
 ## Frontend State Architecture
@@ -442,7 +450,8 @@ so the backend can re-read validation rules, SQL, and fixtures from that session
 
 - **Forgot to register a command?** → Check `generate_handler![]` in `main.rs`
 - **Backend call silently failing?** → Confirm the command is registered in `generate_handler![]` and you `await`-ed the call
-- **DuckDB column error?** → Wrap column names with special characters in double quotes
+- **DuckDB column error?** → Wrap column names with special characters in double
+  quotes. For a stacked Excel header, quote the *flattened* name (`"Award QTR/YR"`)
 - **Windows path backslash in SQL?** → Replace `\` with `/` in `db.rs` before string substitution
 - **Excel header not on row 1?** → Add `OFFSET 1` or use a CTE in the profile SQL
 - **State read too early?** → Use the value returned by the setter callback, not the stale state variable

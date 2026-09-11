@@ -13,13 +13,13 @@
 -- block the run instead of just cluttering it.
 
 WITH src AS (
-  -- COLUMNS('^Award') picks the "Award QTR/YR" column by prefix. Its real
-  -- header is a two-line cell — "Award ", a newline, then "QTR/YR" — and the
-  -- trailing space before the break is invisible in a quoted identifier, so
-  -- matching on the prefix is what keeps this working when the export's
-  -- whitespace shifts. It fails loudly if a second Award* column ever appears.
+  -- The real header is a two-line cell — "Award", a newline, a space, then
+  -- "QTR/YR" — which no quoted identifier could match. Every input file is
+  -- read through the harness's flattened-header projection (runs of whitespace
+  -- collapsed to one space, ends trimmed), so the name below is what the SQL
+  -- sees no matter how the export's whitespace shifts.
   SELECT
-    TRIM(CAST(COLUMNS('^Award') AS VARCHAR))    AS term,
+    TRIM(CAST("Award QTR/YR" AS VARCHAR))       AS term,
     TRIM(CAST("Foundation Project" AS VARCHAR)) AS fund_id
   FROM read_xlsx('{{input:Recipients}}')
 ),
