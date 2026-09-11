@@ -102,6 +102,7 @@ export const runUserInput = (args: {
   filePaths: Record<string, string>;
   queryIds: Record<string, string>;
   syncIds: Record<string, string>;
+  formIds: Record<string, string>;
   stepLabel: string;
   sessionId: string;
   values: Record<string, Record<string, string>>;

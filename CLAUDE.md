@@ -198,7 +198,7 @@ Command bodies live in `crates/core/src/api.rs`; `commands.rs` only builds a `Ct
 | `run_re_query` | `App.tsx` on an `re_query` step | `filePaths`, `stepLabel`, `sessionId` | `QueryStepResult` (carries `artifact_id`) |
 | `run_code_table_sync` | `App.tsx` on a `code_table_sync` step | `filePaths`, `stepLabel`, `sessionId` | `SyncResult` (carries `artifact_id`) |
 | `run_visualization` | `App.tsx` on a `visualization` step | `filePaths`, `queryIds`, `syncIds`, `formIds`, `stepLabel`, `sessionId` | `ResultSet` |
-| `run_user_input` | `StepUserInput` on readiness and after each edit | `filePaths`, `queryIds`, `syncIds`, `stepLabel`, `sessionId`, `values` (row key → field id → value) | `UserInputResult` (carries `artifact_id` + `complete`) |
+| `run_user_input` | `StepUserInput` on readiness and after each edit | `filePaths`, `queryIds`, `syncIds`, `formIds`, `stepLabel`, `sessionId`, `values` (row key → field id → value) | `UserInputResult` (carries `artifact_id`, `options`, `complete`) |
 | `save_output` | `App.tsx` on download click (desktop Save As) | `sessionId`, `artifactId`, `destPath` | `void` |
 
 **Reports** (`commands.rs` → `core::api` → `report.rs`; both `async`)
@@ -330,10 +330,11 @@ Three placeholder forms are substituted at runtime:
   `read_json_auto`. See STEP_TYPES.md → *Step type: `re_query`*.
 - `{{form:Label}}` — resolves to the values an earlier `user_input` step
   collected: one JSON object per row of the form, carrying `key`, every column
-  its `rows_sql` selected, and one key per field id. The consuming transform
-  must declare the label in `form_input`. Read with
-  `read_json(..., columns={...})` — the result is empty when the form had no
-  rows. See STEP_TYPES.md → *Step type: `user_input`*.
+  its `rows_sql` selected, and one key per field id. The consumer must declare
+  the label in `form_input` — a `sql_transform`, a `visualization`, or another
+  `user_input` step whose own `rows_sql` depends on the earlier answers. Read
+  with `read_json(..., columns={...})` — the result is empty when the form had
+  no rows. See STEP_TYPES.md → *Step type: `user_input`*.
 - `{{sync:Label}}` — resolves to the outcome rows an earlier `code_table_sync`
   step published via `sync_output` (one row per attempted write, carrying the id
   RE assigned). The consuming transform must declare the label in `sync_input`.
@@ -379,9 +380,13 @@ Render hierarchy:
     upstream change. The icon button is a manual re-read, not a gate.
   - `imports/steps/StepUserInput.tsx` for `user_input` — source readiness row,
     then one row of controls per row the step's `rows_sql` returned (or a single
-    row when it has none). Self-publishing like `StepVisualize`: it publishes on
-    first readiness and again ~450ms after the last keystroke, so there is no
-    button. Values live in `App.tsx` and survive re-derivation of the row list.
+    row when it has none), with every `rows_sql` column shown under its own
+    header. Self-publishing like `StepVisualize`: it publishes on first
+    readiness and again ~450ms after the last keystroke, so there is no button.
+    Values live in `App.tsx` and survive re-derivation of the row list. A
+    `select` field renders a plain dropdown under 8 choices and a searchable
+    popover at 8+; its choices come from YAML `options` or, resolved per run,
+    from the field's `options_sql`.
   - `imports/steps/StepImport.tsx` for `manual_instruction` — renders the
     markdown body with image assets resolved against `loadedProfile.asset_base`
     via `api.assetUrl` (asset protocol on desktop, session endpoint on web).
@@ -461,6 +466,10 @@ so the backend can re-read validation rules, SQL, and fixtures from that session
 - **`{{form:X}}` joins to nothing?** → a required box on that row is still
   blank, so the step published `null` for it. The step stays "not done" and
   every consumer stays disabled until every required box on every row is filled
+- **A select field shows "(not in list)"?** → the held value is no longer one of
+  the field's options, because `options_sql` now returns a different set. The
+  value is kept and published but marked stale, which blocks `complete` — pick
+  again, or re-run whatever produces the options
 - **`{{rows:col}}` sent as a string instead of an array?** → it only becomes an
   array when the YAML value is *exactly* that placeholder, e.g.
   `filter_values: "{{rows:record_id}}"`, not embedded in a longer string

@@ -748,6 +748,18 @@ export default function App() {
       if (res?.artifact_id) syncIds[label] = res.artifact_id;
     }
 
+    // A form's rows may be derived from an earlier form's answers — one form
+    // resolving what the next one asks about. Ordering keeps that acyclic and
+    // the verifiers enforce it, so this is the same lookup as the others.
+    const formIds: Record<string, string> = {};
+    for (const label of step.form_input ?? []) {
+      const producer = loadedProfile.structure.steps.find(
+        (s) => s.type === "user_input" && s.form_output === label,
+      );
+      const res = producer ? forms[producer.label]?.result : undefined;
+      if (res) formIds[label] = res.artifact_id;
+    }
+
     const values = forms[stepLabel]?.values ?? {};
     setForms((prev) => ({
       ...prev,
@@ -762,6 +774,7 @@ export default function App() {
         filePaths,
         queryIds,
         syncIds,
+        formIds,
         stepLabel,
         sessionId: loadedProfile.session_id,
         values,

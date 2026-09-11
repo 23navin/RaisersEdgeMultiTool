@@ -622,7 +622,7 @@ Everything you can declare, in one place. Follow the link for exact field lists.
 | Notices | `notices` on a transform | Post-run informational tables (never fail the step) |
 | Query step | `steps[].type: re_query` | Reads RE mid-pipeline → `{{query:Label}}` |
 | Sync step | `steps[].type: code_table_sync` | Writes code table entries → optional `{{sync:Label}}` |
-| Form step | `steps[].type: user_input` | Asks the operator for values the files don't carry → `{{form:Label}}` ([details](STEP_TYPES.md#step-type-user_input)) |
+| Form step | `steps[].type: user_input` | Asks the operator for values the files don't carry → `{{form:Label}}`. Select fields can draw their choices from a live result via `options_sql` ([details](STEP_TYPES.md#step-type-user_input)) |
 | Visualization step | `steps[].type: visualization` | Draws a result set on screen — no file written ([details](STEP_TYPES.md#step-type-visualization)) |
 | Instruction step | `steps[].type: manual_instruction` | Prose-only closing step |
 

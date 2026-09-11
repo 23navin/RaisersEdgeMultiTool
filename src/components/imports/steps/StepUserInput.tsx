@@ -15,16 +15,26 @@
 // SQL reads is always what the boxes currently say. Nothing here is a gate; the
 // step counts as done once every required box is filled.
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   PencilLineIcon,
   FileTextIcon,
   DatabaseIcon,
   CheckIcon,
+  ChevronsUpDownIcon,
   XIcon,
   type LucideIcon,
 } from "lucide-react";
-import type { UserInputField, UserInputResult } from "../../../types";
+import { Popover, PopoverTrigger, PopoverContent } from "../../ui/popover";
+import {
+  Command,
+  CommandInput,
+  CommandList,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+} from "../../ui/command";
+import type { FieldOption, UserInputField, UserInputResult } from "../../../types";
 
 export type UserInputStatus = "idle" | "running" | "done" | "error";
 
@@ -34,7 +44,7 @@ export type UserInputStatus = "idle" | "running" | "done" | "error";
 export type FormSource = {
   label: string;
   ready: boolean;
-  kind: "file" | "query" | "sync";
+  kind: "file" | "query" | "sync" | "form";
 };
 
 export type FormCard = {
@@ -64,7 +74,13 @@ const SOURCE_ICON: Record<FormSource["kind"], LucideIcon> = {
   file: FileTextIcon,
   query: DatabaseIcon,
   sync: DatabaseIcon,
+  form: PencilLineIcon,
 };
+
+// Below this many choices a plain <select> is the better control: no popover,
+// no search box, keyboard-navigable out of the box. Above it, searching beats
+// scrolling — a fund list runs to hundreds of entries.
+const SEARCHABLE_FROM = 8;
 
 const inputBase =
   "h-[28px] border border-[#e5e2dc] bg-white px-[8px] text-[12px] text-neutral-800 " +
@@ -86,21 +102,108 @@ function SourceNode({ source }: { source: FormSource }) {
   );
 }
 
-// One control. The field's declared type picks the input; `select` gets the
-// declared options and everything else is a plain box of the matching type.
+// A select over a long list: a searchable popover rather than a dropdown you
+// scroll. Matching runs over both the stored value and the label, so a fund is
+// findable by its id or by its description.
+function SearchableSelect({
+  options,
+  value,
+  invalid,
+  onChange,
+}: {
+  options: FieldOption[];
+  value: string;
+  invalid: boolean;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const chosen = options.find((o) => o.value === value);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        role="combobox"
+        aria-expanded={open}
+        className={`${inputBase} ${invalid ? "border-amber-400" : ""} flex w-full min-w-[190px] items-center justify-between gap-[6px] cursor-pointer hover:bg-neutral-50`}
+      >
+        <span className={chosen ? "truncate" : "truncate text-neutral-400"}>
+          {chosen ? chosen.label : value ? `${value} (not in list)` : "—"}
+        </span>
+        <ChevronsUpDownIcon size={12} className="shrink-0 text-neutral-400" />
+      </PopoverTrigger>
+      <PopoverContent className="w-[320px] p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Search" className="text-[12px]" />
+          <CommandList>
+            <CommandEmpty>No match</CommandEmpty>
+            <CommandGroup>
+              {/* Clearing is a legitimate answer — a row the operator decides
+                  not to map stays unmapped rather than forcing a wrong pick. */}
+              <CommandItem
+                value="__clear__"
+                onSelect={() => {
+                  onChange("");
+                  setOpen(false);
+                }}
+                className="text-[12px] text-neutral-500"
+              >
+                — none —
+              </CommandItem>
+              {options.map((o) => (
+                <CommandItem
+                  key={o.value}
+                  value={o.label}
+                  keywords={[o.value]}
+                  onSelect={() => {
+                    onChange(o.value);
+                    setOpen(false);
+                  }}
+                  className="text-[12px]"
+                >
+                  <span className="truncate">{o.label}</span>
+                  {o.value === value && (
+                    <CheckIcon size={12} className="ml-auto text-green-600" />
+                  )}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// One control. The field's declared type picks the input; a `select` renders
+// from the options the backend resolved — a fixed YAML list and an options_sql
+// result arrive in the same shape, so this doesn't care which it was.
 function FieldControl({
   field,
+  options,
   value,
   missing,
+  stale,
   onChange,
 }: {
   field: UserInputField;
+  options: FieldOption[];
   value: string;
   missing: boolean;
+  stale: boolean;
   onChange: (value: string) => void;
 }) {
-  const cls = `${inputBase} ${missing ? "border-amber-400" : ""}`;
+  const flagged = missing || stale;
+  const cls = `${inputBase} ${flagged ? "border-amber-400" : ""}`;
   if (field.type === "select") {
+    if (options.length >= SEARCHABLE_FROM) {
+      return (
+        <SearchableSelect
+          options={options}
+          value={value}
+          invalid={flagged}
+          onChange={onChange}
+        />
+      );
+    }
     return (
       <select
         className={`${cls} cursor-pointer`}
@@ -108,9 +211,14 @@ function FieldControl({
         onChange={(e) => onChange(e.target.value)}
       >
         <option value="">—</option>
-        {(field.options ?? []).map((o) => (
-          <option key={o} value={o}>
-            {o}
+        {/* A held value the list no longer offers still needs somewhere to
+            show, or the box would silently read as a different choice. */}
+        {value && !options.some((o) => o.value === value) && (
+          <option value={value}>{value} (not in list)</option>
+        )}
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
           </option>
         ))}
       </select>
@@ -182,10 +290,14 @@ export function StepUserInput({
   }, [form.status]);
 
   const rows = form.result?.rows ?? [];
+  const blank = rows.filter((r) => r.missing.length > 0).length;
+  const stale = rows.filter((r) => r.stale.length > 0).length;
   const filledLabel = form.result
     ? form.result.complete
       ? "all values set"
-      : `${rows.filter((r) => r.missing.length > 0).length} still blank`
+      : stale > 0 && blank === 0
+        ? `${stale} no longer in the list`
+        : `${blank} still blank`
     : null;
 
   return (
@@ -236,11 +348,19 @@ export function StepUserInput({
           <table className="w-full text-[12px]">
             <thead>
               <tr className="border-b border-[#e5e2dc] bg-[#faf9f7]">
-                {form.keyed && (
-                  <th className="text-left font-medium text-neutral-600 px-[10px] py-[7px]">
-                    {rows[0].columns[0] ?? "Value"}
-                  </th>
-                )}
+                {/* Every column rows_sql selected gets its own header, under
+                    the name the SQL gave it — the row's identity is often more
+                    than one value (a project id AND the title it arrived
+                    under), and reading them concatenated is no use. */}
+                {form.keyed &&
+                  rows[0].columns.map((c) => (
+                    <th
+                      key={c}
+                      className="text-left font-medium text-neutral-600 px-[10px] py-[7px] whitespace-nowrap"
+                    >
+                      {c}
+                    </th>
+                  ))}
                 {form.fields.map((f) => (
                   <th
                     key={f.id}
@@ -255,17 +375,23 @@ export function StepUserInput({
             <tbody>
               {rows.map((row) => (
                 <tr key={row.key} className="border-b border-[#f0eee9] last:border-b-0">
-                  {form.keyed && (
-                    <td className="px-[10px] py-[6px] text-neutral-800 whitespace-nowrap">
-                      {row.display.join(" · ")}
-                    </td>
-                  )}
+                  {form.keyed &&
+                    row.columns.map((c, i) => (
+                      <td
+                        key={c}
+                        className="px-[10px] py-[6px] text-neutral-800 align-middle"
+                      >
+                        {row.display[i] ?? ""}
+                      </td>
+                    ))}
                   {form.fields.map((f) => (
-                    <td key={f.id} className="px-[10px] py-[6px]">
+                    <td key={f.id} className="px-[10px] py-[6px] align-middle">
                       <FieldControl
                         field={f}
+                        options={form.result?.options?.[f.id] ?? []}
                         value={form.values[row.key]?.[f.id] ?? row.values[f.id] ?? ""}
                         missing={row.missing.includes(f.id)}
+                        stale={row.stale.includes(f.id)}
                         onChange={(v) => form.onChange(row.key, f.id, v)}
                       />
                     </td>

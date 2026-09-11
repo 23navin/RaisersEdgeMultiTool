@@ -80,7 +80,10 @@ export type UserInputField = {
   label: string;
   type: string;            // "date" | "text" | "number" | "select"
   required?: boolean;
-  options?: string[];      // allowed values for "select"
+  options?: string[];      // allowed values for "select", fixed in YAML
+  // ...or a SELECT naming them at run time. Resolved values arrive in
+  // UserInputResult.options — the component reads them from there either way.
+  options_sql?: string;
   default?: string;
 };
 
@@ -315,6 +318,16 @@ export type FormRow = {
   display: string[];
   values: Record<string, string>;
   missing: string[];
+  // Select fields holding a value their option list no longer offers — the
+  // list changed underneath the selection. Kept, not cleared, but blocks done.
+  stale: string[];
+};
+
+// One choice on a select field. Same shape whether the options came from a
+// fixed YAML list or from the field's options_sql.
+export type FieldOption = {
+  value: string;
+  label: string;
 };
 
 export type UserInputResult = {
@@ -322,7 +335,10 @@ export type UserInputResult = {
   artifact_id: string;     // opaque id of the JSON the values were written to
   rows: FormRow[];
   row_count: number;
-  complete: boolean;       // every required field on every row is filled
+  // field id -> its choices, for select fields only. One list per field,
+  // shared by every row.
+  options: Record<string, FieldOption[]>;
+  complete: boolean;       // every required field filled, no stale selection
 };
 
 // Returned by run_code_table_sync. Mirrors code_tables::SyncResult.

@@ -182,6 +182,7 @@ pub async fn run_user_input(
     file_paths: HashMap<String, String>,
     query_ids: HashMap<String, String>,
     sync_ids: HashMap<String, String>,
+    form_ids: HashMap<String, String>,
     step_label: String,
     session_id: String,
     values: HashMap<String, HashMap<String, String>>, // row key → field id → value
@@ -193,6 +194,7 @@ pub async fn run_user_input(
             file_paths,
             query_ids,
             sync_ids,
+            form_ids,
             &step_label,
             &session_id,
             &values,

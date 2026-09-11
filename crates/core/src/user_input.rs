@@ -44,6 +44,20 @@ pub struct FormRow {
     pub values: HashMap<String, String>,
     // Required fields on this row that are still blank.
     pub missing: Vec<String>,
+    // Select fields on this row holding a value that is no longer one of the
+    // field's options — the list it was picked from has changed underneath it
+    // (an re_query re-run returning a different fund list, say). Kept rather
+    // than silently cleared, so the operator sees what they chose and why it
+    // stopped being valid.
+    pub stale: Vec<String>,
+}
+
+// One choice on a select field. `value` is what gets published; `label` is what
+// the operator reads. They're the same when options_sql selects one column.
+#[derive(Debug, Clone, Serialize)]
+pub struct FieldOption {
+    pub value: String,
+    pub label: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -52,9 +66,12 @@ pub struct UserInputResult {
     pub artifact_id: String, // where the rows were written — abs path here, an opaque id by the time api.rs is done
     pub rows: Vec<FormRow>,
     pub row_count: usize,
-    // True when every required field on every row is filled. Downstream steps
-    // gate on this: a blank date would otherwise join as NULL and quietly empty
-    // a column of the import file.
+    // field id → its choices, for select fields only. Resolved once per run and
+    // shared by every row: a field's options describe the field, not the row.
+    pub options: HashMap<String, Vec<FieldOption>>,
+    // True when every required field on every row is filled and no selection has
+    // gone stale. Downstream steps gate on this: a blank date would otherwise
+    // join as NULL and quietly empty a column of the import file.
     pub complete: bool,
 }
 
@@ -123,7 +140,57 @@ pub fn run_user_input(
         None => (Vec::new(), 0, vec![Vec::new()]),
     };
 
-    // 2. Merge the supplied values into each row. Duplicate keys collapse to
+    // 2. The choices for every select field. A static `options:` list is used
+    //    as-is; `options_sql` is run against the same sources rows_sql saw, so
+    //    a field can offer what an earlier step fetched.
+    let mut options: HashMap<String, Vec<FieldOption>> = HashMap::new();
+    for f in fields {
+        if let Some(name) = f.options_sql.as_deref() {
+            let sql = loaded.sql_files.get(name).ok_or_else(|| {
+                AppError::ParseError(format!(
+                    "user_input step '{}': field '{}' options_sql file '{}' not found in profile",
+                    step.label, f.id, name
+                ))
+            })?;
+            let result = db::select_rows(file_paths, sources, sql)?;
+            if result.columns.is_empty() {
+                return Err(AppError::ParseError(format!(
+                    "user_input step '{}': field '{}' options_sql sql/{} returned no columns",
+                    step.label, f.id, name
+                )));
+            }
+            // First column is the value; a second, when present, is the label.
+            let mut seen_values: HashSet<String> = HashSet::new();
+            let choices: Vec<FieldOption> = result
+                .rows
+                .iter()
+                .filter_map(|r| {
+                    let value = r.first().map(|v| v.trim().to_string())?;
+                    if value.is_empty() || !seen_values.insert(value.clone()) {
+                        return None;
+                    }
+                    let label = r
+                        .get(1)
+                        .map(|l| l.trim())
+                        .filter(|l| !l.is_empty())
+                        .unwrap_or(&value)
+                        .to_string();
+                    Some(FieldOption { value, label })
+                })
+                .collect();
+            options.insert(f.id.clone(), choices);
+        } else if let Some(fixed) = f.options.as_ref() {
+            options.insert(
+                f.id.clone(),
+                fixed
+                    .iter()
+                    .map(|o| FieldOption { value: o.clone(), label: o.clone() })
+                    .collect(),
+            );
+        }
+    }
+
+    // 3. Merge the supplied values into each row. Duplicate keys collapse to
     //    one row: two controls writing the same key would publish two rows the
     //    author can't tell apart on a join.
     let mut seen: HashSet<String> = HashSet::new();
@@ -153,10 +220,19 @@ pub fn run_user_input(
 
         let mut values_out: HashMap<String, String> = HashMap::new();
         let mut missing: Vec<String> = Vec::new();
+        let mut stale: Vec<String> = Vec::new();
         for f in fields {
             let v = resolve_value(f, supplied);
             match &v {
                 Some(s) => {
+                    // A held selection the field no longer offers. Published
+                    // anyway — dropping it would hide the mismatch — but it
+                    // keeps the step from counting as done.
+                    if let Some(choices) = options.get(&f.id) {
+                        if !choices.iter().any(|c| c.value == *s) {
+                            stale.push(f.id.clone());
+                        }
+                    }
                     values_out.insert(f.id.clone(), s.clone());
                     obj.insert(f.id.clone(), Value::String(s.clone()));
                 }
@@ -177,11 +253,12 @@ pub fn run_user_input(
             display: raw.clone(),
             values: values_out,
             missing,
+            stale,
         });
         published.push(Value::Object(obj));
     }
 
-    // 3. Write them where later SQL will read them. One stable filename per
+    // 4. Write them where later SQL will read them. One stable filename per
     //    label — the file is the form's current state, so an edit overwrites.
     fs::create_dir_all(forms_dir)
         .map_err(|e| AppError::IoError(format!("Cannot create forms dir: {}", e)))?;
@@ -189,11 +266,14 @@ pub fn run_user_input(
     fs::write(&path, serde_json::to_vec(&published).unwrap_or_default())
         .map_err(|e| AppError::IoError(format!("Cannot write form values: {}", e)))?;
 
-    let complete = rows.iter().all(|r| r.missing.is_empty());
+    let complete = rows
+        .iter()
+        .all(|r| r.missing.is_empty() && r.stale.is_empty());
     Ok(UserInputResult {
         form_output: form_output.to_string(),
         artifact_id: path.to_string_lossy().to_string(),
         row_count: rows.len(),
+        options,
         complete,
         rows,
     })
@@ -232,6 +312,7 @@ mod tests {
             field_type: "date".to_string(),
             required,
             options: None,
+            options_sql: None,
             default: default.map(|s| s.to_string()),
         }
     }
@@ -336,6 +417,50 @@ mod tests {
         .expect("runs");
         assert!(!cleared.complete);
         assert!(!cleared.rows[0].values.contains_key("date_from"));
+    }
+
+    // A static options list becomes the field's choices, and a value outside it
+    // is published but marked stale so the step can't count as done.
+    #[test]
+    fn static_options_flag_a_value_they_do_not_offer() {
+        let mut f = field("pick", true, None);
+        f.field_type = "select".to_string();
+        f.options = Some(vec!["A".to_string(), "B".to_string()]);
+        let (loaded, step) = step_with(vec![f], None);
+        let dir = forms_dir("options");
+
+        let ok = run_user_input(
+            &loaded,
+            &step,
+            &HashMap::new(),
+            &SqlSources::new(),
+            &HashMap::from([(
+                String::new(),
+                HashMap::from([("pick".to_string(), "A".to_string())]),
+            )]),
+            &dir,
+        )
+        .expect("runs");
+        assert!(ok.complete);
+        assert_eq!(ok.options["pick"].len(), 2);
+        assert_eq!(ok.options["pick"][0].label, "A");
+
+        let gone = run_user_input(
+            &loaded,
+            &step,
+            &HashMap::new(),
+            &SqlSources::new(),
+            &HashMap::from([(
+                String::new(),
+                HashMap::from([("pick".to_string(), "Z".to_string())]),
+            )]),
+            &dir,
+        )
+        .expect("runs");
+        assert!(!gone.complete, "a value the field no longer offers is stale");
+        assert_eq!(gone.rows[0].stale, vec!["pick".to_string()]);
+        // Still published — hiding it would hide the mismatch.
+        assert_eq!(gone.rows[0].values["pick"], "Z");
     }
 
     // A form with no fields collects nothing — a profile error, not an empty run.
