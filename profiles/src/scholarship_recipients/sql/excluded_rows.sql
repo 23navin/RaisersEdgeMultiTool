@@ -5,8 +5,8 @@
 
 WITH src AS (
   SELECT
-    TRIM(CAST("BroncoID" AS VARCHAR))           AS bronco_id,
-    TRIM(CAST(COLUMNS('^Award') AS VARCHAR))    AS term,
+    TRIM(CAST("Bronco ID" AS VARCHAR))          AS bronco_id,
+    TRIM(CAST("Award QTR/YR" AS VARCHAR))       AS term,
     TRIM(CAST("Foundation Project" AS VARCHAR)) AS fund_id,
     TRIM(CAST("Project Title" AS VARCHAR))      AS project_title
   FROM read_xlsx('{{input:Recipients}}')

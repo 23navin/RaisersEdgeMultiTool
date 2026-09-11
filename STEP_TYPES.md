@@ -267,6 +267,11 @@ Inside the SQL file:
   `read_xlsx('{{input_file}}')`.
 - Quote column names containing spaces or special characters:
   `"Item #"`.
+- Headers typed as multi-line cells in Excel are flattened before the SQL sees
+  them — every run of whitespace collapsed to one space, ends trimmed — so a
+  stacked "Award / QTR/YR" cell is quoted as `"Award QTR/YR"`. This happens
+  wherever the placeholder is the path argument of a `read_*()` call, and it
+  applies to `validation:` labels too.
 - `{{output:LabelName}}` is replaced with the temp-dir path for the declared
   output named `LabelName`. Use this when a single transform writes multiple
   files — the SQL author writes one `COPY` per output and the runtime

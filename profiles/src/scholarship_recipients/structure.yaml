@@ -18,14 +18,15 @@ inputs:
   - label: Recipients
     type: xlsx
     required: true
-    # The award list as the foundation sends it. The "Award QTR/YR" header is a
-    # two-line cell in the source workbook — the label below carries the same
-    # newline, so it matches exactly rather than through the fuzzy fallback.
+    # The award list as the foundation sends it. Several headers are two-line
+    # cells in the source workbook ("Bronco" / "ID", "Award" / "QTR/YR"), but
+    # the labels below name them the way they read on screen: the harness
+    # flattens every header's line breaks before the rules are applied.
     validation:
-      - label: BroncoID
+      - label: "Bronco ID"
         required: true
         type: number
-      - label: "Award \nQTR/YR"
+      - label: "Award QTR/YR"
         required: true
         type: string
       - label: Foundation Project

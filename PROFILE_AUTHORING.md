@@ -347,6 +347,12 @@ Rules that bite:
 - `{{input_file}}` is a legacy alias for the same thing, valid **only** when the
   transform declares exactly one input. Prefer the labeled form.
 - Excel headers must be on row 1; otherwise skip rows with a CTE or `OFFSET`.
+- **Multi-line headers are flattened for you.** A header typed as a stacked cell
+  in Excel arrives as a column literally named `"Award \r\n QTR/YR"`. Every
+  input file is read through a projection that collapses each run of whitespace
+  to a single space and trims the ends, so you quote it the way it reads on
+  screen: `"Award QTR/YR"`. The same flattened name is what a `validation:`
+  label matches. Nothing changes for a file whose headers are already clean.
 
 To write **more than one file** from one transform, name each output explicitly
 and write your own `COPY` statements — the whole file then runs as a batch, so
@@ -656,7 +662,7 @@ Every placeholder the runtime substitutes, and where it is legal.
 
 | Placeholder | Resolves to | Legal in | Requires |
 |---|---|---|---|
-| `{{input:Label}}` | Path of the uploaded file for that input | Import transform SQL, notice SQL, `params_sql`, sync SQL | The label declared in `inputs:` **and** in the step's `input:` |
+| `{{input:Label}}` | Path of the uploaded file for that input. Inside a `read_*()` call the whole call is rewritten to flatten multi-line headers | Import transform SQL, notice SQL, `params_sql`, sync SQL | The label declared in `inputs:` **and** in the step's `input:` |
 | `{{input_file}}` | Same, single-input alias | Same | The transform declares exactly one input |
 | `{{output:Label}}` | Temp path for that output file | Import transform SQL | The label declared in `outputs:` and the step's `output:` |
 | `{{codetable:Label}}` | JSON path of a pulled code table | Any SQL, both kinds | A `code_tables:` entry whose `output` is `Label` |
@@ -836,6 +842,7 @@ cp -r profiles/src/test1 profiles/src/vendor_a
 | DuckDB "Referenced column not found" | Column name needs double quotes: `"Item #"` |
 | Excel columns come back as `column0`, `column1` | Headers aren't on row 1 — skip rows with a CTE or `OFFSET` |
 | `{{input_file}}` errors in a working transform | The transform declares more than one input — switch to `{{input:Label}}` |
+| A stacked Excel header won't bind | Quote its flattened name — `"Award QTR/YR"`, not the raw two-line cell. Flattening only applies where the placeholder is a `read_*()` argument |
 | Binder error on a `{{sync:X}}` column | The sync attempted zero rows, so there's no schema to infer — use `read_json(..., columns={...})` |
 | `{{form:X}}` joins to nothing | The form has a required box still blank on that row, so it published `null` — fill it in; the step stays "not done" until every required box on every row is filled |
 | `{{query:X}}` or `{{sync:X}}` unresolved at runtime | The consumer didn't declare it in `query_input` / `sync_input`, or the producer step comes later, or the producer hasn't been run yet (a zero-row sync still publishes `[]`, but it must have run) |

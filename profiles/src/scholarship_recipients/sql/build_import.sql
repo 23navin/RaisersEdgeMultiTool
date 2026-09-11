@@ -10,12 +10,12 @@
 -- infer from an empty array.
 
 WITH src AS (
-  -- COLUMNS('^Award') picks the "Award QTR/YR" column by prefix — its header is
-  -- a two-line cell whose trailing space before the break can't be seen in a
-  -- quoted identifier. See semester_terms.sql for the full note.
+  -- "Bronco ID" and "Award QTR/YR" are two-line cells in the workbook. The
+  -- harness flattens every header's line breaks before the SQL sees the file,
+  -- so they are quoted here exactly as they read on screen.
   SELECT
-    TRIM(CAST("BroncoID" AS VARCHAR))           AS bronco_id,
-    TRIM(CAST(COLUMNS('^Award') AS VARCHAR))    AS term,
+    TRIM(CAST("Bronco ID" AS VARCHAR))          AS bronco_id,
+    TRIM(CAST("Award QTR/YR" AS VARCHAR))       AS term,
     TRIM(CAST("Foundation Project" AS VARCHAR)) AS fund_id,
     TRIM(CAST("Project Title" AS VARCHAR))      AS project_title,
     TRY_CAST(
