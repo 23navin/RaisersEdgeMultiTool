@@ -445,6 +445,7 @@ pub fn run_transform(
 //   {{codetable:Label}} — one code table's entries      (code_tables.rs)
 //   {{query:Label}}     — one re_query step's results   (query_step.rs)
 //   {{sync:Label}}      — one code_table_sync's outcome (code_tables.rs)
+//   {{form:Label}}      — one user_input step's values  (user_input.rs)
 // Kept separate from {{input:Label}} so a profile can tell "a file the user
 // picked" apart from "data produced by an earlier step" at a glance.
 
@@ -465,6 +466,7 @@ pub fn substitute_labeled_paths(
 pub const KIND_CODETABLE: &str = "codetable";
 pub const KIND_QUERY: &str = "query";
 pub const KIND_SYNC: &str = "sync";
+pub const KIND_FORM: &str = "form";
 
 // ── SqlSources ────────────────────────────────────────────────────────────────
 // The registry of label→path maps a SQL body can reference, keyed by placeholder

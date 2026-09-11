@@ -17,6 +17,7 @@ use multitool_core::errors::AppError;
 use multitool_core::profile::{ProfileSummary, LoadedProfile, ProfileFileEntry};
 use multitool_core::query_step;
 use multitool_core::re_calls::Transport;
+use multitool_core::user_input;
 use multitool_core::report::{ReportRunResult, ActionResult};
 use multitool_core::validate::ValidationReport;
 use crate::sky_auth;
@@ -89,6 +90,7 @@ pub async fn run_profile(
     file_paths: HashMap<String, String>,  // input_label → local file path
     query_ids: HashMap<String, String>,   // query_output label → artifact id
     sync_ids: HashMap<String, String>,    // sync_output label → artifact id
+    form_ids: HashMap<String, String>,    // form_output label → artifact id
     sql_file: String,
     session_id: String,
     output_labels: Vec<String>,
@@ -102,6 +104,7 @@ pub async fn run_profile(
             file_paths,
             query_ids,
             sync_ids,
+            form_ids,
             &sql_file,
             &session_id,
             &output_labels,
@@ -149,13 +152,52 @@ pub async fn run_visualization(
     file_paths: HashMap<String, String>,
     query_ids: HashMap<String, String>,
     sync_ids: HashMap<String, String>,
+    form_ids: HashMap<String, String>,
     step_label: String,
     session_id: String,
 ) -> Result<db::ResultSet, String> {
     let ctx = ctx(&app)?;
     tokio::task::spawn_blocking(move || {
-        api::run_visualization(&ctx, file_paths, query_ids, sync_ids, &step_label, &session_id)
-            .map_err(|e| e.to_string())
+        api::run_visualization(
+            &ctx,
+            file_paths,
+            query_ids,
+            sync_ids,
+            form_ids,
+            &step_label,
+            &session_id,
+        )
+        .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// Recomputes a user_input step's rows and republishes the values the user has
+// typed. Called on every edit, so it stays off the network unless the profile
+// declares code tables.
+#[tauri::command]
+pub async fn run_user_input(
+    app: AppHandle,
+    file_paths: HashMap<String, String>,
+    query_ids: HashMap<String, String>,
+    sync_ids: HashMap<String, String>,
+    step_label: String,
+    session_id: String,
+    values: HashMap<String, HashMap<String, String>>, // row key → field id → value
+) -> Result<user_input::UserInputResult, String> {
+    let ctx = ctx(&app)?;
+    tokio::task::spawn_blocking(move || {
+        api::run_user_input(
+            &ctx,
+            file_paths,
+            query_ids,
+            sync_ids,
+            &step_label,
+            &session_id,
+            &values,
+        )
+        .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?

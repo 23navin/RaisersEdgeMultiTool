@@ -299,6 +299,8 @@ exist:
 | `sql_transform` | Pipeline diagram + Generate + Download | [STEP_TYPES.md](STEP_TYPES.md#step-type-sql_transform) |
 | `re_query` | Run Query — pulls rows from RE mid-pipeline | [STEP_TYPES.md](STEP_TYPES.md#step-type-re_query) |
 | `code_table_sync` | Add/Update/Delete entries — writes to an RE code table | [STEP_TYPES.md](STEP_TYPES.md#step-type-code_table_sync) |
+| `user_input` | A form the operator fills in — values the files don't carry | [STEP_TYPES.md](STEP_TYPES.md#step-type-user_input) |
+| `visualization` | Draws a result set on screen — no file written | [STEP_TYPES.md](STEP_TYPES.md#step-type-visualization) |
 | `manual_instruction` | Prose only, no action | [STEP_TYPES.md](STEP_TYPES.md#step-type-manual_instruction) |
 
 The minimal profile is upload → transform → instructions:
@@ -620,6 +622,7 @@ Everything you can declare, in one place. Follow the link for exact field lists.
 | Notices | `notices` on a transform | Post-run informational tables (never fail the step) |
 | Query step | `steps[].type: re_query` | Reads RE mid-pipeline → `{{query:Label}}` |
 | Sync step | `steps[].type: code_table_sync` | Writes code table entries → optional `{{sync:Label}}` |
+| Form step | `steps[].type: user_input` | Asks the operator for values the files don't carry → `{{form:Label}}` ([details](STEP_TYPES.md#step-type-user_input)) |
 | Visualization step | `steps[].type: visualization` | Draws a result set on screen — no file written ([details](STEP_TYPES.md#step-type-visualization)) |
 | Instruction step | `steps[].type: manual_instruction` | Prose-only closing step |
 
@@ -659,19 +662,25 @@ Every placeholder the runtime substitutes, and where it is legal.
 | `{{codetable:Label}}` | JSON path of a pulled code table | Any SQL, both kinds | A `code_tables:` entry whose `output` is `Label` |
 | `{{query:Label}}` | JSON path of a query result | Import transform SQL and `visualization` SQL (with `query_input`), report transform SQL | An earlier `re_query` step's `query_output`, or a report `queries[].output` |
 | `{{sync:Label}}` | JSON path of a sync step's outcome rows | Import transform SQL and `visualization` SQL | An earlier `code_table_sync` step's `sync_output`, declared in `sync_input` |
+| `{{form:Label}}` | JSON path of the values a form collected — one object per row, carrying `key`, every column its `rows_sql` selected, and one key per field id | Import transform SQL and `visualization` SQL | An earlier `user_input` step's `form_output`, declared in `form_input` |
 | `{{rows:col}}` | JSON **array** of that column's values from `params_sql` (deduped, blanks dropped, order kept) | `re_query` step `template` | The value is *exactly* the placeholder, e.g. `filter_values: "{{rows:record_id}}"` |
 | `{{value:col}}` | The first row's cell from `params_sql`, substituted inline | `re_query` step `template` | — |
 | `{{param:id}}` / `{{param:id.from}}` / `{{param:id.to}}` | A report parameter's value | Report `queries[].template` / `bind` | A matching `parameters[].id` |
 | `{{now}}` | Current timestamp | Report `actions[].bind` | — |
 
-Read the JSON ones with `read_json_auto(...)` — **except** `{{sync:Label}}`,
-which is legitimately empty when the sync had nothing to push. Auto-detection
-has no schema to infer from an empty file, so name the columns explicitly:
+Read the JSON ones with `read_json_auto(...)` — **except** `{{sync:Label}}` and
+`{{form:Label}}`, both of which are legitimately empty (a sync with nothing to
+push; a form whose source rows came back empty). Auto-detection has no schema to
+infer from an empty file, so name the columns explicitly:
 
 ```sql
 read_json('{{sync:NewCodes}}', columns={'long_description': 'VARCHAR',
                                         'table_entries_id': 'VARCHAR',
                                         'sync_status': 'VARCHAR'})
+
+read_json('{{form:SemesterDates}}', columns={key: 'VARCHAR',
+                                             date_from: 'VARCHAR',
+                                             date_to: 'VARCHAR'})
 ```
 
 ---
@@ -686,6 +695,7 @@ producer step        names its result       consumer step           SQL reads
 ─────────────        ────────────────       ─────────────           ─────────
 re_query          →  query_output: Foo   →  query_input: [Foo]   →  {{query:Foo}}
 code_table_sync   →  sync_output:  Bar   →  sync_input:  [Bar]    →  {{sync:Bar}}
+user_input        →  form_output:  Baz   →  form_input:  [Baz]    →  {{form:Baz}}
 ```
 
 A consumer is any later step that declares the label — a `sql_transform` that
@@ -826,6 +836,7 @@ cp -r profiles/src/test1 profiles/src/vendor_a
 | Excel columns come back as `column0`, `column1` | Headers aren't on row 1 — skip rows with a CTE or `OFFSET` |
 | `{{input_file}}` errors in a working transform | The transform declares more than one input — switch to `{{input:Label}}` |
 | Binder error on a `{{sync:X}}` column | The sync attempted zero rows, so there's no schema to infer — use `read_json(..., columns={...})` |
+| `{{form:X}}` joins to nothing | The form has a required box still blank on that row, so it published `null` — fill it in; the step stays "not done" until every required box on every row is filled |
 | `{{query:X}}` or `{{sync:X}}` unresolved at runtime | The consumer didn't declare it in `query_input` / `sync_input`, or the producer step comes later, or the producer hasn't been run yet (a zero-row sync still publishes `[]`, but it must have run) |
 | `{{codetable:X}}` errors | `X` must match a `code_tables:` entry's `output`, not the RE table's display name |
 | `{{rows:col}}` sent as a string, not an array | It only becomes an array when the YAML value is *exactly* the placeholder |
@@ -849,7 +860,7 @@ cp -r profiles/src/test1 profiles/src/vendor_a
 - [ ] Every `outputs[].label` is written by some transform
 - [ ] Every `sql:` names a file that exists under `sql/`
 - [ ] Multi-output SQL uses one `COPY … TO '{{output:Label}}'` per output
-- [ ] Every `{{query:…}}` / `{{sync:…}}` is declared in `query_input` / `sync_input`, and its producer step comes earlier
+- [ ] Every `{{query:…}}` / `{{sync:…}}` / `{{form:…}}` is declared in `query_input` / `sync_input` / `form_input`, and its producer step comes earlier
 - [ ] Fixtures exist for every `re_query` (`fixtures/queries/`) and code table (`fixtures/codetables/`)
 - [ ] `instructions.md` has an anchor per step, in step order
 - [ ] `./profiles/build.sh` passes

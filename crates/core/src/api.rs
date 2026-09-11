@@ -27,6 +27,7 @@ use crate::profile::{self, LoadedProfile, NoticeQuery, ProfileFileEntry, Profile
 use crate::query_step;
 use crate::re_calls::Transport;
 use crate::report::{self, ActionResult, ReportRunResult};
+use crate::user_input;
 use crate::validate::{self, ValidationReport};
 use crate::workspace::{self, Workspace};
 
@@ -201,14 +202,16 @@ pub fn validate_file(
 // Executes one sql_transform's SQL against the attached input files, writing
 // each declared output into a fresh run dir inside the session.
 //
-// `file_paths` maps input label → local file path; `query_ids` / `sync_ids`
-// map upstream labels → the artifact ids their producing steps returned.
+// `file_paths` maps input label → local file path; `query_ids` / `sync_ids` /
+// `form_ids` map upstream labels → the artifact ids their producing steps
+// returned.
 
 pub fn run_profile(
     ctx: &Ctx,
     file_paths: HashMap<String, String>,
     query_ids: HashMap<String, String>,
     sync_ids: HashMap<String, String>,
+    form_ids: HashMap<String, String>,
     sql_file: &str,
     session_id: &str,
     output_labels: &[String],
@@ -246,12 +249,14 @@ pub fn run_profile(
 
     let query_paths = resolve_ids(&ws, &query_ids)?;
     let sync_paths = resolve_ids(&ws, &sync_ids)?;
+    let form_paths = resolve_ids(&ws, &form_ids)?;
 
     // Everything the SQL body may reference beyond {{input:}} / {{output:}}.
     let sources = db::SqlSources::new()
         .with(db::KIND_CODETABLE, &code_table_paths)
         .with(db::KIND_QUERY, &query_paths)
-        .with(db::KIND_SYNC, &sync_paths);
+        .with(db::KIND_SYNC, &sync_paths)
+        .with(db::KIND_FORM, &form_paths);
 
     let run_dir = ws.new_run_dir()?;
     let mut result = db::run_transform(&file_paths, &sources, sql, output_labels, &notices, &run_dir)?;
@@ -333,6 +338,7 @@ pub fn run_visualization(
     file_paths: HashMap<String, String>,
     query_ids: HashMap<String, String>,
     sync_ids: HashMap<String, String>,
+    form_ids: HashMap<String, String>,
     step_label: &str,
     session_id: &str,
 ) -> Result<db::ResultSet, AppError> {
@@ -367,13 +373,69 @@ pub fn run_visualization(
 
     let query_paths = resolve_ids(&ws, &query_ids)?;
     let sync_paths = resolve_ids(&ws, &sync_ids)?;
+    let form_paths = resolve_ids(&ws, &form_ids)?;
+
+    let sources = db::SqlSources::new()
+        .with(db::KIND_CODETABLE, &code_table_paths)
+        .with(db::KIND_QUERY, &query_paths)
+        .with(db::KIND_SYNC, &sync_paths)
+        .with(db::KIND_FORM, &form_paths);
+
+    db::select_rows(&file_paths, &sources, &sql)
+}
+
+// ── run_user_input ────────────────────────────────────────────────────────────
+// Works out which rows the step needs values for, merges in what the user has
+// typed, and publishes the result as {{form:Label}}. Called again on every edit
+// — the row set is recomputed from the files each time, so it can't go stale.
+
+pub fn run_user_input(
+    ctx: &Ctx,
+    file_paths: HashMap<String, String>,
+    query_ids: HashMap<String, String>,
+    sync_ids: HashMap<String, String>,
+    step_label: &str,
+    session_id: &str,
+    values: &HashMap<String, HashMap<String, String>>,
+) -> Result<user_input::UserInputResult, AppError> {
+    let (ws, loaded) = open_session(ctx, session_id)?;
+    let step = loaded
+        .structure
+        .steps
+        .iter()
+        .find(|s| s.label == step_label && s.step_type == "user_input")
+        .ok_or_else(|| {
+            AppError::ParseError(format!("No user_input step labelled '{}'", step_label))
+        })?;
+
+    // rows_sql reads the same sources a visualization does: the uploaded files,
+    // the profile's code tables, and any upstream result the step declares. It
+    // cannot read another form — a form whose rows depend on a form would have
+    // no stable order to resolve in.
+    let code_table_paths = if loaded.structure.code_tables.is_empty() {
+        HashMap::new()
+    } else {
+        let transport = ctx.transport()?;
+        code_tables::fetch_all(&loaded, &transport, &ws.codetables_dir())?
+    };
+    let query_paths = resolve_ids(&ws, &query_ids)?;
+    let sync_paths = resolve_ids(&ws, &sync_ids)?;
 
     let sources = db::SqlSources::new()
         .with(db::KIND_CODETABLE, &code_table_paths)
         .with(db::KIND_QUERY, &query_paths)
         .with(db::KIND_SYNC, &sync_paths);
 
-    db::select_rows(&file_paths, &sources, &sql)
+    let mut result = user_input::run_user_input(
+        &loaded,
+        step,
+        &file_paths,
+        &sources,
+        values,
+        &ws.forms_dir(),
+    )?;
+    result.artifact_id = ws.artifact_id(Path::new(&result.artifact_id))?;
+    Ok(result)
 }
 
 // ── reports ───────────────────────────────────────────────────────────────────
@@ -508,6 +570,9 @@ fn default_visualization_sql(step: &profile::Step) -> Result<String, AppError> {
     for label in step.sync_input.iter().flatten() {
         sources.push((db::KIND_SYNC, label.as_str()));
     }
+    for label in step.form_input.iter().flatten() {
+        sources.push((db::KIND_FORM, label.as_str()));
+    }
     match sources.as_slice() {
         [(kind, label)] => Ok(format!(
             "SELECT * FROM read_json_auto('{{{{{}:{}}}}}')",
@@ -515,7 +580,7 @@ fn default_visualization_sql(step: &profile::Step) -> Result<String, AppError> {
         )),
         [] => Err(AppError::ParseError(format!(
             "visualization step '{}' needs either a `sql` file or exactly one \
-             query_input / sync_input to display",
+             query_input / sync_input / form_input to display",
             step.label
         ))),
         _ => Err(AppError::ParseError(format!(
@@ -585,6 +650,7 @@ mod tests {
         step.sql = None;
         step.query_input = Some(vec!["RERecords".to_string()]);
         step.sync_input = None;
+        step.form_input = None;
         assert_eq!(
             default_visualization_sql(&step).unwrap(),
             "SELECT * FROM read_json_auto('{{query:RERecords}}')"
@@ -598,6 +664,7 @@ mod tests {
         step.sql = None;
         step.query_input = None;
         step.sync_input = None;
+        step.form_input = None;
         assert!(default_visualization_sql(&step).is_err());
 
         step.query_input = Some(vec!["A".to_string(), "B".to_string()]);
@@ -648,11 +715,137 @@ mod tests {
             file_paths,
             query_ids,
             HashMap::new(),
+            HashMap::new(),
             &viz_step,
             &loaded.session_id,
         )
         .expect("viz ok");
         assert_eq!(rows.rows.len(), 4, "columns: {:?}", rows.columns);
+    }
+
+    // The user_input round trip, through the real API surface: a form derives
+    // its rows from the uploaded file, the values the user typed are published,
+    // and a downstream transform reads them as {{form:Label}} using nothing but
+    // the artifact id that crossed the wire.
+    #[test]
+    fn user_input_values_reach_a_downstream_transform() {
+        let ctx = test_ctx("form-e2e");
+        std::fs::create_dir_all(&ctx.user_profiles_dir).unwrap();
+
+        let structure = "\
+id: form_demo
+name: Form Demo
+version: 1.0.0
+min_app_version: 0.1.0
+inputs:
+  - label: Rows
+    type: csv
+    required: true
+outputs:
+  - label: Out
+    type: csv
+steps:
+  - label: Upload
+    type: file_input
+    input: [Rows]
+  - label: Ask
+    type: user_input
+    input: [Rows]
+    rows_sql: terms.sql
+    key_column: term
+    fields:
+      - { id: date_from, label: Start, type: date, required: true }
+    form_output: Terms
+  - label: Build
+    type: sql_transform
+    input: [Rows]
+    form_input: [Terms]
+    sql: build.sql
+    output: [Out]
+";
+        let files = vec![
+            ProfileFileEntry { path: "structure.yaml".into(), content: structure.into() },
+            ProfileFileEntry {
+                path: "instructions.md".into(),
+                content: "# Form Demo\n".into(),
+            },
+            ProfileFileEntry {
+                path: "sql/terms.sql".into(),
+                content: "SELECT DISTINCT term FROM read_csv_auto('{{input:Rows}}') ORDER BY term"
+                    .into(),
+            },
+            // Inner join on the collected dates: a term left blank drops out.
+            ProfileFileEntry {
+                path: "sql/build.sql".into(),
+                content: "SELECT r.id, t.date_from \
+                          FROM read_csv_auto('{{input:Rows}}') r \
+                          JOIN read_json('{{form:Terms}}', columns={key: 'VARCHAR', date_from: 'VARCHAR'}) t \
+                          ON r.term = t.key \
+                          WHERE t.date_from IS NOT NULL"
+                    .into(),
+            },
+        ];
+        let zip = ctx.user_profiles_dir.join("form_demo.import");
+        let extract = std::env::temp_dir().join(workspace::unique_token());
+        profile::save_user_profile(&zip.to_string_lossy(), &files, &extract).expect("bundle saved");
+
+        let loaded = load_profile(&ctx, "user://form_demo.import").expect("load ok");
+
+        let csv = extract.join("rows.csv");
+        std::fs::write(&csv, "id,term\n1,F25\n2,SP26\n3,F25\n").unwrap();
+        let file_paths =
+            HashMap::from([("Rows".to_string(), csv.to_string_lossy().to_string())]);
+
+        // First pass: no values yet. Both terms are discovered, and the step is
+        // incomplete because the required date is blank on each.
+        let discovered = run_user_input(
+            &ctx,
+            file_paths.clone(),
+            HashMap::new(),
+            HashMap::new(),
+            "Ask",
+            &loaded.session_id,
+            &HashMap::new(),
+        )
+        .expect("form runs");
+        assert_eq!(discovered.row_count, 2, "rows: {:?}", discovered.rows);
+        assert!(!discovered.complete);
+        assert!(
+            !discovered.artifact_id.starts_with('/') && !discovered.artifact_id.contains(':'),
+            "artifact id leaked a path: {}",
+            discovered.artifact_id
+        );
+
+        // Second pass: one term dated, one left blank.
+        let values = HashMap::from([(
+            "F25".to_string(),
+            HashMap::from([("date_from".to_string(), "2025-09-22".to_string())]),
+        )]);
+        let filled = run_user_input(
+            &ctx,
+            file_paths.clone(),
+            HashMap::new(),
+            HashMap::new(),
+            "Ask",
+            &loaded.session_id,
+            &values,
+        )
+        .expect("form runs");
+        assert!(!filled.complete, "SP26 is still blank");
+
+        // The transform sees the dated term only — two F25 rows, no SP26.
+        let result = run_profile(
+            &ctx,
+            file_paths,
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::from([(filled.form_output.clone(), filled.artifact_id.clone())]),
+            "build.sql",
+            &loaded.session_id,
+            &["Out".to_string()],
+        )
+        .expect("transform ok");
+        assert_eq!(result.outputs[0].row_count, 2);
     }
 
     // Two sessions loading the same profile must not share extraction dirs —

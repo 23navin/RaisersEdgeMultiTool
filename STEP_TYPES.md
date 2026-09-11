@@ -32,8 +32,8 @@ A `.import` file is a zip archive containing:
 structure.yaml      # required — profile metadata, inputs/outputs, steps
 instructions.md     # optional — markdown text per step
 sql/                # optional — .sql files referenced by sql_transform steps,
-                    #            code_table_sync and visualization steps, and
-                    #            notice queries
+                    #            code_table_sync, user_input and visualization
+                    #            steps, and notice queries
 fixtures/           # optional — mock-mode RE responses:
                     #            queries/<query_output>.json  (re_query steps)
                     #            codetables/<output>.json     (code_tables)
@@ -691,6 +691,89 @@ Working example: `profiles/src/re_query_demo/` (`ReviewQueryResult`).
 
 ---
 
+## Step type: `user_input`
+
+### Purpose
+Asks the operator for values the uploaded files don't carry — a start and end
+date per semester code, a batch number, a gift type to apply — and publishes
+them to later SQL as `{{form:Label}}`. The third member of the upstream family
+`re_query` and `code_table_sync` belong to: an earlier step publishes a named
+result, later transforms declare it, SQL reads it as `{{kind:Label}}`.
+
+Where the rows come from decides the shape on screen:
+
+- **with `rows_sql`** — one row of controls per row that SQL returned, so the
+  uploaded file decides how many there are;
+- **without it** — a single unlabelled row, the "just ask me these once" form.
+
+Runs in `crates/core/src/user_input.rs`; rendered by `StepUserInput`.
+
+### YAML
+```yaml
+- label: SemesterDates
+  type: user_input
+  input: [Recipients]          # files rows_sql reads (optional)
+  query_input: [Funds]         # upstream results rows_sql reads (optional)
+  rows_sql: semester_terms.sql # one row per row of controls; omit for one row
+  key_column: term             # which of its columns identifies a row (default: the first)
+  fields:
+    - id: date_from            # the column name in {{form:SemesterDates}}
+      label: Start date        # what the operator sees
+      type: date               # date | text | number | select
+      required: true           # blank ⇒ the step isn't done
+    - { id: date_to, label: End date, type: date, required: true }
+  form_output: SemesterDates   # names the values; NOT `output`
+```
+
+`rows_sql` reads the same sources a `visualization` does — uploaded files, the
+profile's code tables, and any `query_input` / `sync_input` the step declares.
+It cannot read another form: a form whose rows depend on a form would have no
+stable order to resolve in.
+
+### What gets published
+One JSON object per row, written to the session and read with `read_json`:
+
+| Key | Value |
+| --- | --- |
+| every column `rows_sql` selected | that row's value, as text — so SQL can join on more than the key |
+| `key` | the `key_column` value (empty string for a single-row form) |
+| one key per field `id` | what the operator typed, or `null` while it's blank |
+
+```sql
+-- Read with an explicit column list, not read_json_auto: a form with no rows
+-- publishes [], and auto has no schema to infer from an empty array.
+FROM read_json('{{form:SemesterDates}}', columns={
+  key: 'VARCHAR', date_from: 'VARCHAR', date_to: 'VARCHAR'
+})
+```
+
+A `default` on a field seeds an untouched box. A box the operator clears stays
+cleared — the default doesn't fight the person editing it, so what the form
+shows and what was published never disagree.
+
+### UI behavior
+- **Source row**: one pill per declared source with a ready/not-ready mark —
+  the same row `visualization` draws.
+- **The form**: one table row per published row; the key column on the left when
+  the step has a `rows_sql`, then one control per field. `select` renders a
+  dropdown of its `options`; everything else renders the matching input type.
+  A required box that's still blank is outlined amber.
+- **Self-publishing, no button.** The step publishes as soon as its sources are
+  ready, and again ~450 ms after the last keystroke. There is nothing to press
+  and nothing to forget to press.
+- **Status**: "Saving…", then either "all values set" or "*n* still blank".
+- Values are held in `App.tsx` and survive the step re-running: swapping the
+  uploaded file re-derives the row list, and every row that survives keeps the
+  dates already typed against it.
+
+### Gating
+A published form isn't automatically a usable one. `stepsDone` and every
+downstream `canGenerate` require `result.complete` — every required field on
+every row filled — because a half-filled form publishes nulls, and joining to
+those would quietly empty a column of the import file.
+
+---
+
 ## Step type: `manual_instruction`
 
 ### Purpose
@@ -738,6 +821,9 @@ Computed in `App.tsx` (`stepsDone`):
   (`status === "done" && result.ok`). A partial run leaves the step open.
 - `visualization` — done when the SELECT returned without error (zero rows still
   counts; an empty result is a legitimate answer).
+- `user_input` — done when the values published **and** every required field on
+  every row is filled (`status === "done" && result.complete`). A half-filled
+  form leaves the step open.
 - `manual_instruction` — currently never marked done (no user action tracked).
 
 Generation state is keyed by `${stepLabel}::${transformIdx}` so that
@@ -751,10 +837,11 @@ step label alone — a `code_table_sync` step holds exactly one operation.
 | Step type            | Required fields                      | Optional fields                          |
 | -------------------- | ------------------------------------ | ---------------------------------------- |
 | `file_input`         | `label`, `type`, at least one `input`| `input[].validate`                       |
-| `sql_transform`      | `label`, `type`, `sql` or `transforms`| `input`, `output`, `notices`, `query_input`, `sync_input`, `transforms[].*` |
+| `sql_transform`      | `label`, `type`, `sql` or `transforms`| `input`, `output`, `notices`, `query_input`, `sync_input`, `form_input`, `transforms[].*` |
 | `re_query`           | `label`, `type`, `query_output`, `ref` or `template` | `input`, `params_sql`, `bind`     |
 | `code_table_sync`    | `label`, `type`, `sql`, `operation`, `code_table` or `code_table_id` | `input`, `sync_output` |
-| `visualization`      | `label`, `type`, `visualization.type`, and either `sql` or exactly one `query_input`/`sync_input` | `input`, `query_input`, `sync_input`, `visualization.title`, `visualization.config` |
+| `user_input`         | `label`, `type`, `form_output`, non-empty `fields` (each with `id`, `label`, `type`) | `input`, `query_input`, `sync_input`, `rows_sql`, `key_column`, `fields[].required`, `fields[].default`, `fields[].options` |
+| `visualization`      | `label`, `type`, `visualization.type`, and either `sql` or exactly one `query_input`/`sync_input`/`form_input` | `input`, `query_input`, `sync_input`, `form_input`, `visualization.title`, `visualization.config` |
 | `manual_instruction` | `label`, `type`                      | —                                        |
 
 ---
@@ -771,6 +858,10 @@ To add a new step type or change an existing one, touch:
    to track per-step data beyond the existing `files` and `generations` maps.
 5. **`crates/core/src/validate.rs`** and **`profiles/build.sh`** — both reject
    unknown step types, so a new one must be added to each or bundles won't verify.
+   If the step publishes a named result, add a row to `UPSTREAM_FAMILIES`
+   (validate.rs) and `UPSTREAM` (build.sh) rather than writing new wiring checks;
+   on the engine side that pairs with a `KIND_` const in `db.rs` and one
+   `.with(...)` at each call site in `api.rs`.
 6. **An example profile** — add a corresponding YAML+MD example under
    `profiles/src/<name>/` and rebuild with `profiles/build.sh` so you can
    exercise it end to end.

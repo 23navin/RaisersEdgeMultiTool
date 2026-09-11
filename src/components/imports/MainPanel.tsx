@@ -5,7 +5,14 @@
 
 import { CheckIcon } from "lucide-react";
 import type { LoadedProfile, Step } from "../../types";
-import type { FileEntry, GenEntry, SyncEntry, QueryEntry, VizEntry } from "../../App";
+import type {
+  FileEntry,
+  GenEntry,
+  SyncEntry,
+  QueryEntry,
+  VizEntry,
+  FormEntry,
+} from "../../App";
 import { refLabel, stepTransforms } from "../../lib/profile-utils";
 import { StepSelectFiles } from "./steps/StepSelectFiles";
 import { StepGenerateFile } from "./steps/StepGenerateFile";
@@ -13,6 +20,7 @@ import { StepImport } from "./steps/StepImport";
 import { StepCodeTableSync } from "./steps/StepCodeTableSync";
 import { StepQuery } from "./steps/StepQuery";
 import { StepVisualize } from "./steps/StepVisualize";
+import { StepUserInput } from "./steps/StepUserInput";
 
 type MainPanelProps = {
   loadedProfile: LoadedProfile | null;
@@ -30,6 +38,14 @@ type MainPanelProps = {
   onRunQuery: (stepLabel: string) => void;
   visualizations: Record<string, VizEntry>;
   onRunVisualization: (stepLabel: string) => void;
+  forms: Record<string, FormEntry>;
+  onRunUserInput: (stepLabel: string) => void;
+  onUserInputChange: (
+    stepLabel: string,
+    key: string,
+    fieldId: string,
+    value: string,
+  ) => void;
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -83,6 +99,9 @@ export function MainPanel({
   onRunQuery,
   visualizations,
   onRunVisualization,
+  forms,
+  onRunUserInput,
+  onUserInputChange,
 }: MainPanelProps) {
   if (!loadedProfile) {
     return (
@@ -138,6 +157,9 @@ export function MainPanel({
               onRunQuery={onRunQuery}
               visualizations={visualizations}
               onRunVisualization={onRunVisualization}
+              forms={forms}
+              onRunUserInput={onRunUserInput}
+              onUserInputChange={onUserInputChange}
             />
           ))}
         </div>
@@ -179,6 +201,9 @@ function StepSection({
   onRunQuery,
   visualizations,
   onRunVisualization,
+  forms,
+  onRunUserInput,
+  onUserInputChange,
 }: StepSectionProps) {
   const name = `${stepNumber}. ${stepDisplayName(step.label, instructions)}`;
   const heading = <StepHeading name={name} done={done} />;
@@ -249,6 +274,20 @@ function StepSection({
             kind: "sync" as const,
           };
         });
+        // Same for the values a user_input step published. Ready means every
+        // required box on every row is filled — a half-filled form publishes
+        // nulls, and joining to those would empty a column of the output.
+        const formInputs = (t.form_input ?? []).map((label) => {
+          const producer = structure.steps.find(
+            (s) => s.type === "user_input" && s.form_output === label,
+          );
+          const state = producer ? forms[producer.label] : undefined;
+          return {
+            label,
+            ready: state?.status === "done" && (state.result?.complete ?? false),
+            kind: "form" as const,
+          };
+        });
         const outputs = (t.output ?? []).map((label) => ({
           label,
           ready: gen?.status === "done",
@@ -264,9 +303,11 @@ function StepSection({
         // substitutes {{query:Label}} with the file the producing re_query step
         // wrote, so generating before that step has run can only fail.
         const canGenerate =
-          filesReady && queryInputs.every((q) => q.ready);
+          filesReady &&
+          queryInputs.every((q) => q.ready) &&
+          formInputs.every((f) => f.ready);
         return {
-          inputs: [...inputs, ...queryInputs, ...syncInputs],
+          inputs: [...inputs, ...queryInputs, ...syncInputs, ...formInputs],
           outputs,
           canGenerate,
           generateStatus: gen?.status ?? ("idle" as const),
@@ -381,7 +422,18 @@ function StepSection({
           kind: "sync" as const,
         };
       });
-      const sources = [...fileSources, ...querySources, ...syncSources];
+      const formSources = (step.form_input ?? []).map((label) => {
+        const producer = structure.steps.find(
+          (s) => s.type === "user_input" && s.form_output === label,
+        );
+        const state = producer ? forms[producer.label] : undefined;
+        return {
+          label,
+          ready: state?.status === "done" && (state.result?.complete ?? false),
+          kind: "form" as const,
+        };
+      });
+      const sources = [...fileSources, ...querySources, ...syncSources, ...formSources];
       // Same readiness rule as a transform for files (optional inputs may be
       // absent); an upstream result is only usable once its step has run.
       const canRun =
@@ -391,7 +443,7 @@ function StepSection({
           const f = files[lbl];
           if (def?.required) return f?.status === "valid";
           return !f || f.status === "valid";
-        }) && [...querySources, ...syncSources].every((s) => s.ready);
+        }) && [...querySources, ...syncSources, ...formSources].every((s) => s.ready);
       return (
         <section id={`step-${step.label}`} className="scroll-mt-[18px]">
           {heading}
@@ -405,6 +457,65 @@ function StepSection({
               data: state?.data,
               error: state?.error,
               onRun: () => onRunVisualization(step.label),
+            }}
+          />
+        </section>
+      );
+    }
+    case "user_input": {
+      const state = forms[step.label];
+      // The step's rows_sql reads the same kinds of source a visualization
+      // does: uploaded files, plus any upstream result the step declares.
+      const fileSources = (step.input ?? []).map((r) => {
+        const lbl = refLabel(r);
+        return { label: lbl, ready: files[lbl]?.status === "valid", kind: "file" as const };
+      });
+      const querySources = (step.query_input ?? []).map((label) => {
+        const producer = structure.steps.find(
+          (s) => s.type === "re_query" && s.query_output === label,
+        );
+        return {
+          label,
+          ready: producer ? queries[producer.label]?.status === "done" : false,
+          kind: "query" as const,
+        };
+      });
+      const syncSources = (step.sync_input ?? []).map((label) => {
+        const producer = structure.steps.find(
+          (s) => s.type === "code_table_sync" && s.sync_output === label,
+        );
+        return {
+          label,
+          ready: producer ? syncs[producer.label]?.status === "done" : false,
+          kind: "sync" as const,
+        };
+      });
+      const canRun =
+        (step.input ?? []).every((r) => {
+          const lbl = refLabel(r);
+          const def = structure.inputs.find((i) => i.label === lbl);
+          const f = files[lbl];
+          if (def?.required) return f?.status === "valid";
+          return !f || f.status === "valid";
+        }) && [...querySources, ...syncSources].every((s) => s.ready);
+      return (
+        <section id={`step-${step.label}`} className="scroll-mt-[18px]">
+          {heading}
+          <StepUserInput
+            description={stepBody(instructions[step.label])}
+            form={{
+              formOutput: step.form_output ?? "(unnamed)",
+              fields: step.fields ?? [],
+              keyed: Boolean(step.rows_sql),
+              sources: [...fileSources, ...querySources, ...syncSources],
+              canRun,
+              status: state?.status ?? "idle",
+              result: state?.result,
+              values: state?.values ?? {},
+              error: state?.error,
+              onRun: () => onRunUserInput(step.label),
+              onChange: (key, fieldId, value) =>
+                onUserInputChange(step.label, key, fieldId, value),
             }}
           />
         </section>

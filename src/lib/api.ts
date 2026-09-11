@@ -26,6 +26,7 @@ import type {
   ResultSet,
   SyncResult,
   TransformResult,
+  UserInputResult,
   ValidationReport,
   ValidationResult,
 } from "../types";
@@ -67,6 +68,7 @@ export const runProfile = (args: {
   filePaths: Record<string, string>;
   queryIds: Record<string, string>;
   syncIds: Record<string, string>;
+  formIds: Record<string, string>;
   sqlFile: string;
   sessionId: string;
   outputLabels: string[];
@@ -88,9 +90,22 @@ export const runVisualization = (args: {
   filePaths: Record<string, string>;
   queryIds: Record<string, string>;
   syncIds: Record<string, string>;
+  formIds: Record<string, string>;
   stepLabel: string;
   sessionId: string;
 }) => call<ResultSet>("run_visualization", args);
+
+// Recomputes a user_input step's rows and republishes the values held in
+// `values` (row key → field id → value). Called on the step's first readiness
+// and again after every edit — the backend never caches the row set.
+export const runUserInput = (args: {
+  filePaths: Record<string, string>;
+  queryIds: Record<string, string>;
+  syncIds: Record<string, string>;
+  stepLabel: string;
+  sessionId: string;
+  values: Record<string, Record<string, string>>;
+}) => call<UserInputResult>("run_user_input", args);
 
 // ── reports ───────────────────────────────────────────────────────────────────
 

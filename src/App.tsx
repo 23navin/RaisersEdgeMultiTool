@@ -19,6 +19,7 @@ import type {
   ResultSet,
   SqlError,
   SyncResult,
+  UserInputResult,
   ValidationError,
 } from "./types";
 import { Titlebar, type TopTab } from "./components/Titlebar";
@@ -56,6 +57,10 @@ export type QueryStatus = "idle" | "running" | "done" | "error";
 // A visualization step likewise — one local DuckDB SELECT, no progress to report.
 export type VizStatus = "idle" | "running" | "done" | "error";
 
+// A user_input step likewise: one local SELECT for the row list, then a file
+// written. "running" is the moment between an edit and its republish.
+export type FormStatus = "idle" | "running" | "done" | "error";
+
 export type FileEntry = {
   path: string;
   name: string;
@@ -92,6 +97,18 @@ export type QueryEntry = {
 export type VizEntry = {
   status: VizStatus;
   data?: ResultSet;
+  error?: string;
+};
+
+// One user_input step's state, keyed by step label. `values` is what the
+// controls hold (row key → field id → value) and outlives every re-run of the
+// step: swapping the uploaded file re-derives the row list, and any row that
+// survives keeps the dates already typed against it. `result.artifact_id` is
+// what downstream transforms read as {{form:Label}}.
+export type FormEntry = {
+  status: FormStatus;
+  values: Record<string, Record<string, string>>;
+  result?: UserInputResult;
   error?: string;
 };
 
@@ -146,6 +163,7 @@ export default function App() {
   const [syncs, setSyncs] = useState<Record<string, SyncEntry>>({});
   const [queries, setQueries] = useState<Record<string, QueryEntry>>({});
   const [visualizations, setVisualizations] = useState<Record<string, VizEntry>>({});
+  const [forms, setForms] = useState<Record<string, FormEntry>>({});
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TopTab>("imports");
   const [exitingTab, setExitingTab] = useState<TopTab | null>(null);
@@ -232,6 +250,12 @@ export default function App() {
         stepsDone[step.label] = st?.status === "done" && (st.result?.ok ?? false);
       } else if (step.type === "visualization") {
         stepsDone[step.label] = visualizations[step.label]?.status === "done";
+      } else if (step.type === "user_input") {
+        // Published isn't enough: a form with a required box still blank has
+        // published nulls, and the steps reading it would join to nothing.
+        const st = forms[step.label];
+        stepsDone[step.label] =
+          st?.status === "done" && (st.result?.complete ?? false);
       } else {
         stepsDone[step.label] = false;
       }
@@ -255,7 +279,7 @@ export default function App() {
   };
 
   // The fields a transform uses to declare an upstream step's result.
-  type UpstreamField = "query_input" | "sync_input";
+  type UpstreamField = "query_input" | "sync_input" | "form_input";
 
   // Transform keys that read a given upstream result. One walk parameterised by
   // the declaring field, so adding a third upstream family doesn't need another
@@ -283,6 +307,32 @@ export default function App() {
       .map((s) => s.label);
   };
 
+  // user_input steps whose row list is built from a given upstream result —
+  // they read it in `rows_sql`, so a re-run changes which rows they ask about.
+  const formsConsuming = (field: UpstreamField, label: string): string[] => {
+    if (!loadedProfile) return [];
+    return loadedProfile.structure.steps
+      .filter((s) => s.type === "user_input" && (s[field] ?? []).includes(label))
+      .map((s) => s.label);
+  };
+
+  // Puts a user_input step back to "unpublished" without forgetting what the
+  // user typed: the step re-derives its rows and republishes itself, and every
+  // row that survives keeps its values. Losing a morning of typed dates because
+  // an upstream query re-ran would be a far worse outcome than a stale file.
+  const resetFormsConsuming = (field: UpstreamField, label: string) => {
+    const affected = formsConsuming(field, label);
+    if (!affected.length) return;
+    setForms((prev) => {
+      const next = { ...prev };
+      for (const k of affected) {
+        if (!next[k]) continue;
+        next[k] = { status: "idle", values: next[k].values };
+      }
+      return next;
+    });
+  };
+
   // Clears every transform and visualization that reads this upstream result.
   // Called when the producing step re-runs and when it's invalidated — a stale
   // join, or a stale table on screen, is worse than a missing one.
@@ -303,6 +353,7 @@ export default function App() {
         return next;
       });
     }
+    resetFormsConsuming(field, label);
   };
 
   // Changing an input invalidates, in order: transforms that read it, the
@@ -339,6 +390,20 @@ export default function App() {
           delete next[step.label];
           return next;
         });
+      } else if (step.type === "user_input") {
+        // The row list came out of the file that just changed, so it has to be
+        // re-derived — but the values the user typed are kept and re-applied to
+        // whichever rows survive.
+        setForms((prev) => {
+          if (!prev[step.label]) return prev;
+          return {
+            ...prev,
+            [step.label]: { status: "idle", values: prev[step.label].values },
+          };
+        });
+        if (step.form_output) {
+          resetTransformsConsuming("form_input", step.form_output);
+        }
       } else if (step.type === "code_table_sync") {
         // The rows already pushed to RE can't be un-pushed, but the recorded
         // outcome no longer describes the file on screen, so it stops counting
@@ -458,6 +523,16 @@ export default function App() {
       if (res?.artifact_id) syncIds[label] = res.artifact_id;
     }
 
+    // Same contract again for the values a user_input step published.
+    const formIds: Record<string, string> = {};
+    for (const label of transform.form_input ?? []) {
+      const producer = loadedProfile.structure.steps.find(
+        (s) => s.type === "user_input" && s.form_output === label,
+      );
+      const res = producer ? forms[producer.label]?.result : undefined;
+      if (res) formIds[label] = res.artifact_id;
+    }
+
     setGenerations((prev) => ({
       ...prev,
       [key]: { status: "running", progress: 0 },
@@ -468,6 +543,7 @@ export default function App() {
         filePaths,
         queryIds,
         syncIds,
+        formIds,
         sqlFile: transform.sql,
         sessionId: loadedProfile.session_id,
         outputLabels: transform.output ?? [],
@@ -602,6 +678,15 @@ export default function App() {
       if (res?.artifact_id) syncIds[label] = res.artifact_id;
     }
 
+    const formIds: Record<string, string> = {};
+    for (const label of step.form_input ?? []) {
+      const producer = loadedProfile.structure.steps.find(
+        (s) => s.type === "user_input" && s.form_output === label,
+      );
+      const res = producer ? forms[producer.label]?.result : undefined;
+      if (res) formIds[label] = res.artifact_id;
+    }
+
     setVisualizations((prev) => ({ ...prev, [stepLabel]: { status: "running" } }));
 
     try {
@@ -609,6 +694,7 @@ export default function App() {
         filePaths,
         queryIds,
         syncIds,
+        formIds,
         stepLabel,
         sessionId: loadedProfile.session_id,
       });
@@ -623,6 +709,105 @@ export default function App() {
         [stepLabel]: { status: "error", error: asString(e) },
       }));
     }
+  };
+
+  // Runs a user_input step: the backend re-derives the step's row list from the
+  // files (and any upstream result its rows_sql reads), merges in whatever the
+  // controls currently hold, and writes the JSON later SQL reads as
+  // {{form:Label}}. Called on the step's first readiness and again after each
+  // edit settles, so the published file always matches the boxes on screen.
+  const handleRunUserInput = async (stepLabel: string) => {
+    if (!loadedProfile) return;
+    const step = loadedProfile.structure.steps.find((s) => s.label === stepLabel);
+    if (!step) return;
+
+    const filePaths: Record<string, string> = {};
+    for (const ref of step.input ?? []) {
+      const lbl = refLabel(ref);
+      const f = files[lbl];
+      if (f?.status === "valid") filePaths[lbl] = f.path;
+    }
+
+    // A form's rows_sql may read an earlier step's result — same contract as a
+    // transform's, so a label whose producer hasn't run is simply absent.
+    const queryIds: Record<string, string> = {};
+    for (const label of step.query_input ?? []) {
+      const producer = loadedProfile.structure.steps.find(
+        (s) => s.type === "re_query" && s.query_output === label,
+      );
+      const res = producer ? queries[producer.label]?.result : undefined;
+      if (res) queryIds[label] = res.artifact_id;
+    }
+
+    const syncIds: Record<string, string> = {};
+    for (const label of step.sync_input ?? []) {
+      const producer = loadedProfile.structure.steps.find(
+        (s) => s.type === "code_table_sync" && s.sync_output === label,
+      );
+      const res = producer ? syncs[producer.label]?.result : undefined;
+      if (res?.artifact_id) syncIds[label] = res.artifact_id;
+    }
+
+    const values = forms[stepLabel]?.values ?? {};
+    setForms((prev) => ({
+      ...prev,
+      [stepLabel]: { ...prev[stepLabel], status: "running", values },
+    }));
+    // The file this step publishes is about to be rewritten, so anything joined
+    // to the previous version is stale.
+    if (step.form_output) resetTransformsConsuming("form_input", step.form_output);
+
+    try {
+      const result = await api.runUserInput({
+        filePaths,
+        queryIds,
+        syncIds,
+        stepLabel,
+        sessionId: loadedProfile.session_id,
+        values,
+      });
+      setForms((prev) => ({
+        ...prev,
+        [stepLabel]: { status: "done", values: prev[stepLabel]?.values ?? values, result },
+      }));
+    } catch (e) {
+      console.error("run_user_input failed:", e);
+      setForms((prev) => ({
+        ...prev,
+        [stepLabel]: {
+          status: "error",
+          values: prev[stepLabel]?.values ?? values,
+          // Keep the last good row list so the form stays on screen and
+          // editable — editing it is what retries the publish.
+          result: prev[stepLabel]?.result,
+          error: asString(e),
+        },
+      }));
+    }
+  };
+
+  // One control on a user_input step changed. Only the held values move here —
+  // the step republishes itself once the edit settles (StepUserInput debounces),
+  // which is what actually rewrites the file and invalidates what reads it.
+  const handleUserInputChange = (
+    stepLabel: string,
+    key: string,
+    fieldId: string,
+    value: string,
+  ) => {
+    setForms((prev) => {
+      const cur = prev[stepLabel] ?? { status: "idle" as const, values: {} };
+      return {
+        ...prev,
+        [stepLabel]: {
+          ...cur,
+          values: {
+            ...cur.values,
+            [key]: { ...(cur.values[key] ?? {}), [fieldId]: value },
+          },
+        },
+      };
+    });
   };
 
   const handleDownload = async (
@@ -652,6 +837,7 @@ export default function App() {
     setSyncs({});
     setQueries({});
     setVisualizations({});
+    setForms({});
   };
 
   // `zipPath` is the unique selection key — built-in and user profiles can
@@ -665,6 +851,7 @@ export default function App() {
     setSyncs({});
     setQueries({});
     setVisualizations({});
+    setForms({});
     setLoadedProfile(null);
     if (zipPath == null) return;
     const summary = profiles.find((p) => p.zip_path === zipPath);
@@ -775,6 +962,9 @@ export default function App() {
           onRunQuery={handleRunQuery}
           visualizations={visualizations}
           onRunVisualization={handleRunVisualization}
+          forms={forms}
+          onRunUserInput={handleRunUserInput}
+          onUserInputChange={handleUserInputChange}
           onReset={handleReset}
         />
       );

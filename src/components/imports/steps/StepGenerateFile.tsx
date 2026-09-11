@@ -10,6 +10,7 @@ import {
   FileTextIcon,
   TableIcon,
   UploadCloudIcon,
+  PencilLineIcon,
   PlayIcon,
   DownloadIcon,
   CheckIcon,
@@ -22,19 +23,21 @@ import type { GenerateStatus } from "../../../App";
 import type { Notice, SqlError } from "../../../types";
 
 // `kind` picks the input pill's icon: "file" is an uploaded input, "query" is
-// the result an earlier re_query step stored ({{query:Label}}), and "sync" is
-// the outcome rows a code_table_sync step published ({{sync:Label}}). Each pill
-// carries the same icon the producing step drew on its own output node, so the
-// same dataset looks the same in both panels.
+// the result an earlier re_query step stored ({{query:Label}}), "sync" is the
+// outcome rows a code_table_sync step published ({{sync:Label}}), and "form"
+// is the values a user_input step collected ({{form:Label}}). Each pill carries
+// the same icon the producing step drew on its own output node, so the same
+// dataset looks the same in both panels.
 export type PipeItem = {
   label: string;
   ready: boolean;
-  kind?: "file" | "query" | "sync";
+  kind?: "file" | "query" | "sync" | "form";
 };
 
 const PIPE_ICONS: Record<string, LucideIcon> = {
   query: DatabaseIcon,
   sync: UploadCloudIcon,
+  form: PencilLineIcon,
   file: FileTextIcon,
 };
 

@@ -22,6 +22,7 @@ import {
   CheckIcon,
   XIcon,
   RefreshCwIcon,
+  PencilLineIcon,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "../../ui/button";
@@ -35,7 +36,7 @@ export type VizStatus = "idle" | "running" | "done" | "error";
 export type VizSource = {
   label: string;
   ready: boolean;
-  kind: "file" | "query" | "sync";
+  kind: "file" | "query" | "sync" | "form";
 };
 
 export type VizRow = {
@@ -59,6 +60,7 @@ const SOURCE_ICON: Record<VizSource["kind"], LucideIcon> = {
   file: FileTextIcon,
   query: DatabaseIcon,
   sync: DatabaseIcon,
+  form: PencilLineIcon,
 };
 
 function SourceNode({ source }: { source: VizSource }) {

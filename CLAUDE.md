@@ -127,6 +127,7 @@ tauri-import/
 │       │       ├── StepGenerateFile.tsx  # sql_transform
 │       │       ├── StepQuery.tsx         # re_query
 │       │       ├── StepCodeTableSync.tsx # code_table_sync
+│       │       ├── StepUserInput.tsx     # user_input
 │       │       ├── StepVisualize.tsx     # visualization
 │       │       └── StepImport.tsx        # manual_instruction
 │       ├── reports/              # REPORTS workspace
@@ -155,6 +156,8 @@ tauri-import/
 │           ├── code_tables.rs    # Pulls RE code tables into SQL; runs code_table_sync writes
 │           │                     #   and publishes their outcomes as {{sync:Label}}
 │           ├── query_step.rs     # Runs an re_query step: SQL params → RE query → JSON for later SQL
+│           ├── user_input.rs     # Runs a user_input step: rows_sql → a form → the typed
+│           │                     #   values published as {{form:Label}}
 │           ├── report.rs         # Report pipeline: params → queries → transforms → result sets
 │           └── errors.rs         # Shared AppError enum
 │
@@ -191,10 +194,11 @@ Command bodies live in `crates/core/src/api.rs`; `commands.rs` only builds a `Ct
 | `list_profiles` | `App.tsx` on mount — returns embedded built-ins (`builtin://<file>`) + `.import` files in `app_data_dir()/profiles/` (`user://<file>`) | _(none)_ | `ProfileSummary[]` |
 | `load_profile` | `App.tsx` on profile select — mints a session, extracts the bundle into it | `zipPath` (a profile ref, see below) | `LoadedProfile` (carries `session_id` + `asset_base`) |
 | `validate_file` | `App.tsx` on validate click | `filePath`, `inputLabel`, `sessionId` | `ValidationResult` |
-| `run_profile` | `App.tsx` on generate click | `filePaths` (input label → local file path), `queryIds` (query label → artifact id), `syncIds` (sync label → artifact id), `sqlFile`, `sessionId`, `outputLabels` | `TransformResult` (outputs carry `artifact_id`) |
+| `run_profile` | `App.tsx` on generate click | `filePaths` (input label → local file path), `queryIds` (query label → artifact id), `syncIds` (sync label → artifact id), `formIds` (form label → artifact id), `sqlFile`, `sessionId`, `outputLabels` | `TransformResult` (outputs carry `artifact_id`) |
 | `run_re_query` | `App.tsx` on an `re_query` step | `filePaths`, `stepLabel`, `sessionId` | `QueryStepResult` (carries `artifact_id`) |
 | `run_code_table_sync` | `App.tsx` on a `code_table_sync` step | `filePaths`, `stepLabel`, `sessionId` | `SyncResult` (carries `artifact_id`) |
-| `run_visualization` | `App.tsx` on a `visualization` step | `filePaths`, `queryIds`, `syncIds`, `stepLabel`, `sessionId` | `ResultSet` |
+| `run_visualization` | `App.tsx` on a `visualization` step | `filePaths`, `queryIds`, `syncIds`, `formIds`, `stepLabel`, `sessionId` | `ResultSet` |
+| `run_user_input` | `StepUserInput` on readiness and after each edit | `filePaths`, `queryIds`, `syncIds`, `stepLabel`, `sessionId`, `values` (row key → field id → value) | `UserInputResult` (carries `artifact_id` + `complete`) |
 | `save_output` | `App.tsx` on download click (desktop Save As) | `sessionId`, `artifactId`, `destPath` | `void` |
 
 **Reports** (`commands.rs` → `core::api` → `report.rs`; both `async`)
@@ -295,7 +299,7 @@ steps:
 ```
 
 Step types supported: `file_input`, `sql_transform`, `re_query`,
-`code_table_sync`, `visualization`, `manual_instruction`.
+`code_table_sync`, `user_input`, `visualization`, `manual_instruction`.
 Validation is not its own step type — it's a per-row checkbox inside a
 `file_input` step.
 
@@ -324,6 +328,12 @@ Three placeholder forms are substituted at runtime:
 - `{{query:Label}}` — resolves to the JSON an earlier `re_query` step returned.
   The consuming transform must declare the label in `query_input`. Read with
   `read_json_auto`. See STEP_TYPES.md → *Step type: `re_query`*.
+- `{{form:Label}}` — resolves to the values an earlier `user_input` step
+  collected: one JSON object per row of the form, carrying `key`, every column
+  its `rows_sql` selected, and one key per field id. The consuming transform
+  must declare the label in `form_input`. Read with
+  `read_json(..., columns={...})` — the result is empty when the form had no
+  rows. See STEP_TYPES.md → *Step type: `user_input`*.
 - `{{sync:Label}}` — resolves to the outcome rows an earlier `code_table_sync`
   step published via `sync_output` (one row per attempted write, carrying the id
   RE assigned). The consuming transform must declare the label in `sync_input`.
@@ -367,6 +377,11 @@ Render hierarchy:
     step whenever it is `idle` with every source ready, which is both the
     first-ready moment and every time App.tsx clears the result after an
     upstream change. The icon button is a manual re-read, not a gate.
+  - `imports/steps/StepUserInput.tsx` for `user_input` — source readiness row,
+    then one row of controls per row the step's `rows_sql` returned (or a single
+    row when it has none). Self-publishing like `StepVisualize`: it publishes on
+    first readiness and again ~450ms after the last keystroke, so there is no
+    button. Values live in `App.tsx` and survive re-derivation of the row list.
   - `imports/steps/StepImport.tsx` for `manual_instruction` — renders the
     markdown body with image assets resolved against `loadedProfile.asset_base`
     via `api.assetUrl` (asset protocol on desktop, session endpoint on web).
@@ -380,14 +395,14 @@ Render hierarchy:
 
 `loadedProfile.session_id` is threaded through `MainPanel` to each step
 component and passed back to `validate_file`, `run_profile`, `run_re_query`,
-`run_code_table_sync`, `run_visualization`, and `run_report` so the backend
-can re-read validation rules, SQL, and fixtures from that session.
+`run_code_table_sync`, `run_user_input`, `run_visualization`, and `run_report`
+so the backend can re-read validation rules, SQL, and fixtures from that session.
 
 ---
 
 ## Types
 
-`src/types.ts` mirrors the Rust structs in `crates/core` (`profile.rs`, `db.rs`, `query_step.rs`, `code_tables.rs`, `report.rs`) exactly. If you change a struct in Rust, update the matching type in `types.ts`. Import all types from `types.ts` — never inline them.
+`src/types.ts` mirrors the Rust structs in `crates/core` (`profile.rs`, `db.rs`, `query_step.rs`, `code_tables.rs`, `user_input.rs`, `report.rs`) exactly. If you change a struct in Rust, update the matching type in `types.ts`. Import all types from `types.ts` — never inline them.
 
 ---
 
@@ -441,6 +456,11 @@ can re-read validation rules, SQL, and fixtures from that session.
 - **Binder error on a `{{sync:X}}` column?** → the sync attempted zero rows, so
   `read_json_auto` has no schema to infer. Use
   `read_json('{{sync:X}}', columns={...})` naming the columns you join on
+- **`{{form:X}}` unresolved at runtime?** → same rule again with `form_input`
+  and a `user_input` step declaring `form_output: X`
+- **`{{form:X}}` joins to nothing?** → a required box on that row is still
+  blank, so the step published `null` for it. The step stays "not done" and
+  every consumer stays disabled until every required box on every row is filled
 - **`{{rows:col}}` sent as a string instead of an array?** → it only becomes an
   array when the YAML value is *exactly* that placeholder, e.g.
   `filter_values: "{{rows:record_id}}"`, not embedded in a longer string
