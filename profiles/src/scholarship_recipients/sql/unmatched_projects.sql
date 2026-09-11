@@ -1,8 +1,15 @@
--- unmatched_projects.sql — the ReviewUnmatched visualization.
+-- unmatched_projects.sql — rows_sql for the FundOverrides step.
 --
--- Every Foundation Project in the upload that is not a fund id in RE, with the
--- project title it was sent under and how many award rows it covers. These rows
--- are the ones the import file below leaves out.
+-- One row per Foundation Project in the upload that is not itself a fund id in
+-- RE, with the project title it arrived under and how many award rows it
+-- covers. Each row gets a dropdown for picking the fund to use instead.
+--
+-- Deliberately does NOT read {{form:FundOverrides}}: these are the rows the
+-- form asks about, so a project stays listed after it has been mapped — that
+-- is how the operator sees and changes the choice they made.
+--
+-- The step keys rows on "Foundation Project" (structure.yaml's key_column), so
+-- that value is what downstream SQL joins on as `key`.
 
 WITH src AS (
   SELECT

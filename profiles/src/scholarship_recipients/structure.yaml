@@ -73,35 +73,45 @@ steps:
         - { query_field_id: 1001, user_alias: fund_id }
         - { query_field_id: 1002, user_alias: fund_description }
 
-  # ── What won't import ───────────────────────────────────────────────────────
-  # Reads only; writes nothing. Every Foundation Project in the upload that has
-  # no fund in RE, with its project title and how many award rows it covers.
-  # This is the list to take back to the foundation — those rows are excluded
-  # from the import file below.
-  - label: ReviewUnmatched
-    type: visualization
+  # ── What won't import, and what to do about it ──────────────────────────────
+  # One row per Foundation Project the upload carries that isn't a fund id in
+  # RE, shown with its project title and how many award rows ride on it. Each
+  # gets a dropdown of every fund RE returned, so a project that is really a
+  # known fund under another name can be pointed at it rather than dropped.
+  #
+  # `options_sql` is what makes the dropdown possible: the choices don't exist
+  # until FetchFunds has run, so they can't be a fixed list in this file. The
+  # field is optional — a project left unmapped is simply excluded, which is
+  # the old behaviour and still the right answer for a genuinely unknown fund.
+  - label: FundOverrides
+    type: user_input
     input:
       - Recipients
     query_input:
       - Funds
-    sql: unmatched_projects.sql
-    visualization:
-      type: table
-      title: "Foundation Projects with no matching Fund ID"
-      config:
-        sortable: true
+    rows_sql: unmatched_projects.sql
+    key_column: "Foundation Project"
+    fields:
+      - id: replacement_fund_id
+        label: "Use this fund instead"
+        type: select
+        options_sql: fund_choices.sql
+    form_output: FundOverrides
 
   # ── The dates the file doesn't carry ────────────────────────────────────────
   # rows_sql returns one row per term still in play (F25, SP26, …) — read off
-  # the upload, and only for rows that matched a fund, so a term that exists
-  # solely on excluded rows never gets asked about. Each row gets a start and
-  # end date box; the filled rows are published as {{form:SemesterDates}}.
+  # the upload, for rows that resolve to a fund either directly or through the
+  # mapping above. Hence `form_input: [FundOverrides]`: mapping a project can
+  # bring a new term into play, and the date boxes are required, so asking
+  # about a term that can never import would block the run.
   - label: SemesterDates
     type: user_input
     input:
       - Recipients
     query_input:
       - Funds
+    form_input:
+      - FundOverrides
     rows_sql: semester_terms.sql
     key_column: term
     fields:
@@ -116,9 +126,9 @@ steps:
     form_output: SemesterDates
 
   # ── The import file ─────────────────────────────────────────────────────────
-  # Joins all three: the upload, the fund list, and the dates just collected.
-  # Both joins are inner, so a row missing either is absent from the output —
-  # the notices below say exactly which rows that was and why.
+  # Joins everything: the upload, the fund list, the project→fund mapping, and
+  # the dates just collected. A row that resolves to no fund, or whose term has
+  # no dates, is absent from the output — the notice below says which and why.
   - label: CreateImportFile
     type: sql_transform
     input:
@@ -126,6 +136,7 @@ steps:
     query_input:
       - Funds
     form_input:
+      - FundOverrides
       - SemesterDates
     sql: build_import.sql
     output:
@@ -135,9 +146,10 @@ steps:
         sql: excluded_rows.sql
         description: >
           These award rows are not in the file above. Either the Foundation
-          Project isn't a fund in RE, or the term has no dates filled in yet.
-          Fill in the missing dates and generate again; take the unmatched
-          projects back to the foundation.
+          Project isn't a fund in RE and no replacement was chosen for it, or
+          the term has no dates filled in yet. Pick a fund, fill in the missing
+          dates, and generate again; take anything genuinely unknown back to
+          the foundation.
 
   - label: Import
     type: manual_instruction

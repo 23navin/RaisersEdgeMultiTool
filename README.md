@@ -133,6 +133,7 @@ tauri-import/
 │   │   ├── re_calls.rs             The one place a SKY API call is executed
 │   │   ├── code_tables.rs          Code table pulls and code_table_sync writes
 │   │   ├── query_step.rs           The re_query step runner
+│   │   ├── user_input.rs           The user_input step runner (forms → {{form:…}})
 │   │   ├── report.rs               The report pipeline
 │   │   └── errors.rs               Shared AppError enum
 │   └── server/src/                 WEB SHELL — Axum

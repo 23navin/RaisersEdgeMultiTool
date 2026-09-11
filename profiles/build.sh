@@ -505,8 +505,28 @@ function validateImport() {
             err(`${fw}.type must be one of ${FIELD_TYPES.join(', ')} (got ${JSON.stringify(f.type)})`);
           }
           if ('required' in f && !isBool(f.required)) err(`${fw}.required must be true or false`);
-          if (f.type === 'select' && (!isList(f.options) || f.options.length === 0)) {
-            err(`${fw} is a select but declares no options`);
+          // A select needs choices from exactly one source: a fixed list here,
+          // or a SELECT resolving them at run time.
+          const hasFixed = isList(f.options) && f.options.length > 0;
+          const hasOptSql = isStr(f.options_sql) && f.options_sql.length > 0;
+          if (f.type === 'select' && !hasFixed && !hasOptSql) {
+            err(`${fw} is a select but declares neither options nor options_sql`);
+          }
+          if (hasFixed && hasOptSql) {
+            err(`${fw} declares both options and options_sql — pick one`);
+          }
+          if (hasOptSql && f.type !== 'select') {
+            err(`${fw} has options_sql but is a ${JSON.stringify(f.type)}, not a select`);
+          }
+          if ('options_sql' in f && f.options_sql !== null && !isStr(f.options_sql)) {
+            err(`${fw}.options_sql must be a string`);
+          }
+          if (hasOptSql) {
+            needsSqlDir = true;
+            referencedSql.add(f.options_sql);
+            if (!fs.existsSync(path.join(sqlDir, f.options_sql))) {
+              err(`${fw}.options_sql references missing file sql/${f.options_sql}`);
+            }
           }
           if ('default' in f && f.default !== null && !isStr(f.default)) {
             err(`${fw}.default must be a string`);

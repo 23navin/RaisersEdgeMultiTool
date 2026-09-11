@@ -678,18 +678,56 @@ pub fn validate_profile(files: &[ProfileFileEntry]) -> ValidationReport {
                             false,
                         ));
                     }
-                    if f.field_type == "select"
-                        && !matches!(f.options.as_ref(), Some(o) if !o.is_empty())
-                    {
+                    // A select needs choices from exactly one source: a fixed
+                    // list in the YAML, or a SELECT resolving them at run time.
+                    let has_fixed = matches!(f.options.as_ref(), Some(o) if !o.is_empty());
+                    let has_sql = f.options_sql.as_deref().is_some_and(|s| !s.trim().is_empty());
+                    if f.field_type == "select" && !has_fixed && !has_sql {
                         issues.push(err(
                             "yaml.user_input.select_no_options",
                             format!(
-                                "user_input step '{}': field '{}' is a select but declares no `options`",
+                                "user_input step '{}': field '{}' is a select but declares neither `options` nor `options_sql`",
                                 step.label, f.id
                             ),
                             Some(step_loc()),
                             false,
                         ));
+                    }
+                    if has_fixed && has_sql {
+                        issues.push(err(
+                            "yaml.user_input.ambiguous_options",
+                            format!(
+                                "user_input step '{}': field '{}' declares both `options` and `options_sql`. Pick one.",
+                                step.label, f.id
+                            ),
+                            Some(step_loc()),
+                            false,
+                        ));
+                    }
+                    if has_sql && f.field_type != "select" {
+                        issues.push(err(
+                            "yaml.user_input.options_sql_not_select",
+                            format!(
+                                "user_input step '{}': field '{}' has `options_sql` but is a {}, not a select",
+                                step.label, f.id, f.field_type
+                            ),
+                            Some(step_loc()),
+                            false,
+                        ));
+                    }
+                    if let Some(name) = f.options_sql.as_deref().filter(|s| !s.trim().is_empty()) {
+                        referenced_sql.insert(name.to_string());
+                        if !sql_files.contains_key(name) {
+                            issues.push(err(
+                                "yaml.user_input.missing_options_sql",
+                                format!(
+                                    "user_input step '{}': field '{}' references missing file sql/{}",
+                                    step.label, f.id, name
+                                ),
+                                Some(IssueLocation::Sql { path: format!("sql/{}", name), line: None }),
+                                true,
+                            ));
+                        }
                     }
                 }
 

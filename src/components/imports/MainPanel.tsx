@@ -490,6 +490,20 @@ function StepSection({
           kind: "sync" as const,
         };
       });
+      // A form whose rows come out of an earlier form's answers. Ready means
+      // that form is complete — half-answered rows would derive the wrong
+      // question set here.
+      const formSources = (step.form_input ?? []).map((label) => {
+        const producer = structure.steps.find(
+          (s) => s.type === "user_input" && s.form_output === label,
+        );
+        const st = producer ? forms[producer.label] : undefined;
+        return {
+          label,
+          ready: st?.status === "done" && (st.result?.complete ?? false),
+          kind: "form" as const,
+        };
+      });
       const canRun =
         (step.input ?? []).every((r) => {
           const lbl = refLabel(r);
@@ -497,7 +511,7 @@ function StepSection({
           const f = files[lbl];
           if (def?.required) return f?.status === "valid";
           return !f || f.status === "valid";
-        }) && [...querySources, ...syncSources].every((s) => s.ready);
+        }) && [...querySources, ...syncSources, ...formSources].every((s) => s.ready);
       return (
         <section id={`step-${step.label}`} className="scroll-mt-[18px]">
           {heading}
@@ -507,7 +521,7 @@ function StepSection({
               formOutput: step.form_output ?? "(unnamed)",
               fields: step.fields ?? [],
               keyed: Boolean(step.rows_sql),
-              sources: [...fileSources, ...querySources, ...syncSources],
+              sources: [...fileSources, ...querySources, ...syncSources, ...formSources],
               canRun,
               status: state?.status ?? "idle",
               result: state?.result,

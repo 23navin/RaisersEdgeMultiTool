@@ -622,7 +622,7 @@ Everything you can declare, in one place. Follow the link for exact field lists.
 | Notices | `notices` on a transform | Post-run informational tables (never fail the step) |
 | Query step | `steps[].type: re_query` | Reads RE mid-pipeline → `{{query:Label}}` |
 | Sync step | `steps[].type: code_table_sync` | Writes code table entries → optional `{{sync:Label}}` |
-| Form step | `steps[].type: user_input` | Asks the operator for values the files don't carry → `{{form:Label}}` ([details](STEP_TYPES.md#step-type-user_input)) |
+| Form step | `steps[].type: user_input` | Asks the operator for values the files don't carry → `{{form:Label}}`. Select fields can draw their choices from a live result via `options_sql` ([details](STEP_TYPES.md#step-type-user_input)) |
 | Visualization step | `steps[].type: visualization` | Draws a result set on screen — no file written ([details](STEP_TYPES.md#step-type-visualization)) |
 | Instruction step | `steps[].type: manual_instruction` | Prose-only closing step |
 
@@ -818,7 +818,7 @@ and is heavily commented in place. Start from whichever is closest.
 | `re_query_demo` | `re_query`: `params_sql` → `{{rows:col}}` → RE → `{{query:Label}}` joined into the import file |
 | `code_table_demo` | `code_tables:` pull + a `code_table_sync` step |
 | `code_table_crossref` | The full loop: audit codes against RE, offer to create the missing ones, then read `{{sync:…}}` back so the new ids land in the import file |
-| `scholarship_recipients` | A `user_input` form whose rows come out of the uploaded file (one date pair per award term), feeding the import transform as `{{form:…}}` |
+| `scholarship_recipients` | Two chained `user_input` forms: one maps unmatched projects to funds via a dropdown built from the live RE fund list (`options_sql`), the other collects a date pair per award term — the second's questions depend on the first's answers |
 | `gift_activity` | The complete report profile: parameters → query → transform → table viz → write-back action |
 
 ```bash

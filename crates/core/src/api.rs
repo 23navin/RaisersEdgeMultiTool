@@ -394,6 +394,7 @@ pub fn run_user_input(
     file_paths: HashMap<String, String>,
     query_ids: HashMap<String, String>,
     sync_ids: HashMap<String, String>,
+    form_ids: HashMap<String, String>,
     step_label: &str,
     session_id: &str,
     values: &HashMap<String, HashMap<String, String>>,
@@ -408,10 +409,11 @@ pub fn run_user_input(
             AppError::ParseError(format!("No user_input step labelled '{}'", step_label))
         })?;
 
-    // rows_sql reads the same sources a visualization does: the uploaded files,
-    // the profile's code tables, and any upstream result the step declares. It
-    // cannot read another form — a form whose rows depend on a form would have
-    // no stable order to resolve in.
+    // rows_sql and options_sql read the same sources a transform does: the
+    // uploaded files, the profile's code tables, and any upstream result the
+    // step declares — including an earlier form, so one form can ask about the
+    // rows another one resolved. Ordering is what keeps that acyclic, and the
+    // upstream-family check enforces it exactly as it does for queries.
     let code_table_paths = if loaded.structure.code_tables.is_empty() {
         HashMap::new()
     } else {
@@ -420,11 +422,13 @@ pub fn run_user_input(
     };
     let query_paths = resolve_ids(&ws, &query_ids)?;
     let sync_paths = resolve_ids(&ws, &sync_ids)?;
+    let form_paths = resolve_ids(&ws, &form_ids)?;
 
     let sources = db::SqlSources::new()
         .with(db::KIND_CODETABLE, &code_table_paths)
         .with(db::KIND_QUERY, &query_paths)
-        .with(db::KIND_SYNC, &sync_paths);
+        .with(db::KIND_SYNC, &sync_paths)
+        .with(db::KIND_FORM, &form_paths);
 
     let mut result = user_input::run_user_input(
         &loaded,
@@ -803,6 +807,7 @@ steps:
             file_paths.clone(),
             HashMap::new(),
             HashMap::new(),
+            HashMap::new(),
             "Ask",
             &loaded.session_id,
             &HashMap::new(),
@@ -826,6 +831,7 @@ steps:
             file_paths.clone(),
             HashMap::new(),
             HashMap::new(),
+            HashMap::new(),
             "Ask",
             &loaded.session_id,
             &values,
@@ -846,6 +852,155 @@ steps:
         )
         .expect("transform ok");
         assert_eq!(result.outputs[0].row_count, 2);
+    }
+
+    // A select whose choices come from options_sql, feeding a second form that
+    // derives its rows from the first one's answers. Both are the new pieces:
+    // runtime options, and a form reading {{form:…}} rather than only files.
+    #[test]
+    fn a_form_can_offer_runtime_options_and_feed_another_form() {
+        let ctx = test_ctx("form-chain");
+        std::fs::create_dir_all(&ctx.user_profiles_dir).unwrap();
+
+        let structure = "\
+id: chain_demo
+name: Chain Demo
+version: 1.0.0
+min_app_version: 0.1.0
+inputs:
+  - label: Rows
+    type: csv
+    required: true
+outputs:
+  - label: Out
+    type: csv
+steps:
+  - label: Upload
+    type: file_input
+    input: [Rows]
+  - label: Map
+    type: user_input
+    input: [Rows]
+    rows_sql: unmapped.sql
+    key_column: code
+    fields:
+      - { id: mapped_to, label: Use this, type: select, options_sql: choices.sql }
+    form_output: Mapping
+  - label: Ask
+    type: user_input
+    input: [Rows]
+    form_input: [Mapping]
+    rows_sql: terms.sql
+    key_column: term
+    fields:
+      - { id: note, label: Note, type: text, required: true }
+    form_output: Notes
+";
+        let files = vec![
+            ProfileFileEntry { path: "structure.yaml".into(), content: structure.into() },
+            ProfileFileEntry { path: "instructions.md".into(), content: "# Chain\n".into() },
+            // Codes in the file that aren't already known.
+            ProfileFileEntry {
+                path: "sql/unmapped.sql".into(),
+                content: "SELECT DISTINCT code FROM read_csv_auto('{{input:Rows}}') \
+                          WHERE code NOT IN ('KNOWN') ORDER BY code"
+                    .into(),
+            },
+            // The choices — a fixed set here, standing in for a query result.
+            ProfileFileEntry {
+                path: "sql/choices.sql".into(),
+                content: "SELECT * FROM (VALUES ('KNOWN', 'The known one')) AS t(value, label)"
+                    .into(),
+            },
+            // Terms on rows that resolve: known directly, or via the mapping.
+            ProfileFileEntry {
+                path: "sql/terms.sql".into(),
+                content: "WITH m AS (SELECT key, mapped_to FROM \
+                            read_json('{{form:Mapping}}', columns={key:'VARCHAR', mapped_to:'VARCHAR'}) \
+                            WHERE mapped_to IS NOT NULL) \
+                          SELECT DISTINCT r.term FROM read_csv_auto('{{input:Rows}}') r \
+                          LEFT JOIN m ON r.code = m.key \
+                          WHERE r.code = 'KNOWN' OR m.mapped_to IS NOT NULL ORDER BY r.term"
+                    .into(),
+            },
+        ];
+        let zip = ctx.user_profiles_dir.join("chain_demo.import");
+        let extract = std::env::temp_dir().join(workspace::unique_token());
+        profile::save_user_profile(&zip.to_string_lossy(), &files, &extract).expect("bundle saved");
+        let loaded = load_profile(&ctx, "user://chain_demo.import").expect("load ok");
+
+        let csv = extract.join("rows.csv");
+        std::fs::write(&csv, "code,term\nKNOWN,F25\nLEGACY,SP26\nGHOST,SU26\n").unwrap();
+        let file_paths = HashMap::from([("Rows".to_string(), csv.to_string_lossy().to_string())]);
+
+        // The mapping form offers what options_sql returned.
+        let mapping = run_user_input(
+            &ctx,
+            file_paths.clone(),
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+            "Map",
+            &loaded.session_id,
+            &HashMap::new(),
+        )
+        .expect("mapping form runs");
+        assert_eq!(mapping.row_count, 2, "GHOST and LEGACY are unmapped");
+        let choices = &mapping.options["mapped_to"];
+        assert_eq!(choices.len(), 1);
+        assert_eq!(choices[0].value, "KNOWN");
+        assert_eq!(choices[0].label, "The known one");
+
+        // Before any mapping, only the directly-known row's term is in play.
+        let before = run_user_input(
+            &ctx,
+            file_paths.clone(),
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::from([(mapping.form_output.clone(), mapping.artifact_id.clone())]),
+            "Ask",
+            &loaded.session_id,
+            &HashMap::new(),
+        )
+        .expect("second form runs");
+        assert_eq!(
+            before.rows.iter().map(|r| r.key.as_str()).collect::<Vec<_>>(),
+            vec!["F25"]
+        );
+
+        // Map LEGACY, and SP26 becomes a question the second form now asks.
+        let mapped = run_user_input(
+            &ctx,
+            file_paths.clone(),
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+            "Map",
+            &loaded.session_id,
+            &HashMap::from([(
+                "LEGACY".to_string(),
+                HashMap::from([("mapped_to".to_string(), "KNOWN".to_string())]),
+            )]),
+        )
+        .expect("mapping form runs");
+        let after = run_user_input(
+            &ctx,
+            file_paths,
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::from([(mapped.form_output.clone(), mapped.artifact_id.clone())]),
+            "Ask",
+            &loaded.session_id,
+            &HashMap::new(),
+        )
+        .expect("second form runs");
+        assert_eq!(
+            after.rows.iter().map(|r| r.key.as_str()).collect::<Vec<_>>(),
+            vec!["F25", "SP26"],
+            "mapping a code brings its term into play"
+        );
+        // GHOST was never mapped, so SU26 is still never asked about.
+        assert!(!after.rows.iter().any(|r| r.key == "SU26"));
     }
 
     // Two sessions loading the same profile must not share extraction dirs —

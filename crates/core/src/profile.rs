@@ -129,7 +129,11 @@ pub struct UserInputField {
     pub field_type: String, // "date" | "text" | "number" | "select"
     #[serde(default)]
     pub required: bool,
-    pub options: Option<Vec<String>>, // allowed values for "select"
+    pub options: Option<Vec<String>>, // allowed values for "select", fixed in YAML
+    // ...or a SELECT naming them at run time, for a list that only exists once
+    // the run has fetched it (an RE query's result, a code table). First column
+    // is the value stored; an optional second column is what the operator sees.
+    pub options_sql: Option<String>,
     pub default: Option<String>,
 }
 

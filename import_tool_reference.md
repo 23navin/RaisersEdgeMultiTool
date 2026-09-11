@@ -218,6 +218,8 @@ echoes it on every later call. Files produced by steps are addressed by
 ├── inputs/           uploaded files (web) — desktop reads local paths directly
 ├── queries/          re_query results        → {{query:Label}}
 ├── codetables/       code table pulls + sync outcomes → {{codetable:}} / {{sync:}}
+├── forms/            user_input values, one file per label → {{form:Label}}
+│                     rewritten in place on each edit, not per-run
 └── runs/<token>/     one dir per transform run → output CSVs
 ```
 
@@ -269,6 +271,7 @@ tauri-import/
 │   │       ├── re_calls.rs           The single SKY API executor (Live / Mock transports)
 │   │       ├── code_tables.rs        Code table pulls + code_table_sync writes
 │   │       ├── query_step.rs         The re_query step runner
+│   │       ├── user_input.rs         The user_input step runner (forms → {{form:…}})
 │   │       ├── report.rs             The report pipeline
 │   │       └── errors.rs             Shared error enum used across all modules
 │   │
@@ -389,15 +392,15 @@ steps:
     type: manual_instruction
 ```
 
-Five step types exist: `file_input`, `sql_transform`, `re_query`,
-`code_table_sync`, `manual_instruction`.
+Seven step types exist: `file_input`, `sql_transform`, `re_query`,
+`code_table_sync`, `user_input`, `visualization`, `manual_instruction`.
 
 ### sql/*.sql
 
 The SQL DuckDB executes. Files are named by the YAML and referenced through
 placeholders — `{{input:Label}}` for an uploaded file, `{{output:Label}}` for a
 declared output, `{{codetable:…}}` / `{{query:…}}` / `{{sync:…}}` for data
-pulled from RE. (`{{input_file}}` is a legacy alias for the sole input of a
+pulled from RE, and `{{form:…}}` for values a `user_input` step collected. (`{{input_file}}` is a legacy alias for the sole input of a
 single-input transform.)
 
 ```sql
@@ -523,6 +526,7 @@ StepGenerateFile → App.tsx handleGenerate
   collects filePaths (input label → path/id)
            queryIds  (query_output label → artifact id from an earlier re_query)
            syncIds   (sync_output label  → artifact id from an earlier sync)
+           formIds   (form_output label  → artifact id from an earlier user_input)
   → api.runProfile({...})
   → core::api::run_profile
       open_session               re-read structure.yaml + SQL from the session
@@ -530,7 +534,7 @@ StepGenerateFile → App.tsx handleGenerate
       code_tables::fetch_all     if the profile declares any  → {{codetable:}}
       Workspace::new_run_dir()   fresh <session_id>/runs/<token>/
       db::run_transform          substitute {{input:}} {{output:}} {{query:}}
-                                 {{sync:}} {{codetable:}}, run DuckDB,
+                                 {{sync:}} {{form:}} {{codetable:}}, run DuckDB,
                                  write one CSV per declared output
       relativize output paths    → artifact ids
   → TransformResult { outputs: [{label, artifact_id, row_count}], notices }
@@ -577,7 +581,7 @@ import from `@tauri-apps/*`.
 import * as api from "../../lib/api";
 
 const result = await api.runProfile({
-  filePaths, queryIds, syncIds,
+  filePaths, queryIds, syncIds, formIds,
   sqlFile: transform.sql,
   sessionId: loadedProfile.session_id,
   outputLabels: transform.output ?? [],
@@ -1028,9 +1032,10 @@ normalizes `\` to `/` (DuckDB accepts forward slashes on Windows) and doubles
 embedded single quotes so a path containing `'` cannot terminate the literal
 early. Never interpolate a raw path.
 
-**A `{{sync:X}}` join failing to bind**
+**A `{{form:X}}` or `{{sync:X}}` join failing to bind**
 A sync that attempted zero rows publishes `[]`, so `read_json_auto` has no
-schema to infer. Use `read_json('{{sync:X}}', columns={…})` naming the columns
+schema to infer — the same is true of a form whose rows came back empty. Use
+`read_json('{{sync:X}}', columns={…})` naming the columns
 you join on.
 
 ---
@@ -1058,7 +1063,7 @@ you join on.
 | **Import profile** | A profile with `inputs` / `outputs` / `steps` — uploads in, CSVs out |
 | **Report profile** | A profile with `kind: report` — parameters in, live RE data on screen |
 | **Step** | One entry in an import profile's `steps:` list; its `type` picks the UI component |
-| **Placeholder** | A `{{…}}` token in profile SQL or YAML the runtime substitutes (`{{input:X}}`, `{{output:X}}`, `{{query:X}}`, `{{sync:X}}`, `{{codetable:X}}`, `{{param:X}}`) |
+| **Placeholder** | A `{{…}}` token in profile SQL or YAML the runtime substitutes (`{{input:X}}`, `{{output:X}}`, `{{query:X}}`, `{{sync:X}}`, `{{form:X}}`, `{{codetable:X}}`, `{{param:X}}`) |
 | **Fixture** | A canned RE API response in the bundle, used when running in mock mode |
 | **Mock mode** | Fixture-backed execution — no RE connection, or `RE_NXT_MOCK=1` |
 | **SKY / RE NXT** | Blackbaud's Raiser's Edge NXT API, the source of query and code-table data |

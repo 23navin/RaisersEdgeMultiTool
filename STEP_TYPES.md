@@ -725,10 +725,45 @@ Runs in `crates/core/src/user_input.rs`; rendered by `StepUserInput`.
   form_output: SemesterDates   # names the values; NOT `output`
 ```
 
-`rows_sql` reads the same sources a `visualization` does — uploaded files, the
-profile's code tables, and any `query_input` / `sync_input` the step declares.
-It cannot read another form: a form whose rows depend on a form would have no
-stable order to resolve in.
+`rows_sql` reads the same sources a `sql_transform` does — uploaded files, the
+profile's code tables, and any `query_input` / `sync_input` / `form_input` the
+step declares. Reading an earlier **form** is allowed and useful: one form can
+resolve what the next one asks about (map a project to a fund, and the terms on
+those rows become questions the date form now asks). Ordering is what keeps it
+acyclic, enforced by the same upstream-family check as every other label.
+
+### Select options — fixed or resolved at run time
+
+A `select` field needs choices from exactly one source:
+
+```yaml
+    # A fixed list, when the choices are known when the profile is written:
+    - { id: gift_type, label: Gift type, type: select, options: [Cash, Pledge] }
+
+    # ...or a SELECT, when they only exist once the run has fetched them:
+    - id: replacement_fund_id
+      label: "Use this fund instead"
+      type: select
+      options_sql: fund_choices.sql
+```
+
+`options_sql` runs against the same sources `rows_sql` sees. Its **first column
+is the value** stored and published; an optional **second column is the label**
+the operator reads. Blank and duplicate values are dropped.
+
+```sql
+-- sql/fund_choices.sql
+SELECT fund_id AS value, fund_id || ' — ' || fund_description AS label
+FROM read_json_auto('{{query:Funds}}') ORDER BY value
+```
+
+Options describe the *field*, not the row: one list is resolved per run and
+shared by every row of the form.
+
+A held value that the option list no longer offers — the fund list changed
+under a selection made earlier — is reported as **stale**: it is still
+published (hiding it would hide the mismatch) and still shown in the control
+marked *(not in list)*, but it keeps the step from counting as done.
 
 ### What gets published
 One JSON object per row, written to the session and read with `read_json`:
@@ -754,10 +789,14 @@ shows and what was published never disagree.
 ### UI behavior
 - **Source row**: one pill per declared source with a ready/not-ready mark —
   the same row `visualization` draws.
-- **The form**: one table row per published row; the key column on the left when
-  the step has a `rows_sql`, then one control per field. `select` renders a
-  dropdown of its `options`; everything else renders the matching input type.
-  A required box that's still blank is outlined amber.
+- **The form**: one table row per published row. **Every column `rows_sql`
+  selected gets its own column**, under the name the SQL gave it, so a row's
+  identity can be more than one value (a project id *and* the title it arrived
+  under). Then one control per field. A required box that's still blank — or a
+  selection that has gone stale — is outlined amber.
+- **Select controls**: under 8 choices renders a plain dropdown; at 8 or more it
+  becomes a searchable popover, matching on both value and label, since a list
+  sourced from RE runs to hundreds of entries.
 - **Self-publishing, no button.** The step publishes as soon as its sources are
   ready, and again ~450 ms after the last keystroke. There is nothing to press
   and nothing to forget to press.
@@ -769,8 +808,8 @@ shows and what was published never disagree.
 ### Gating
 A published form isn't automatically a usable one. `stepsDone` and every
 downstream `canGenerate` require `result.complete` — every required field on
-every row filled — because a half-filled form publishes nulls, and joining to
-those would quietly empty a column of the import file.
+every row filled, and no stale selections — because a half-filled form publishes
+nulls, and joining to those would quietly empty a column of the import file.
 
 ---
 
@@ -840,7 +879,7 @@ step label alone — a `code_table_sync` step holds exactly one operation.
 | `sql_transform`      | `label`, `type`, `sql` or `transforms`| `input`, `output`, `notices`, `query_input`, `sync_input`, `form_input`, `transforms[].*` |
 | `re_query`           | `label`, `type`, `query_output`, `ref` or `template` | `input`, `params_sql`, `bind`     |
 | `code_table_sync`    | `label`, `type`, `sql`, `operation`, `code_table` or `code_table_id` | `input`, `sync_output` |
-| `user_input`         | `label`, `type`, `form_output`, non-empty `fields` (each with `id`, `label`, `type`) | `input`, `query_input`, `sync_input`, `rows_sql`, `key_column`, `fields[].required`, `fields[].default`, `fields[].options` |
+| `user_input`         | `label`, `type`, `form_output`, non-empty `fields` (each with `id`, `label`, `type`); a `select` field also needs `options` **or** `options_sql` | `input`, `query_input`, `sync_input`, `form_input`, `rows_sql`, `key_column`, `fields[].required`, `fields[].default` |
 | `visualization`      | `label`, `type`, `visualization.type`, and either `sql` or exactly one `query_input`/`sync_input`/`form_input` | `input`, `query_input`, `sync_input`, `form_input`, `visualization.title`, `visualization.config` |
 | `manual_instruction` | `label`, `type`                      | —                                        |
 

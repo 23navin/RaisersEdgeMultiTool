@@ -221,6 +221,8 @@ struct UserInputReq {
     query_ids: HashMap<String, String>,
     #[serde(default)]
     sync_ids: HashMap<String, String>,
+    #[serde(default)]
+    form_ids: HashMap<String, String>,
     step_label: String,
     session_id: String,
     #[serde(default)]
@@ -389,6 +391,7 @@ async fn run_user_input(
                 file_paths,
                 req.query_ids,
                 req.sync_ids,
+                req.form_ids,
                 &req.step_label,
                 &req.session_id,
                 &req.values,
