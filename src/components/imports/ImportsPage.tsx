@@ -3,7 +3,14 @@
 // The Imports tab: profile sidebar on the left, step content on the right.
 
 import type { LoadedProfile, ProfileSummary } from "../../types";
-import type { FileEntry, GenEntry, SyncEntry, QueryEntry, VizEntry } from "../../App";
+import type {
+  FileEntry,
+  GenEntry,
+  SyncEntry,
+  QueryEntry,
+  VizEntry,
+  FormEntry,
+} from "../../App";
 import { Panel } from "../shared/Panel";
 import { Sidebar } from "./Sidebar";
 import { MainPanel } from "./MainPanel";
@@ -27,6 +34,14 @@ type ImportsPageProps = {
   onRunQuery: (stepLabel: string) => void;
   visualizations: Record<string, VizEntry>;
   onRunVisualization: (stepLabel: string) => void;
+  forms: Record<string, FormEntry>;
+  onRunUserInput: (stepLabel: string) => void;
+  onUserInputChange: (
+    stepLabel: string,
+    key: string,
+    fieldId: string,
+    value: string,
+  ) => void;
   onReset: () => void;
 };
 
@@ -49,6 +64,9 @@ export function ImportsPage({
   onRunQuery,
   visualizations,
   onRunVisualization,
+  forms,
+  onRunUserInput,
+  onUserInputChange,
   onReset,
 }: ImportsPageProps) {
   return (
@@ -76,6 +94,9 @@ export function ImportsPage({
         onRunQuery={onRunQuery}
         visualizations={visualizations}
         onRunVisualization={onRunVisualization}
+        forms={forms}
+        onRunUserInput={onRunUserInput}
+        onUserInputChange={onUserInputChange}
         onDownload={onDownload}
       />
     </Panel>

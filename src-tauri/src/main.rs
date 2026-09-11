@@ -15,6 +15,7 @@ fn main() {
             commands::run_code_table_sync,
             commands::run_re_query,
             commands::run_visualization,
+            commands::run_user_input,
             commands::run_report,
             commands::run_report_action,
             commands::save_output,

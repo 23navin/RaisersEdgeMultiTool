@@ -70,6 +70,18 @@ export type SqlTransform = {
   notices?: NoticeQuery[];
   query_input?: string[];   // query outputs this transform reads
   sync_input?: string[];    // code_table_sync outcomes this transform reads
+  form_input?: string[];    // user_input values this transform reads
+};
+
+// One control on a user_input step's form. `id` is the column name the value
+// appears under in {{form:Label}}, so SQL reads it directly.
+export type UserInputField = {
+  id: string;
+  label: string;
+  type: string;            // "date" | "text" | "number" | "select"
+  required?: boolean;
+  options?: string[];      // allowed values for "select"
+  default?: string;
 };
 
 // The display spec on a `visualization` step. Mirrors a report profile's
@@ -110,6 +122,13 @@ export type Step = {
   // sql_transform: code_table_sync outcomes this transform reads as
   // {{sync:<label>}}.
   sync_input?: string[];
+  // sql_transform: user_input values this transform reads as {{form:<label>}}.
+  form_input?: string[];
+  // user_input fields
+  rows_sql?: string;       // SELECT naming the rows to collect values for
+  key_column?: string;     // which of its columns identifies a row (default: the first)
+  fields?: UserInputField[];
+  form_output?: string;    // names the values -> {{form:<label>}} downstream
   // visualization: how to draw the rows the step's `sql` returns. Omit `sql`
   // and the step's single query_input / sync_input is shown as-is.
   visualization?: StepVisualization;
@@ -282,6 +301,28 @@ export type QueryStepResult = {
   row_count: number;
   mode: string;            // "live" (real SKY API) | "mock"
   resolved_request: unknown; // request after {{rows:}}/{{value:}} substitution
+};
+
+// Returned by run_user_input. Mirrors user_input::UserInputResult.
+//
+// One FormRow per row of controls the step draws. `columns`/`display` are the
+// row's identity as rows_sql returned it (empty for a single-row form);
+// `values` is what the form currently holds, field id → value; `missing` names
+// the required fields still blank on that row.
+export type FormRow = {
+  key: string;
+  columns: string[];
+  display: string[];
+  values: Record<string, string>;
+  missing: string[];
+};
+
+export type UserInputResult = {
+  form_output: string;     // the label later SQL uses as {{form:<label>}}
+  artifact_id: string;     // opaque id of the JSON the values were written to
+  rows: FormRow[];
+  row_count: number;
+  complete: boolean;       // every required field on every row is filled
 };
 
 // Returned by run_code_table_sync. Mirrors code_tables::SyncResult.

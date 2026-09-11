@@ -562,7 +562,8 @@ pub fn validate_profile(files: &[ProfileFileEntry]) -> ValidationReport {
                 // Where the rows come from: a SELECT, or exactly one declared
                 // upstream result shown as-is.
                 let upstream: usize = step.query_input.as_ref().map_or(0, |v| v.len())
-                    + step.sync_input.as_ref().map_or(0, |v| v.len());
+                    + step.sync_input.as_ref().map_or(0, |v| v.len())
+                    + step.form_input.as_ref().map_or(0, |v| v.len());
                 match step.sql.as_deref() {
                     Some(name) => {
                         referenced_sql.insert(name.to_string());
@@ -585,7 +586,7 @@ pub fn validate_profile(files: &[ProfileFileEntry]) -> ValidationReport {
                     None => issues.push(err(
                         "yaml.visualization.no_source",
                         format!(
-                            "visualization step '{}' needs a `sql` file, or exactly one query_input / sync_input to show as-is (it declares {})",
+                            "visualization step '{}' needs a `sql` file, or exactly one query_input / sync_input / form_input to show as-is (it declares {})",
                             step.label, upstream
                         ),
                         Some(step_loc()),
@@ -609,11 +610,137 @@ pub fn validate_profile(files: &[ProfileFileEntry]) -> ValidationReport {
                 }
             }
 
+            "user_input" => {
+                // The label later SQL will reference.
+                match step.form_output.as_deref() {
+                    None => issues.push(err(
+                        "yaml.user_input.no_output",
+                        format!(
+                            "user_input step '{}' needs `form_output` naming its values",
+                            step.label
+                        ),
+                        Some(step_loc()),
+                        false,
+                    )),
+                    Some(out) if out.trim().is_empty() => issues.push(err(
+                        "yaml.user_input.no_output",
+                        format!("user_input step '{}' has an empty `form_output`", step.label),
+                        Some(step_loc()),
+                        false,
+                    )),
+                    Some(_) => {}
+                }
+
+                // The controls. Without these the step asks nothing.
+                const FIELD_TYPES: [&str; 4] = ["date", "text", "number", "select"];
+                let fields = step.fields.as_deref().unwrap_or(&[]);
+                if fields.is_empty() {
+                    issues.push(err(
+                        "yaml.user_input.no_fields",
+                        format!("user_input step '{}' declares no `fields` to collect", step.label),
+                        Some(step_loc()),
+                        false,
+                    ));
+                }
+                let mut seen_ids: HashSet<&str> = HashSet::new();
+                for f in fields {
+                    if f.id.trim().is_empty() {
+                        issues.push(err(
+                            "yaml.user_input.field_no_id",
+                            format!("user_input step '{}' has a field with no `id`", step.label),
+                            Some(step_loc()),
+                            false,
+                        ));
+                    } else if !seen_ids.insert(f.id.as_str()) {
+                        issues.push(err(
+                            "yaml.user_input.duplicate_field",
+                            format!(
+                                "user_input step '{}' declares field '{}' twice — each id is a column in {{{{form:{}}}}}",
+                                step.label,
+                                f.id,
+                                step.form_output.as_deref().unwrap_or("…")
+                            ),
+                            Some(step_loc()),
+                            false,
+                        ));
+                    }
+                    if !FIELD_TYPES.contains(&f.field_type.as_str()) {
+                        issues.push(err(
+                            "yaml.user_input.bad_field_type",
+                            format!(
+                                "user_input step '{}': field '{}' has type '{}'; expected one of {}",
+                                step.label,
+                                f.id,
+                                f.field_type,
+                                FIELD_TYPES.join(", ")
+                            ),
+                            Some(step_loc()),
+                            false,
+                        ));
+                    }
+                    if f.field_type == "select"
+                        && !matches!(f.options.as_ref(), Some(o) if !o.is_empty())
+                    {
+                        issues.push(err(
+                            "yaml.user_input.select_no_options",
+                            format!(
+                                "user_input step '{}': field '{}' is a select but declares no `options`",
+                                step.label, f.id
+                            ),
+                            Some(step_loc()),
+                            false,
+                        ));
+                    }
+                }
+
+                // rows_sql is optional — without it the form is a single row —
+                // but must exist when named.
+                if let Some(name) = step.rows_sql.as_deref() {
+                    referenced_sql.insert(name.to_string());
+                    if !sql_files.contains_key(name) {
+                        issues.push(err(
+                            "yaml.user_input.missing_rows_sql",
+                            format!(
+                                "user_input step '{}' references missing file sql/{}",
+                                step.label, name
+                            ),
+                            Some(IssueLocation::Sql { path: format!("sql/{}", name), line: None }),
+                            true,
+                        ));
+                    }
+                } else if step.key_column.is_some() {
+                    issues.push(warning(
+                        "yaml.user_input.key_without_rows",
+                        format!(
+                            "user_input step '{}' sets `key_column` but has no `rows_sql` — a single-row form has no key",
+                            step.label
+                        ),
+                        Some(step_loc()),
+                        false,
+                    ));
+                }
+
+                for r in step.input.as_deref().unwrap_or(&[]) {
+                    let lbl = ref_label(r);
+                    if !valid_input_labels.contains(lbl.as_str()) {
+                        issues.push(err(
+                            "yaml.input_ref.undeclared",
+                            format!(
+                                "Step '{}' references undeclared input '{}'",
+                                step.label, lbl
+                            ),
+                            Some(step_loc()),
+                            false,
+                        ));
+                    }
+                }
+            }
+
             other => {
                 issues.push(err(
                     "yaml.unknown_step_type",
                     format!(
-                        "Step '{}' has unknown type '{}'. Expected file_input, sql_transform, re_query, code_table_sync, visualization, or manual_instruction.",
+                        "Step '{}' has unknown type '{}'. Expected file_input, sql_transform, re_query, code_table_sync, user_input, visualization, or manual_instruction.",
                         step.label, other
                     ),
                     Some(step_loc()),
@@ -920,6 +1047,17 @@ const UPSTREAM_FAMILIES: &[UpstreamFamily] = &[
         sql_code: "sql.unknown_sync",
         output_of: |s| s.sync_output.as_deref(),
         inputs_of: |s| collect_declared(s.sync_input.as_ref(), s, |t| t.sync_input.as_ref()),
+    },
+    UpstreamFamily {
+        producer_type: "user_input",
+        kind: "form",
+        output_field: "form_output",
+        input_field: "form_input",
+        dup_code: "yaml.user_input.duplicate_output",
+        unresolved_code: "yaml.form_input.unresolved",
+        sql_code: "sql.unknown_form",
+        output_of: |s| s.form_output.as_deref(),
+        inputs_of: |s| collect_declared(s.form_input.as_ref(), s, |t| t.form_input.as_ref()),
     },
 ];
 
@@ -1749,5 +1887,79 @@ mod tests {
         let r = validate_profile(&bundle(&yaml));
         assert!(codes(&r).contains(&"yaml.re_query.no_call"));
         assert!(codes(&r).contains(&"yaml.re_query.no_output"));
+    }
+
+    // ── form_output / form_input ──────────────────────────────────────────────
+    // The third UPSTREAM_FAMILIES entry, checked by the same routine — these
+    // confirm the table row is wired up, not that the rules were re-implemented.
+
+    fn form_bundle(yaml: &str) -> Vec<ProfileFileEntry> {
+        vec![
+            file("structure.yaml", yaml),
+            file(
+                "instructions.md",
+                "# T\n\n<!-- label: Ask -->\n## Ask\n\n<!-- label: Build -->\n## Build\n",
+            ),
+            file("sql/rows.sql", "SELECT DISTINCT term FROM x;"),
+            file(
+                "sql/build.sql",
+                "SELECT * FROM read_json_auto('{{form:Terms}}');",
+            ),
+        ]
+    }
+
+    const FORM_ASK: &str = "\x20 - label: Ask\n    type: user_input\n    \
+                            rows_sql: rows.sql\n    form_output: Terms\n    fields:\n      \
+                            - { id: date_from, label: Start, type: date, required: true }\n";
+    const FORM_BUILD: &str = "\x20 - label: Build\n    type: sql_transform\n    \
+                              form_input: [Terms]\n    sql: build.sql\n    output: [Out]\n";
+
+    #[test]
+    fn form_input_in_order_is_accepted() {
+        let yaml = format!("{HEAD}steps:\n{FORM_ASK}{FORM_BUILD}");
+        let r = validate_profile(&form_bundle(&yaml));
+        assert!(
+            !codes(&r).contains(&"yaml.form_input.unresolved"),
+            "issues: {:?}",
+            r.issues.iter().map(|i| (&i.code, &i.message)).collect::<Vec<_>>()
+        );
+        assert!(!codes(&r).contains(&"sql.unknown_form"));
+    }
+
+    #[test]
+    fn form_input_before_its_producer_is_rejected() {
+        let yaml = format!("{HEAD}steps:\n{FORM_BUILD}{FORM_ASK}");
+        let r = validate_profile(&form_bundle(&yaml));
+        let msg = &r
+            .issues
+            .iter()
+            .find(|i| i.code == "yaml.form_input.unresolved")
+            .expect("expected an unresolved form_input issue")
+            .message;
+        assert!(msg.contains("comes later"), "message was: {}", msg);
+    }
+
+    #[test]
+    fn duplicate_form_output_is_rejected() {
+        let yaml = format!("{HEAD}steps:\n{FORM_ASK}{FORM_ASK}{FORM_BUILD}");
+        let r = validate_profile(&form_bundle(&yaml));
+        assert!(codes(&r).contains(&"yaml.user_input.duplicate_output"));
+    }
+
+    // A form that names nothing, asks nothing, and declares a field type that
+    // doesn't exist — each its own issue.
+    #[test]
+    fn user_input_requires_output_and_fields() {
+        let yaml = format!("{HEAD}steps:\n  - label: Ask\n    type: user_input\n");
+        let r = validate_profile(&form_bundle(&yaml));
+        assert!(codes(&r).contains(&"yaml.user_input.no_output"));
+        assert!(codes(&r).contains(&"yaml.user_input.no_fields"));
+
+        let yaml = format!(
+            "{HEAD}steps:\n  - label: Ask\n    type: user_input\n    form_output: Terms\n    \
+             fields:\n      - {{ id: when, label: When, type: calendar }}\n"
+        );
+        let r = validate_profile(&form_bundle(&yaml));
+        assert!(codes(&r).contains(&"yaml.user_input.bad_field_type"));
     }
 }

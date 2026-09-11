@@ -186,6 +186,8 @@ struct RunProfileReq {
     file_paths: HashMap<String, String>,
     query_ids: HashMap<String, String>,
     sync_ids: HashMap<String, String>,
+    #[serde(default)]
+    form_ids: HashMap<String, String>,
     sql_file: String,
     session_id: String,
     output_labels: Vec<String>,
@@ -205,8 +207,24 @@ struct VisualizationReq {
     file_paths: HashMap<String, String>,
     query_ids: HashMap<String, String>,
     sync_ids: HashMap<String, String>,
+    #[serde(default)]
+    form_ids: HashMap<String, String>,
     step_label: String,
     session_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UserInputReq {
+    file_paths: HashMap<String, String>,
+    #[serde(default)]
+    query_ids: HashMap<String, String>,
+    #[serde(default)]
+    sync_ids: HashMap<String, String>,
+    step_label: String,
+    session_id: String,
+    #[serde(default)]
+    values: HashMap<String, HashMap<String, String>>,
 }
 
 #[derive(Deserialize)]
@@ -292,6 +310,7 @@ async fn run_profile(
                 file_paths,
                 req.query_ids,
                 req.sync_ids,
+                req.form_ids,
                 &req.sql_file,
                 &req.session_id,
                 &req.output_labels,
@@ -346,8 +365,33 @@ async fn run_visualization(
                 file_paths,
                 req.query_ids,
                 req.sync_ids,
+                req.form_ids,
                 &req.step_label,
                 &req.session_id,
+            )
+        })
+        .await?,
+    ))
+}
+
+async fn run_user_input(
+    State(s): State<Arc<AppState>>,
+    Json(req): Json<UserInputReq>,
+) -> ApiResult<multitool_core::user_input::UserInputResult> {
+    let _permit = s.run_permits.acquire().await.expect("semaphore open");
+    let ws = s.open_workspace(&req.session_id)?;
+    let file_paths = resolve_inputs(&ws, &req.file_paths)?;
+    let ctx = s.ctx();
+    Ok(Json(
+        blocking(move || {
+            api::run_user_input(
+                &ctx,
+                file_paths,
+                req.query_ids,
+                req.sync_ids,
+                &req.step_label,
+                &req.session_id,
+                &req.values,
             )
         })
         .await?,
@@ -690,6 +734,7 @@ async fn main() {
         .route("/api/run_re_query", post(run_re_query))
         .route("/api/run_code_table_sync", post(run_code_table_sync))
         .route("/api/run_visualization", post(run_visualization))
+        .route("/api/run_user_input", post(run_user_input))
         .route("/api/run_report", post(run_report))
         .route("/api/run_report_action", post(run_report_action))
         .route("/api/save_profile", post(save_profile))

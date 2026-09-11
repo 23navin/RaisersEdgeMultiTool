@@ -12,5 +12,6 @@ pub mod db;
 pub mod re_calls;
 pub mod code_tables;
 pub mod query_step;
+pub mod user_input;
 pub mod report;
 pub mod workspace;

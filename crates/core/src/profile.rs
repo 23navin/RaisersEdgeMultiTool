@@ -34,6 +34,9 @@ const BUILTIN_PROFILES: &[(&str, &[u8])] = &[
     // Report-kind built-in. Verified + packed by profiles/build.sh like the
     // others (the verifier branches on `kind: report`).
     ("gift_activity.import", include_bytes!("../../../profiles/gift_activity.import")),
+    // Demonstrates the user_input step: a form whose rows come out of the
+    // uploaded file, feeding a later transform as {{form:Label}}.
+    ("scholarship_recipients.import", include_bytes!("../../../profiles/scholarship_recipients.import")),
 ];
 
 // ── YAML structs ──────────────────────────────────────────────────────────────
@@ -109,6 +112,25 @@ pub struct SqlTransform {
     // Same contract for an earlier code_table_sync step's outcome rows, read as
     // {{sync:Label}}.
     pub sync_input: Option<Vec<String>>,
+    // Same contract again for the values an earlier user_input step published,
+    // read as {{form:Label}}.
+    pub form_input: Option<Vec<String>>,
+}
+
+// One control on a user_input step's form. `id` is the column name the value
+// appears under in the published rows, so later SQL reads it directly. Shaped
+// like a report `Parameter` — same control vocabulary, one per row of the form
+// rather than one per report.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct UserInputField {
+    pub id: String,
+    pub label: String,
+    #[serde(rename = "type")]
+    pub field_type: String, // "date" | "text" | "number" | "select"
+    #[serde(default)]
+    pub required: bool,
+    pub options: Option<Vec<String>>, // allowed values for "select"
+    pub default: Option<String>,
 }
 
 // A code table pulled from RE before transforms run. Shared by both profile
@@ -199,6 +221,18 @@ pub struct Step {
     pub query_input: Option<Vec<String>>,
     // Same shortcut for code_table_sync outcomes read as {{sync:Label}}.
     pub sync_input: Option<Vec<String>>,
+    // Same shortcut for user_input values read as {{form:Label}}.
+    pub form_input: Option<Vec<String>>,
+
+    // ── user_input fields ────────────────────────────────────────────────────
+    // Asks the user to fill in values the uploaded files don't carry — one row
+    // of controls per row `rows_sql` returns (omit it for a single row), each
+    // row carrying the `fields` below. The filled rows are published to later
+    // SQL as {{form:<form_output>}}.
+    pub rows_sql: Option<String>,   // SELECT naming the rows to collect values for
+    pub key_column: Option<String>, // which of its columns identifies a row (default: the first)
+    pub fields: Option<Vec<UserInputField>>,
+    pub form_output: Option<String>, // names the result; NOT `output` (see above)
 
     // ── visualization fields ─────────────────────────────────────────────────
     // Shows a result set on screen instead of writing a file. The step's `sql`

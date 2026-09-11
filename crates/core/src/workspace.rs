@@ -111,6 +111,13 @@ impl Workspace {
         self.root.join("codetables")
     }
 
+    // user_input values. One file per form_output label, rewritten in place on
+    // every edit — a form is the current state of what the user typed, not a
+    // series of runs, so it needs no per-run dir.
+    pub fn forms_dir(&self) -> PathBuf {
+        self.root.join("forms")
+    }
+
     pub fn inputs_dir(&self) -> PathBuf {
         self.root.join("inputs")
     }

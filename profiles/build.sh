@@ -100,6 +100,8 @@ const codeTableOutputs = validateCodeTables();
 let queryOutputs = new Set();
 // Same, for code_table_sync steps that name their outcome rows via sync_output.
 let syncOutputs = new Set();
+// Same, for user_input steps that publish their collected values via form_output.
+let formOutputs = new Set();
 
 if (kind === 'report') {
   validateReport();
@@ -111,6 +113,7 @@ checkLabeledPlaceholders('codetable', codeTableOutputs, 'code_tables entry');
 if (kind !== 'report') {
   checkLabeledPlaceholders('query', queryOutputs, 're_query step');
   checkLabeledPlaceholders('sync', syncOutputs, 'code_table_sync step');
+  checkLabeledPlaceholders('form', formOutputs, 'user_input step');
 }
 
 // ── sql dir presence + unused (shared) ────────────────────────────────────────
@@ -353,6 +356,7 @@ function validateImport() {
   const UPSTREAM = [
     { kind: 'query', producer: 're_query', outField: 'query_output', inField: 'query_input', seen: queryOutputs },
     { kind: 'sync', producer: 'code_table_sync', outField: 'sync_output', inField: 'sync_input', seen: syncOutputs },
+    { kind: 'form', producer: 'user_input', outField: 'form_output', inField: 'form_input', seen: formOutputs },
   ];
   for (const fam of UPSTREAM) {
     fam.all = new Set(
@@ -366,7 +370,7 @@ function validateImport() {
     if (!isStr(step.label) || !step.label) err(`${where}.label must be a non-empty string`);
     else { stepLabels.push(step.label); where = `steps[${i}](${step.label})`; }
     const t = step.type;
-    const STEP_TYPES = ['file_input', 'sql_transform', 're_query', 'code_table_sync', 'visualization', 'manual_instruction'];
+    const STEP_TYPES = ['file_input', 'sql_transform', 're_query', 'code_table_sync', 'user_input', 'visualization', 'manual_instruction'];
     if (!STEP_TYPES.includes(t)) {
       err(`${where}.type must be one of ${STEP_TYPES.join(', ')} (got ${JSON.stringify(t)})`);
       continue;
@@ -475,6 +479,61 @@ function validateImport() {
           }
         }
       }
+    } else if (t === 'user_input') {
+      // Names the collected values so later SQL can read {{form:Label}}.
+      if (!isStr(step.form_output) || !step.form_output) {
+        err(`${where} (user_input): form_output is required — it names the values later SQL reads`);
+      } else if (formOutputs.has(step.form_output)) {
+        err(`${where} (user_input): form_output '${step.form_output}' is declared by more than one step`);
+      } else {
+        formOutputs.add(step.form_output);
+      }
+      // The controls. Each id becomes a column in the published rows.
+      const FIELD_TYPES = ['date', 'text', 'number', 'select'];
+      if (!isList(step.fields) || step.fields.length === 0) {
+        err(`${where} (user_input): fields must be a non-empty list — the step collects nothing otherwise`);
+      } else {
+        const fieldIds = new Set();
+        for (const [fi, f] of step.fields.entries()) {
+          const fw = `${where}.fields[${fi}]`;
+          if (!isMap(f)) { err(`${fw} must be a mapping`); continue; }
+          if (!isStr(f.id) || !f.id) err(`${fw}.id must be a non-empty string`);
+          else if (fieldIds.has(f.id)) err(`${fw}.id '${f.id}' is duplicated — each id is a column in {{form:${step.form_output}}}`);
+          else fieldIds.add(f.id);
+          if (!isStr(f.label) || !f.label) err(`${fw}.label must be a non-empty string`);
+          if (!FIELD_TYPES.includes(f.type)) {
+            err(`${fw}.type must be one of ${FIELD_TYPES.join(', ')} (got ${JSON.stringify(f.type)})`);
+          }
+          if ('required' in f && !isBool(f.required)) err(`${fw}.required must be true or false`);
+          if (f.type === 'select' && (!isList(f.options) || f.options.length === 0)) {
+            err(`${fw} is a select but declares no options`);
+          }
+          if ('default' in f && f.default !== null && !isStr(f.default)) {
+            err(`${fw}.default must be a string`);
+          }
+        }
+      }
+      // rows_sql is optional — without it the form is a single row — but must
+      // exist when named.
+      if (step.rows_sql !== undefined && step.rows_sql !== null) {
+        if (!isStr(step.rows_sql) || !step.rows_sql) {
+          err(`${where} (user_input): rows_sql must be a non-empty string`);
+        } else {
+          needsSqlDir = true;
+          referencedSql.add(step.rows_sql);
+          if (!fs.existsSync(path.join(sqlDir, step.rows_sql))) {
+            err(`${where} (user_input): rows_sql references missing file sql/${step.rows_sql}`);
+          }
+        }
+      } else if (step.key_column !== undefined && step.key_column !== null) {
+        err(`${where} (user_input): key_column needs a rows_sql — a single-row form has no key`);
+      }
+      if (step.key_column !== undefined && step.key_column !== null && !isStr(step.key_column)) {
+        err(`${where} (user_input): key_column must be a string`);
+      }
+      for (const l of stepInputLabels(step.input, `${where}.input`)) {
+        if (!inputLabels.has(l)) err(`${where}.input references unknown input label '${l}'`);
+      }
     } else if (t === 'visualization') {
       // How to draw it. Same set the frontend VIZ_REGISTRY implements.
       const VIZ_TYPES = ['table', 'bar', 'line', 'pie', 'kpi'];
@@ -487,7 +546,8 @@ function validateImport() {
       // Where the rows come from: a SELECT, or exactly one declared upstream
       // result shown as-is.
       const upstream = (isList(step.query_input) ? step.query_input.length : 0)
-                     + (isList(step.sync_input) ? step.sync_input.length : 0);
+                     + (isList(step.sync_input) ? step.sync_input.length : 0)
+                     + (isList(step.form_input) ? step.form_input.length : 0);
       if (step.sql !== undefined && step.sql !== null) {
         if (!isStr(step.sql) || !step.sql) {
           err(`${where} (visualization): sql must be a non-empty string`);
@@ -499,7 +559,7 @@ function validateImport() {
           }
         }
       } else if (upstream !== 1) {
-        err(`${where} (visualization): needs a sql file, or exactly one query_input / sync_input to show as-is (it declares ${upstream})`);
+        err(`${where} (visualization): needs a sql file, or exactly one query_input / sync_input / form_input to show as-is (it declares ${upstream})`);
       }
       for (const l of stepInputLabels(step.input, `${where}.input`)) {
         if (!inputLabels.has(l)) err(`${where}.input references unknown input label '${l}'`);

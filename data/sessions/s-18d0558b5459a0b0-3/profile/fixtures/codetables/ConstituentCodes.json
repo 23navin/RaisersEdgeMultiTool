@@ -1,6 +1,0 @@
-[
-  { "table_entries_id": "6",  "long_description": "Board Member", "short_description": "BOA", "numeric_value": 0, "sequence": 1, "is_active": true, "is_system_entry": false, "code_tables_id": "43", "code_tables_name": "Constituent Codes" },
-  { "table_entries_id": "7",  "long_description": "Volunteer",    "short_description": "VOL", "numeric_value": 0, "sequence": 2, "is_active": true, "is_system_entry": false, "code_tables_id": "43", "code_tables_name": "Constituent Codes" },
-  { "table_entries_id": "8",  "long_description": "Employee",     "short_description": "EMP", "numeric_value": 0, "sequence": 3, "is_active": true, "is_system_entry": false, "code_tables_id": "43", "code_tables_name": "Constituent Codes" },
-  { "table_entries_id": "9",  "long_description": "Alumni",       "short_description": "ALU", "numeric_value": 0, "sequence": 4, "is_active": true, "is_system_entry": false, "code_tables_id": "43", "code_tables_name": "Constituent Codes" }
-]
