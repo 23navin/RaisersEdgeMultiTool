@@ -16,10 +16,12 @@ export function stepTransforms(step: Step): SqlTransform[] {
       sql: step.sql ?? "",
       output: step.output,
       notices: step.notices,
-      // Must be carried through: handleGenerate reads query_input off the
-      // normalized transform, so dropping it here would silently send an empty
-      // queryPaths map and leave {{query:...}} unresolved at runtime.
+      // Both upstream families must be carried through: handleGenerate reads
+      // these off the normalized transform, so dropping one here would silently
+      // send an empty id map and leave {{query:…}} / {{sync:…}} unresolved at
+      // runtime.
       query_input: step.query_input,
+      sync_input: step.sync_input,
     },
   ];
 }
