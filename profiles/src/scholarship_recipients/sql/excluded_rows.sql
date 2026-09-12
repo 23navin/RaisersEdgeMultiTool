@@ -4,14 +4,12 @@
 -- with the reason. Returns nothing when the file is complete.
 
 WITH src AS (
-  -- all_varchar=true: numeric-looking ids must not arrive as "946117.0".
-  -- See semester_terms.sql for why.
   SELECT
     TRIM(CAST("Bronco ID" AS VARCHAR))          AS bronco_id,
     TRIM(CAST("Award QTR/YR" AS VARCHAR))       AS term,
     TRIM(CAST("Foundation Project" AS VARCHAR)) AS fund_id,
     TRIM(CAST("Project Title" AS VARCHAR))      AS project_title
-  FROM read_xlsx('{{input:Recipients}}', all_varchar=true)
+  FROM read_xlsx('{{input:Recipients}}')
 ),
 funds AS (
   SELECT DISTINCT UPPER(TRIM(CAST(fund_id AS VARCHAR))) AS fund_key

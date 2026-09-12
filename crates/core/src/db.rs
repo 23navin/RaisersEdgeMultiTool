@@ -125,10 +125,47 @@ fn read_call(path: &Path) -> String {
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_lowercase();
-    if ext == "xlsx" || ext == "xls" {
+    let call = if ext == "xlsx" || ext == "xls" {
         format!("read_xlsx('{}')", file_str)
     } else {
         format!("read_csv_auto('{}')", file_str)
+    };
+    with_all_varchar(&call)
+}
+
+// ── Text-typed inputs ─────────────────────────────────────────────────────────
+// Every input file is read with `all_varchar=true`, so a column arrives as the
+// characters the cell shows rather than as whatever type the reader inferred.
+//
+// The reason is that inference silently corrupts identifiers. Excel stores a
+// Foundation Project like 946117 as a *number*, so the column comes back DOUBLE
+// and casting it to text yields "946117.0" — equal to no id any API returns.
+// CSV's sniffer does the same to a zero-padded id, typing "011111111" as an
+// integer and dropping the zeros. Neither raises an error: the join just
+// matches nothing, and every row reads as unmatched.
+//
+// The cost is that arithmetic on an input column now needs an explicit cast
+// (`SUM(CAST("Amount" AS DOUBLE))`), which DuckDB demands loudly — a binder
+// error naming the column, not a wrong total. Loud beats silent for a data
+// tool: a profile that miscounts money is worse than one that refuses to run.
+//
+// An author who wants the inferred types back writes `all_varchar=false`
+// explicitly; anything already saying `all_varchar` is left alone.
+
+// Add `all_varchar=true` to a csv/xlsx read call that doesn't already speak for
+// itself. Other readers (`read_json_auto` for a placeholder pointed somewhere
+// unusual) don't take the option and are returned untouched.
+fn with_all_varchar(call: &str) -> String {
+    let name_end = call.find('(').unwrap_or(call.len());
+    let name = call[..name_end].trim().to_ascii_lowercase();
+    let takes_option =
+        name.starts_with("read_csv") || name == "read_xlsx" || name == "read_xls";
+    if !takes_option || call.to_ascii_lowercase().contains("all_varchar") {
+        return call.to_string();
+    }
+    match call.strip_suffix(')') {
+        Some(head) => format!("{}, all_varchar=true)", head),
+        None => call.to_string(),
     }
 }
 
@@ -269,7 +306,10 @@ fn substitute_input(conn: &Connection, sql: &str, token: &str, path: &str) -> St
         match enclosing_read_call(sql, at, token.len()) {
             Some((start, end)) if start >= cursor => {
                 out.push_str(&sql[cursor..start]);
-                let call = sql[start..end].replace(token, path);
+                // The author's own call, with the path filled in and text
+                // typing forced on unless they asked for otherwise — then
+                // wrapped in the flattened-header projection.
+                let call = with_all_varchar(&sql[start..end].replace(token, path));
                 out.push_str(&flattened_relation(conn, &call));
                 cursor = end;
             }
@@ -937,16 +977,14 @@ mod tests {
     }
 
     // Numeric-looking identifiers are the other way a workbook column lies about
-    // itself. Excel stores a Foundation Project like 10001 as a number, so
-    // DuckDB types the column DOUBLE and the obvious cast renders "10001.0" —
-    // which matches no id any API returns, and fails silently as "nothing
-    // matched" rather than as an error. Reading the file with all_varchar=true
-    // gives back what the cell shows; this pins both halves, because the
-    // profiles rely on that option surviving the flattening rewrite.
+    // itself. Excel stores a Foundation Project like 10001 as a number, so an
+    // inferred read types it DOUBLE and renders "10001.0" — matching no id any
+    // API returns, and failing silently as "nothing matched" rather than as an
+    // error. Inputs are therefore read as text by default.
     #[test]
-    fn numeric_ids_read_as_written_only_with_all_varchar() {
+    fn numeric_ids_read_as_written_by_default() {
         let sources = SqlSources::new();
-        let naive = select_rows(
+        let rows = select_rows(
             &billings(),
             &sources,
             "SELECT CAST(\"Foundation Project\" AS VARCHAR) AS id \
@@ -954,24 +992,54 @@ mod tests {
         )
         .expect("plain read resolves");
         assert!(
-            naive.rows[0][0].ends_with(".0"),
-            "expected the DOUBLE round-trip this guards against, got {:?}",
-            naive.rows[0][0]
+            !rows.rows[0][0].contains('.'),
+            "an id column must arrive as written, got {:?}",
+            rows.rows[0][0]
         );
+    }
 
-        let text = select_rows(
+    // The escape hatch, and the hazard it re-opens: an author who wants the
+    // inferred types says so, and gets the DOUBLE round-trip back.
+    #[test]
+    fn all_varchar_false_opts_back_into_inferred_types() {
+        let sources = SqlSources::new();
+        let rows = select_rows(
             &billings(),
             &sources,
             "SELECT CAST(\"Foundation Project\" AS VARCHAR) AS id \
-             FROM read_xlsx('{{input:Recipients}}', all_varchar=true) LIMIT 1",
+             FROM read_xlsx('{{input:Recipients}}', all_varchar=false) LIMIT 1",
         )
-        .expect("all_varchar read resolves — and keeps the flattened headers");
+        .expect("explicit opt-out resolves");
         assert!(
-            !text.rows[0][0].contains('.'),
-            "all_varchar should give the cell as written, got {:?}",
-            text.rows[0][0]
+            rows.rows[0][0].ends_with(".0"),
+            "opting out should restore the inferred DOUBLE, got {:?}",
+            rows.rows[0][0]
         );
-        assert_eq!(text.rows[0][0], naive.rows[0][0].trim_end_matches(".0"));
+    }
+
+    // Forcing the option is textual, so it has to leave alone what it can't
+    // help and what the author already decided.
+    #[test]
+    fn with_all_varchar_only_touches_readers_that_take_it() {
+        assert_eq!(
+            with_all_varchar("read_xlsx('/tmp/a.xlsx')"),
+            "read_xlsx('/tmp/a.xlsx', all_varchar=true)"
+        );
+        // Existing options are kept, and the new one joins them.
+        assert_eq!(
+            with_all_varchar("read_csv('/tmp/a.csv', header = true)"),
+            "read_csv('/tmp/a.csv', header = true, all_varchar=true)"
+        );
+        // Already spoken for, either way.
+        assert_eq!(
+            with_all_varchar("read_csv_auto('/tmp/a.csv', all_varchar=false)"),
+            "read_csv_auto('/tmp/a.csv', all_varchar=false)"
+        );
+        // Not a reader that takes the option.
+        assert_eq!(
+            with_all_varchar("read_json_auto('/tmp/a.json')"),
+            "read_json_auto('/tmp/a.json')"
+        );
     }
 
     // A header that needs no flattening is untouched, so existing profiles keep

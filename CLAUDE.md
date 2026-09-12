@@ -351,6 +351,17 @@ arrives as `"Award \r\n QTR/YR"` is quoted in SQL, and named in a `validation:`
 label, as `"Award QTR/YR"`. Files whose headers are already clean are read
 through the bare `read_*()` call, unchanged.
 
+**Input reads are text-typed.** The same rewrite adds `all_varchar=true` to
+every csv/xlsx input read (`db::with_all_varchar`), so a column arrives as the
+characters the cell shows. Type inference silently corrupts identifiers: Excel
+stores `946117` as a number, so the column comes back `DOUBLE` and casting it
+to text yields `"946117.0"`, matching no id any API returns; CSV's sniffer
+drops the zeros off `"011111111"`. Neither errors — the join just matches
+nothing. The trade is that arithmetic on an input column needs an explicit cast
+(`SUM(CAST("Amount" AS DOUBLE))`), which DuckDB demands with a binder error
+naming the column. An author who wants the inferred types writes
+`all_varchar=false` on the call.
+
 ---
 
 ## Frontend State Architecture
@@ -454,12 +465,9 @@ so the backend can re-read validation rules, SQL, and fixtures from that session
   quotes. For a stacked Excel header, quote the *flattened* name (`"Award QTR/YR"`)
 - **Windows path backslash in SQL?** → Replace `\` with `/` in `db.rs` before string substitution
 - **Excel header not on row 1?** → Add `OFFSET 1` or use a CTE in the profile SQL
-- **An id column from Excel matching nothing?** → Excel stores `946117` as a
-  number, so the column is `DOUBLE` and casting it to text gives `"946117.0"`
-  (and loses leading zeros). Read the file with
-  `read_xlsx('{{input:X}}', all_varchar=true)` — the option survives the
-  header-flattening rewrite — and parse the genuinely numeric columns yourself.
-  Pinned by `db::tests::numeric_ids_read_as_written_only_with_all_varchar`
+- **`SUM`/`>` on an input column failing to bind?** → input columns are text by
+  design (see *Input reads* below). Cast explicitly:
+  `SUM(CAST("Amount" AS DOUBLE))`
 - **State read too early?** → Use the value returned by the setter callback, not the stale state variable
 - **Pipeline command failing with "Session not found"?** → the session was reaped (24h idle) or the backend restarted; reload the profile to mint a new one
 - **`{{input_file}}` errors in a multi-input transform** → use `{{input:Label}}` placeholders to disambiguate, one per declared input

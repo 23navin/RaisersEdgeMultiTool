@@ -1031,6 +1031,17 @@ both use `"Award QTR/YR"`. The rewrite fires where `{{input:Label}}` is the path
 argument of a `read_*()` call; anywhere else the placeholder still resolves to a
 plain path, just without flattening.
 
+**Numeric-looking identifiers**
+Type inference corrupts ids silently. Excel stores a `946117` as a number, so
+the column comes back `DOUBLE` and casts to `"946117.0"` — matching no id any
+API returns; CSV's sniffer types `"011111111"` as an integer and drops the
+zeros. Nothing errors, so the symptom is "every row is unmatched" rather than a
+failure. The same rewrite therefore adds `all_varchar=true` to every csv/xlsx
+input read (`db::with_all_varchar`), and input columns arrive as text. The cost
+is that arithmetic on one needs an explicit cast — `SUM(CAST("Amount" AS
+DOUBLE))` — which DuckDB demands with a binder error naming the column. An
+author who wants the inferred types back writes `all_varchar=false` on the call.
+
 **Excel files with merged cells or header rows above row 1**
 `read_xlsx()` assumes row 1 is the header. If the vendor file has a title row above
 the headers, add `OFFSET 1` or handle it in a CTE within the SQL.
