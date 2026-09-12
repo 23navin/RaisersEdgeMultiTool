@@ -344,6 +344,16 @@ Rules that bite:
   `"Item #"`.
 - `{{input:Label}}` is the path to that input's file. Use `read_csv_auto(...)`
   for CSV and `read_xlsx(...)` for Excel.
+- **Every input column arrives as text — cast the numbers yourself.** The
+  harness reads input files with `all_varchar=true`, because type inference
+  quietly corrupts identifiers: Excel stores `946117` as a *number*, so the
+  column would come back `DOUBLE` and cast to `"946117.0"`, matching no id any
+  API returns; CSV's sniffer drops the leading zeros off `"011111111"`. Neither
+  raises an error — the join just matches nothing and every row looks unmatched.
+  So write `TRY_CAST(REPLACE(TRIM("Amount"), '$', '') AS DOUBLE)` for money and
+  `SUM(CAST("Qty" AS INTEGER))` for a total; DuckDB will tell you loudly, naming
+  the column, if you forget. Add `all_varchar=false` to the read call in the
+  rare case you want the inferred types back.
 - `{{input_file}}` is a legacy alias for the same thing, valid **only** when the
   transform declares exactly one input. Prefer the labeled form.
 - Excel headers must be on row 1; otherwise skip rows with a CTE or `OFFSET`.

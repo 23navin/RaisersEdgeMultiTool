@@ -13,6 +13,10 @@ WITH src AS (
   -- "Bronco ID" and "Award QTR/YR" are two-line cells in the workbook. The
   -- harness flattens every header's line breaks before the SQL sees the file,
   -- so they are quoted here exactly as they read on screen.
+  --
+  -- It also reads every column as text, which is what keeps a numeric-looking
+  -- Foundation Project from arriving as "946117.0" and matching no fund — and
+  -- why Amount is parsed back to a number here rather than arriving as one.
   SELECT
     TRIM(CAST("Bronco ID" AS VARCHAR))          AS bronco_id,
     TRIM(CAST("Award QTR/YR" AS VARCHAR))       AS term,

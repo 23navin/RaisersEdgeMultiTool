@@ -18,6 +18,9 @@ WITH src AS (
   -- read through the harness's flattened-header projection (runs of whitespace
   -- collapsed to one space, ends trimmed), so the name below is what the SQL
   -- sees no matter how the export's whitespace shifts.
+  -- Every column arrives as text: the harness reads input files with
+  -- all_varchar=true, so an id like 946117 can't come back as the DOUBLE
+  -- "946117.0" and miss its fund.
   SELECT
     TRIM(CAST("Award QTR/YR" AS VARCHAR))       AS term,
     TRIM(CAST("Foundation Project" AS VARCHAR)) AS fund_id
