@@ -1,0 +1,7 @@
+Record ID,Status,Amount,Notes
+100451,Active,250.00,Renewal
+100452,Inactive,75.00,
+100453,active,120.00,Status is lower case
+,Active,90.00,No record id
+100455,Active,n/a,Amount is not a number
+100456,Inactive,45.00,

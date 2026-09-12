@@ -1,0 +1,15 @@
+constituent_id,LASTNAME,first-name,Gift Amount ($),gift date,constituent code,Fund Id,campaign!,pledge_flag,batch number,Gift.Type,SOLICITOR,letter code,acknowledgement
+10045871,Alvarez,Marisol,250.00,2026-01-14,Alumni,104530,Annual Fund,N,2041,Cash,J. Okafor,LTR-A1,Y
+,Bennett,Carl,125.00,2026-01-15,Parent,104530,Annual Fund,N,2041,Check,J. Okafor,LTR-A1,Y
+N/A,Cho,Dana,90.00,2026-01-15,Friend,104530,Capital Campaign,Y,2041,Cash,R. Lindqvist,LTR-B2,N
+10045,Dawson,Eli,75.50,2026-01-16,Alumni,104530,Endowment,N,2041,Check,R. Lindqvist,LTR-B2,Y
+10045872,,,300.00,2026-01-16,Alumni,104530,Annual Fund,Y,2041,Cash,J. Okafor,LTR-A1,Y
+10045873,Ferreira,Ana,,2026-01-17,Parent,104530,Annual Fund,N,2041,Cash,J. Okafor,LTR-A1,N
+10045874,Gallagher,Sean,"1,200.00",2026-01-17,Trustee,104530,Capital Campaign,N,2041,Stock,M. Ruiz,LTR-C3,Y
+10045875,Haddad,Nour,60.00,,,104530,Annual Fund,N,2041,Cash,M. Ruiz,LTR-C3,Y
+10045876,Ivanov,Petra,45.00,2026-01-18,ALUMNI,,Annual Fund,N,2041,Check,M. Ruiz,LTR-C3,N
+10045877,Jensen,Tor,80.00,2026-01-18,Friend,FUND12,Endowment,N,2041,Cash,J. Okafor,LTR-A1,Y
+10045878,Kowalski,Iga,150.00,2026-01-19,Alumni,10453,,,2041,Cash,J. Okafor,LTR-A1,Y
+10045879,Lam,Wei,200.00,2026-01-19,Parent,104530,Capital,Yes,,Check,R. Lindqvist,LTR-B2,Y
+10045880,Mbeki,Thandi,95.00,2026-01-20,Friend,104530,Annual Fund,N,B-41,Credit,,LTR-B2,Y
+10045881,Novak,Petr,110.00,2026-01-20,Trustee,104530,Endowment,N,204,Cash,R. Lindqvist,,TRUE

@@ -1,0 +1,203 @@
+---
+# Long List Demo — a profile whose result tables are deliberately too long.
+#
+# Three inputs, one per case the Imports UI has to handle:
+#   Messy Roster  — 16 validation rules against 14 cosmetically-renamed columns,
+#                   so validating it returns 26 errors and a 14-row column-name
+#                   notice. Both tables overflow and scroll.
+#   Short Extract — 3 errors. Stays under the cut, so it grows the card and
+#                   every row animates, exactly as before.
+#   Clean Roster  — validates clean, so it can feed the transform, whose
+#                   "rows left out" notice comes back with 24 rows.
+id: long_list_demo
+name: Long List Demo
+version: 1.0.0
+min_app_version: 0.1.0
+
+inputs:
+  # ── The overflow case ───────────────────────────────────────────────────────
+  # Every rule below resolves to a column whose header differs only in case or
+  # punctuation, so each one also lands a row in the column-mismatch notice.
+  # Appeal Code and Reference have no column at all.
+  - label: Messy Roster
+    type: csv
+    required: true
+    validation:
+      - label: Constituent ID
+        required: true
+        type: number
+        digits: 8
+
+      - label: Last Name
+        required: true
+        type: string
+
+      - label: First Name
+        required: true
+        type: string
+
+      - label: Gift Amount
+        required: true
+        type: number
+
+      - label: Gift Date
+        required: true
+        type: string
+
+      - label: Constituent Code
+        required: true
+        type: string
+        value:
+          - Alumni
+          - Parent
+          - Friend
+          - Trustee
+
+      - label: Fund ID
+        required: true
+        type: number
+        digits: 6
+
+      - label: Campaign
+        required: true
+        type: string
+        value:
+          - Annual Fund
+          - Capital Campaign
+          - Endowment
+
+      - label: Pledge Flag
+        required: true
+        type: string
+        value:
+          - "Y"
+          - "N"
+
+      - label: Batch Number
+        required: true
+        type: number
+        digits: 4
+
+      - label: Gift Type
+        required: true
+        type: string
+        value:
+          - Cash
+          - Check
+          - Credit Card
+          - Stock
+
+      - label: Solicitor
+        required: true
+        type: string
+
+      - label: Letter Code
+        required: true
+        type: string
+
+      - label: Acknowledgement
+        required: true
+        type: string
+        value:
+          - "Y"
+          - "N"
+
+      # No column in the file answers to either of these.
+      - label: Appeal Code
+        required: true
+        type: string
+
+      - label: Reference
+        required: true
+        type: string
+
+  # ── The under-the-cut case ──────────────────────────────────────────────────
+  # Headers match exactly, so no notice; three rules fail, so the error table
+  # keeps its original behaviour.
+  - label: Short Extract
+    type: csv
+    required: true
+    validation:
+      - label: Record ID
+        required: true
+        type: number
+        digits: 6
+
+      - label: Status
+        required: true
+        type: string
+        value:
+          - Active
+          - Inactive
+
+      - label: Amount
+        required: true
+        type: number
+
+      - label: Notes
+        required: false
+        type: string
+
+  # ── The clean case ─────────────────────────────────────────────────────────
+  # Passes validation so the transform below it can run. Its rows are the ones
+  # the long notice reports on.
+  - label: Clean Roster
+    type: csv
+    required: true
+    validation:
+      - label: Record ID
+        required: true
+        type: number
+        digits: 6
+
+      - label: Fund ID
+        required: true
+        type: string
+
+      - label: Gift Date
+        required: true
+        type: string
+
+      - label: Amount
+        required: true
+        type: number
+
+      - label: Status
+        required: true
+        type: string
+        value:
+          - Active
+          - Inactive
+
+outputs:
+  - label: Import_File
+    type: csv
+
+steps:
+  - label: ValidateFiles
+    type: file_input
+    input:
+      - label: Messy Roster
+        validate: true
+      - label: Short Extract
+        validate: true
+      - label: Clean Roster
+        validate: true
+
+  - label: GenerateImportFile
+    type: sql_transform
+    input:
+      - Clean Roster
+    sql: build_import.sql
+    output:
+      - Import_File
+    notices:
+      - label: "Rows left out of the import file"
+        sql: excluded_rows.sql
+        description: >
+          Twenty-four of the thirty rows in Clean Roster are not in the file
+          above, each for one of four reasons. The list is long on purpose —
+          it is the notice-table half of this demo.
+
+  - label: Import
+    type: manual_instruction

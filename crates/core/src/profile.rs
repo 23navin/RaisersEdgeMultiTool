@@ -37,6 +37,9 @@ const BUILTIN_PROFILES: &[(&str, &[u8])] = &[
     // Demonstrates the user_input step: a form whose rows come out of the
     // uploaded file, feeding a later transform as {{form:Label}}.
     ("scholarship_recipients.import", include_bytes!("../../../profiles/scholarship_recipients.import")),
+    // UI fixture: error and notice tables long enough to scroll, next to one
+    // short enough not to. See its instructions.md for what to look at.
+    ("long_list_demo.import", include_bytes!("../../../profiles/long_list_demo.import")),
 ];
 
 // ── YAML structs ──────────────────────────────────────────────────────────────
