@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { Button } from "../../ui/button";
 import { cn } from "../../../lib/utils";
+import { headerStickyClass, tableBoxClass } from "../../shared/tableScroll";
 import type { SyncResult } from "../../../types";
 
 export type SyncStatus = "idle" | "running" | "done" | "error";
@@ -210,42 +211,46 @@ export function StepCodeTableSync({
           )}
 
           {r.failures.length > 0 && (
-            <table className="w-full mt-[10px] text-[11px] border-collapse">
-              <thead>
-                <tr className="text-left text-neutral-500">
-                  <th className="border-b border-[#e5e2dc] py-[5px] pr-[8px] font-medium w-[50px]">
-                    Row
-                  </th>
-                  <th className="border-b border-[#e5e2dc] py-[5px] pr-[8px] font-medium w-[30%]">
-                    Entry
-                  </th>
-                  <th className="border-b border-[#e5e2dc] py-[5px] font-medium">
-                    Error
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {r.failures.map((f) => (
-                  <tr key={f.row} className="align-top">
-                    <td className="border-b border-[#f0eeea] py-[5px] pr-[8px] text-neutral-500">
-                      {f.row}
-                    </td>
-                    <td className="border-b border-[#f0eeea] py-[5px] pr-[8px]">
-                      {f.identifier}
-                    </td>
-                    <td className="border-b border-[#f0eeea] py-[5px] text-neutral-600">
-                      <span className="inline-flex items-start gap-[5px]">
-                        <AlertTriangleIcon
-                          size={11}
-                          className="text-amber-600 mt-[2px] shrink-0"
-                        />
-                        {f.error}
-                      </span>
-                    </td>
+            <div className={`mt-[10px] ${tableBoxClass(r.failures.length)}`}>
+              <table className="w-full text-[11px] leading-[16px] border-collapse">
+                <thead
+                  className={`bg-white ${headerStickyClass(r.failures.length)}`}
+                >
+                  <tr className="text-left text-neutral-500">
+                    <th className="border-b border-[#e5e2dc] py-[5px] pr-[8px] font-medium w-[50px]">
+                      Row
+                    </th>
+                    <th className="border-b border-[#e5e2dc] py-[5px] pr-[8px] font-medium w-[30%]">
+                      Entry
+                    </th>
+                    <th className="border-b border-[#e5e2dc] py-[5px] font-medium">
+                      Error
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {r.failures.map((f) => (
+                    <tr key={f.row} className="align-top">
+                      <td className="border-b border-[#f0eeea] py-[5px] pr-[8px] text-neutral-500">
+                        {f.row}
+                      </td>
+                      <td className="border-b border-[#f0eeea] py-[5px] pr-[8px]">
+                        {f.identifier}
+                      </td>
+                      <td className="border-b border-[#f0eeea] py-[5px] text-neutral-600">
+                        <span className="inline-flex items-start gap-[5px]">
+                          <AlertTriangleIcon
+                            size={11}
+                            className="text-amber-600 mt-[2px] shrink-0"
+                          />
+                          {f.error}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}

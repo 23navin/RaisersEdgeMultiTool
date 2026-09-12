@@ -14,6 +14,11 @@ import {
 import { pickInputFile } from "../../../lib/api";
 import { Button } from "../../ui/button";
 import { NoticeBlock } from "../../shared/NoticeBlock";
+import {
+  headerStickyClass,
+  rowRevealProps,
+  tableBoxClass,
+} from "../../shared/tableScroll";
 import type { FileStatus } from "../../../App";
 import type { Notice, ValidationError } from "../../../types";
 
@@ -154,30 +159,37 @@ function FileRow({
         <div className="ui-grow">
           <div>
             <div className="ui-reveal mt-[8px] bg-[#fef2f2] border border-[#fecaca] overflow-hidden">
-              <table className="w-full text-[12px] border-collapse">
-                <thead className="bg-[#fee2e2] text-[#991b1b]">
-                  <tr>
-                    <th className="text-left px-[10px] py-[5px] font-medium w-[50px]">Row</th>
-                    <th className="text-left px-[10px] py-[5px] font-medium">Column</th>
-                    <th className="text-left px-[10px] py-[5px] font-medium">Value</th>
-                    <th className="text-left px-[10px] py-[5px] font-medium">Error</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {errors.map((err, i) => (
-                    <tr
-                      key={i}
-                      className="ui-reveal-row border-t border-[#fecaca]"
-                      style={{ animationDelay: `${120 + i * 35}ms` }}
-                    >
-                      <td className="px-[10px] py-[5px] font-mono text-[#b91c1c]">{err.row}</td>
-                      <td className="px-[10px] py-[5px] font-mono text-[#7f1d1d]">{err.column}</td>
-                      <td className="px-[10px] py-[5px] font-mono text-[#7f1d1d]">{err.value}</td>
-                      <td className="px-[10px] py-[5px] text-[#b91c1c]">{err.message}</td>
+              <div className={tableBoxClass(errors.length)}>
+                <table className="w-full text-[12px] leading-[16px] border-collapse">
+                  <thead
+                    className={`bg-[#fee2e2] text-[#991b1b] ${headerStickyClass(errors.length)}`}
+                  >
+                    <tr>
+                      <th className="text-left px-[10px] py-[5px] font-medium w-[50px]">Row</th>
+                      <th className="text-left px-[10px] py-[5px] font-medium">Column</th>
+                      <th className="text-left px-[10px] py-[5px] font-medium">Value</th>
+                      <th className="text-left px-[10px] py-[5px] font-medium">Error</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {errors.map((err, i) => {
+                      const reveal = rowRevealProps(i);
+                      return (
+                        <tr
+                          key={i}
+                          className={`${reveal.className} border-t border-[#fecaca]`}
+                          style={reveal.style}
+                        >
+                          <td className="px-[10px] py-[5px] font-mono text-[#b91c1c]">{err.row}</td>
+                          <td className="px-[10px] py-[5px] font-mono text-[#7f1d1d]">{err.column}</td>
+                          <td className="px-[10px] py-[5px] font-mono text-[#7f1d1d]">{err.value}</td>
+                          <td className="px-[10px] py-[5px] text-[#b91c1c]">{err.message}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>

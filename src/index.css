@@ -217,3 +217,16 @@
     animation: none;
   }
 }
+
+/* Long result tables (validation errors, transform errors, notice rows, sync
+   failures) scroll inside a fixed box instead of growing the card past the
+   step. Sized to a sticky header plus ten rows; the row height is fixed by
+   `leading-[16px]` on the table — 16px line box + 5px padding top and bottom
+   + a 1px rule. Paired with ROW_LIMIT in components/shared/tableScroll.ts,
+   which also stops the stagger animation at the same tenth row. */
+.ui-table-scroll {
+  --ui-row-h: 27px;
+  max-height: calc(var(--ui-row-h) * 11);
+  overflow-y: auto;
+  overflow-x: hidden;
+}

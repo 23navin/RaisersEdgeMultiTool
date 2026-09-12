@@ -6,6 +6,7 @@
 
 import { InfoIcon } from "lucide-react";
 import type { Notice } from "../../types";
+import { headerStickyClass, rowRevealProps, tableBoxClass } from "./tableScroll";
 
 export function NoticeBlock({ notice }: { notice: Notice }) {
   return (
@@ -24,38 +25,46 @@ export function NoticeBlock({ notice }: { notice: Notice }) {
         </div>
       </div>
       {notice.columns.length > 0 && (
-        <table className="w-full text-[12px] border-collapse">
-          <thead className="text-[#a16207]">
-            <tr>
-              {notice.columns.map((c) => (
-                <th
-                  key={c}
-                  className="text-left px-[10px] py-[5px] font-medium"
-                >
-                  {c}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {notice.rows.map((row, i) => (
-              <tr
-                key={i}
-                className="ui-reveal-row border-t border-[#fde68a]"
-                style={{ animationDelay: `${120 + i * 35}ms` }}
-              >
-                {row.map((cell, j) => (
-                  <td
-                    key={j}
-                    className="px-[10px] py-[5px] font-mono text-[#78350f]"
+        // Only the rows scroll — the label banner above stays put.
+        <div className={tableBoxClass(notice.rows.length)}>
+          <table className="w-full text-[12px] leading-[16px] border-collapse">
+            <thead
+              className={`text-[#a16207] bg-[#fffbeb] ${headerStickyClass(notice.rows.length)}`}
+            >
+              <tr>
+                {notice.columns.map((c) => (
+                  <th
+                    key={c}
+                    className="text-left px-[10px] py-[5px] font-medium"
                   >
-                    {cell}
-                  </td>
+                    {c}
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {notice.rows.map((row, i) => {
+                const reveal = rowRevealProps(i);
+                return (
+                  <tr
+                    key={i}
+                    className={`${reveal.className} border-t border-[#fde68a]`}
+                    style={reveal.style}
+                  >
+                    {row.map((cell, j) => (
+                      <td
+                        key={j}
+                        className="px-[10px] py-[5px] font-mono text-[#78350f]"
+                      >
+                        {cell}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

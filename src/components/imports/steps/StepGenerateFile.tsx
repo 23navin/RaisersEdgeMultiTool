@@ -19,6 +19,11 @@ import {
 } from "lucide-react";
 import { Button } from "../../ui/button";
 import { NoticeBlock } from "../../shared/NoticeBlock";
+import {
+  headerStickyClass,
+  rowRevealProps,
+  tableBoxClass,
+} from "../../shared/tableScroll";
 import type { GenerateStatus } from "../../../App";
 import type { Notice, SqlError } from "../../../types";
 
@@ -219,32 +224,39 @@ function TransformBlock({ t }: { t: TransformRow }) {
         <div className="ui-grow">
           <div>
             <div className="ui-reveal mt-[8px] bg-[#fef2f2] border border-[#fecaca] overflow-hidden">
-              <table className="w-full text-[12px] border-collapse">
-                <thead className="bg-[#fee2e2] text-[#991b1b]">
-                  <tr>
-                    <th className="text-left px-[10px] py-[5px] font-medium w-[55px]">Line</th>
-                    <th className="text-left px-[10px] py-[5px] font-medium w-[90px]">Type</th>
-                    <th className="text-left px-[10px] py-[5px] font-medium">Message</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {t.errors.map((err, i) => (
-                    <tr
-                      key={i}
-                      className="ui-reveal-row border-t border-[#fecaca]"
-                      style={{ animationDelay: `${120 + i * 35}ms` }}
-                    >
-                      <td className="px-[10px] py-[5px] font-mono text-[#b91c1c]">
-                        {err.line ?? "—"}
-                      </td>
-                      <td className="px-[10px] py-[5px] font-mono text-[#7f1d1d]">
-                        {err.errorType}
-                      </td>
-                      <td className="px-[10px] py-[5px] text-[#b91c1c]">{err.message}</td>
+              <div className={tableBoxClass(t.errors.length)}>
+                <table className="w-full text-[12px] leading-[16px] border-collapse">
+                  <thead
+                    className={`bg-[#fee2e2] text-[#991b1b] ${headerStickyClass(t.errors.length)}`}
+                  >
+                    <tr>
+                      <th className="text-left px-[10px] py-[5px] font-medium w-[55px]">Line</th>
+                      <th className="text-left px-[10px] py-[5px] font-medium w-[90px]">Type</th>
+                      <th className="text-left px-[10px] py-[5px] font-medium">Message</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {t.errors.map((err, i) => {
+                      const reveal = rowRevealProps(i);
+                      return (
+                        <tr
+                          key={i}
+                          className={`${reveal.className} border-t border-[#fecaca]`}
+                          style={reveal.style}
+                        >
+                          <td className="px-[10px] py-[5px] font-mono text-[#b91c1c]">
+                            {err.line ?? "—"}
+                          </td>
+                          <td className="px-[10px] py-[5px] font-mono text-[#7f1d1d]">
+                            {err.errorType}
+                          </td>
+                          <td className="px-[10px] py-[5px] text-[#b91c1c]">{err.message}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>
